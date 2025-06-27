@@ -54,7 +54,6 @@ def setup_logging(config: Dict[str, Any]) -> None:
         level=getattr(logging, log_config['level']),
         format=log_format,
         handlers=[
-            logging.StreamHandler(sys.stdout),
             file_handler
         ]
     )
@@ -69,10 +68,13 @@ def setup_logging(config: Dict[str, Any]) -> None:
 class FeatureDiscoveryRunner:
     """Main runner for MCTS feature discovery system."""
     
-    def __init__(self, config_path: str, config_overrides: Dict[str, Any] = None):
+    def __init__(self, config_path: str, config_overrides: Dict[str, Any] = None, config: Dict[str, Any] = None):
         """Initialize the runner with configuration."""
         self.config_path = config_path
-        self.config = load_config_with_overrides(config_path)
+        if config is not None:
+            self.config = config
+        else:
+            self.config = load_config_with_overrides(config_path)
         
         # Apply any config overrides
         if config_overrides:
@@ -779,7 +781,7 @@ def main():
     
     # Run discovery process
     try:
-        runner = FeatureDiscoveryRunner(args.config, config_overrides)
+        runner = FeatureDiscoveryRunner(args.config, config_overrides, config)
         results = runner.run_discovery()
         
         # Print final summary
