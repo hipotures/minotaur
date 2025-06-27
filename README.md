@@ -5,19 +5,32 @@ Independent ML automation system for fertilizer recommendation with MCTS-driven 
 > **Data Source**: Read-only access to `/mnt/ml/competitions/2025/playground-series-s5e6/`  
 > **Local Cache**: Automatic parquet conversion in `data/` for faster loading
 
+## ⚠️ UWAGA: config/mcts_config.yaml
+**NIE MODYFIKUJ** głównego pliku `config/mcts_config.yaml`!
+Twórz własne konfiguracje dziedziczące z tego pliku.
+
 ## 📁 Directory Structure
 
 ```
 minotaur/
 ├── 📁 config/           # Configuration files
-│   ├── mcts_config.yaml                 # Main MCTS configuration (production)
-│   ├── mcts_config_fast_real.yaml       # Fast real evaluation config
-│   └── mcts_config_fast_test.yaml       # Ultra-fast testing config
+│   ├── mcts_config.yaml                 # Main MCTS configuration (base - DO NOT MODIFY)
+│   ├── mcts_config_s5e6_production.yaml # S5E6 production config
+│   ├── mcts_config_s5e6_fast_real.yaml  # S5E6 fast real evaluation config
+│   └── mcts_config_s5e6_fast_test.yaml  # S5E6 ultra-fast testing config
 │
 ├── 📄 run_feature_discovery.py         # **MAIN SCRIPT** - MCTS feature discovery system
 │
-├── 📁 scripts/          # Utility scripts and modules
-│   └── feature_engineering.py          # Shared feature engineering functions
+├── 📁 src/              # Source code modules
+│   ├── __init__.py                     # Main imports
+│   ├── domains/                        # Domain-specific features
+│   │   ├── generic.py                  # Universal feature operations
+│   │   └── fertilizer_s5e6.py          # S5E6 agricultural features
+│   ├── feature_cache.py                # MD5-based feature caching
+│   ├── data_utils.py                   # Data loading and sampling
+│   ├── mcts_engine.py                  # MCTS algorithm
+│   ├── autogluon_evaluator.py          # ML model evaluation
+│   └── ...                             # Other core modules
 │
 ├── 📁 examples/         # Example ML models (001-009)
 │   ├── 001_fertilizer_prediction_gpu.py        # Baseline LightGBM (MAP@3: 0.32065)

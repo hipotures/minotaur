@@ -1,4 +1,4 @@
-# MCTS Feature Discovery - Fast Real Data Overrides
+# MCTS Configuration Override for Playground Series S5E6 - Fast Real Testing
 # This file contains only parameters that override the main mcts_config.yaml
 # For rapid iteration with real AutoGluon on reduced datasets
 #
@@ -22,10 +22,15 @@ mcts:
 
 # AutoGluon - Fast evaluation with XGBoost focus
 autogluon:
+  # S5E6 Dataset paths
+  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
+  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  target_metric: 'MAP@3'
+  
   # Core configuration - focus on speed
   included_model_types: ['XGB']           # Only XGBoost
   enable_gpu: true                        # GPU acceleration
-  train_size: 0.1                         # 10% of training data
+  train_size: 0.05                        # 5% of training data for very fast testing
   
   # Model training settings
   time_limit: 30                          # Seconds per evaluation
@@ -35,8 +40,12 @@ autogluon:
   holdout_frac: 0.3                       # Larger holdout for speed
   verbosity: 0                            # Silent mode for speed
 
-# Feature Space - Focused categories
+# Feature Space - Focused categories for fertilizer domain
 feature_space:
+  domain_module: 'domains.fertilizer_s5e6'
+  enabled_categories:
+    - 'npk_interactions'
+    - 'agricultural_domain'
   max_features_per_node: 150              # Reduced feature count
   feature_timeout: 120                    # Shorter timeout
   max_cache_size_mb: 1024                 # Reduced cache
@@ -76,9 +85,9 @@ testing:
 # Export - Minimal for speed
 export:
   formats: ['python', 'json']             # Skip HTML
-  python_output: 'outputs/best_features_fast.py'
+  python_output: 'outputs/s5e6_best_features_fast_real.py'
   include_documentation: false            # Skip docs
-  output_dir: 'outputs/reports'
+  output_dir: 'outputs/reports_fast_real'
   export_on_improvement: false            # Skip intermediate exports
 
 # Analytics - Minimal

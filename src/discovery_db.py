@@ -169,6 +169,7 @@ class FeatureDiscoveryDB:
             config_snapshot TEXT,           -- JSON of config used
             status TEXT DEFAULT 'active',   -- 'active', 'completed', 'interrupted'
             strategy TEXT DEFAULT 'default',  -- MCTS strategy used
+            is_test_mode BOOLEAN DEFAULT FALSE,  -- Test mode flag
             notes TEXT
         );
         
@@ -301,6 +302,12 @@ class FeatureDiscoveryDB:
                     conn.commit()
                     logger.info("Migration completed: added strategy column")
                 
+                if 'is_test_mode' not in columns:
+                    logger.info("Adding 'is_test_mode' column to sessions table...")
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN is_test_mode BOOLEAN DEFAULT FALSE")
+                    conn.commit()
+                    logger.info("Migration completed: added is_test_mode column")
+                
         except sqlite3.Error as e:
             logger.warning(f"Database migration failed: {e}")
     
@@ -310,15 +317,19 @@ class FeatureDiscoveryDB:
         if not session_name:
             session_name = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
+        # Detect test mode
+        is_test_mode = self.config.get('testing', {}).get('use_mock_evaluator', False)
+        
         conn.execute("""
             INSERT OR REPLACE INTO sessions (
-                session_id, session_name, config_snapshot, status
-            ) VALUES (?, ?, ?, ?)
+                session_id, session_name, config_snapshot, status, is_test_mode
+            ) VALUES (?, ?, ?, ?, ?)
         """, (
             self.session_id,
             session_name, 
             json.dumps(self.config),
-            'active'
+            'active',
+            is_test_mode
         ))
         
         logger.info(f"Registered session: {session_name}")

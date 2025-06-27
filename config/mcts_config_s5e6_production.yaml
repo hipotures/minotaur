@@ -1,0 +1,50 @@
+# MCTS Configuration Override for Playground Series S5E6 - Production
+# This config inherits from mcts_config.yaml and overrides for production fertilizer prediction
+
+# Session settings for production
+session:
+  max_iterations: 100
+  max_runtime_hours: 24
+
+# Production AutoGluon configuration
+autogluon:
+  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
+  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  target_metric: 'MAP@3'
+  
+  # Full model ensemble for production
+  included_model_types: ['XGB', 'GBM', 'CAT', 'NN_TORCH']
+  train_size: 0.8
+  time_limit: 300
+  presets: 'best_quality'
+  num_bag_folds: 5
+  num_bag_sets: 2
+
+# Feature space configuration for fertilizer domain
+feature_space:
+  domain_module: 'domains.fertilizer_s5e6'
+  enabled_categories:
+    - 'npk_interactions'
+    - 'environmental_stress'
+    - 'agricultural_domain'
+    - 'statistical_aggregations'
+    - 'feature_transformations'
+  
+  # Higher limits for production
+  max_features_per_node: 500
+  min_improvement_threshold: 0.0001
+
+# Logging configuration for production
+logging:
+  level: 'INFO'
+  log_feature_code: true
+  log_timing: true
+  log_memory_usage: true
+  progress_interval: 5
+
+# Export configuration
+export:
+  formats: ['python', 'json', 'html']
+  python_output: 'outputs/s5e6_best_features_production.py'
+  html_report: 'outputs/s5e6_discovery_report_production.html'
+  output_dir: 'outputs/reports_production'

@@ -14,14 +14,14 @@ This is an **independent MCTS-driven feature discovery system** for agricultural
 
 ### MCTS Feature Discovery Operations
 ```bash
-# Ultra-fast testing (30 seconds)
-python run_feature_discovery.py --config config/mcts_config_fast_test.yaml --test-mode
+# Ultra-fast testing with 100 samples (30 seconds)
+python run_feature_discovery.py --config config/mcts_config_s5e6_fast_test.yaml --test-mode
 
-# Fast real evaluation (2-5 minutes)
-python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --real-autogluon
+# Fast real evaluation with 5% data (2-5 minutes)
+python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
 
-# Production feature discovery (hours)
-python run_feature_discovery.py --config config/mcts_config.yaml
+# Production feature discovery with 80% data (hours)
+python run_feature_discovery.py --config config/mcts_config_s5e6_production.yaml
 
 # Session management
 python run_feature_discovery.py --list-sessions
@@ -50,19 +50,19 @@ python examples/006_fertilizer_prediction_tabm.py # Neural network approach
 # Ultra-fast development with mock evaluator (30 seconds)
 python run_feature_discovery.py --test-mode
 
-# Fast real AutoGluon with override config (2-5 minutes) 
-# Uses mcts_config.yaml + mcts_config_fast_real.yaml overrides
-python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --real-autogluon
+# Fast real AutoGluon with S5E6 override config (2-5 minutes) 
+# Uses mcts_config.yaml + mcts_config_s5e6_fast_real.yaml overrides
+python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
 
-# Production feature discovery with base config (hours)
-python run_feature_discovery.py --config config/mcts_config.yaml
+# Production feature discovery with S5E6 config (hours)
+python run_feature_discovery.py --config config/mcts_config_s5e6_production.yaml
 
 # Session management
 python run_feature_discovery.py --list-sessions
 python run_feature_discovery.py --resume [SESSION_ID]
 
 # Configuration validation
-python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --validate-config
+python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --validate-config
 ```
 
 
@@ -70,7 +70,9 @@ python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --val
 
 ### MCTS-Driven Feature Discovery System
 - **MCTSEngine**: Monte Carlo Tree Search with UCB1 selection algorithm
-- **FeatureSpace**: 6 categories of agricultural domain feature operations
+- **FeatureSpace**: Domain-agnostic feature operations framework
+- **DomainModules**: Domain-specific feature operations (generic + fertilizer_s5e6)
+- **FeatureCacheManager**: MD5-based caching system for efficient feature storage
 - **AutoGluonEvaluator**: Fast ML model evaluation using AutoGluon TabularPredictor
 - **MockEvaluator**: Ultra-fast testing mode for development
 - **Analytics**: Comprehensive performance monitoring and visualization
@@ -81,39 +83,44 @@ python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --val
 The MCTS Feature Discovery uses a **base + override** configuration architecture:
 
 ### Configuration Files
-- **mcts_config.yaml**: Base configuration with all default parameters
-- **mcts_config_fast_real.yaml**: Override configuration for fast real-data evaluation
-- **Custom configs**: Can create additional override configs for specific use cases
+- **mcts_config.yaml**: Base configuration with all default parameters (DO NOT MODIFY)
+- **mcts_config_s5e6_production.yaml**: S5E6 production configuration
+- **mcts_config_s5e6_fast_real.yaml**: S5E6 fast real-data evaluation
+- **mcts_config_s5e6_fast_test.yaml**: S5E6 ultra-fast testing configuration
+- **Custom configs**: Can create additional domain-specific override configs
 
 ### How Override System Works
 ```bash
 # When you run:
-python run_feature_discovery.py --config mcts_config_fast_real.yaml
+python run_feature_discovery.py --config mcts_config_s5e6_fast_real.yaml
 
 # System automatically:
 # 1. Loads mcts_config.yaml (base configuration)
-# 2. Loads mcts_config_fast_real.yaml (overrides)
+# 2. Loads mcts_config_s5e6_fast_real.yaml (overrides)
 # 3. Deep merges overrides into base configuration
-# 4. Uses final merged configuration
+# 4. Uses final merged configuration with S5E6 paths and domain features
 ```
 
 ### Configuration Profiles
 | Profile | Config File | Purpose | Target Time |
 |---------|-------------|---------|-------------|
 | **Development** | `--test-mode` | Mock evaluator for debugging | 30 seconds |
-| **Fast Real** | `mcts_config_fast_real.yaml` | Real AutoGluon, small data | 2-5 minutes |
-| **Production** | `mcts_config.yaml` | Full feature discovery | Hours |
+| **Fast Test** | `mcts_config_s5e6_fast_test.yaml` | Real AutoGluon, 100 samples | 2-5 minutes |
+| **Fast Real** | `mcts_config_s5e6_fast_real.yaml` | Real AutoGluon, 5% data | 5-10 minutes |
+| **Production** | `mcts_config_s5e6_production.yaml` | Full S5E6 feature discovery | Hours |
 
 ### Key Override Parameters
 ```yaml
-# mcts_config_fast_real.yaml key changes:
+# mcts_config_s5e6_fast_real.yaml key changes:
 session:
   max_iterations: 5              # vs 20 in base
 autogluon:
+  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
+  target_metric: 'MAP@3'
   included_model_types: ['XGB']  # vs ['XGB', 'GBM', 'CAT'] in base
-  train_size: 0.1                # vs 1.0 in base
-data:
-  small_dataset_size: 5000       # vs full dataset in base
+  train_size: 0.05               # 5% of data vs null in base
+feature_space:
+  domain_module: 'domains.fertilizer_s5e6'
 ```
 
 ## Important Configuration

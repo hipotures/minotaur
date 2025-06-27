@@ -1,9 +1,9 @@
-# MCTS Feature Discovery - Fast Test Overrides
+# MCTS Configuration Override for Playground Series S5E6 - Fast Test
 # This file contains only parameters that override the main mcts_config.yaml
 # For ultra-fast testing with real AutoGluon on minimal datasets
 #
 # PERFORMANCE TARGET: Complete 3 iterations in 30-60 seconds
-# RESOURCE LIMITS: 1K samples, minimal memory, XGBoost only
+# RESOURCE LIMITS: train_size=100 samples, minimal memory, XGBoost only
 
 # Session Management - Ultra-short runs
 session:
@@ -22,10 +22,15 @@ mcts:
 
 # AutoGluon - Ultra-fast evaluation
 autogluon:
+  # S5E6 Dataset paths
+  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
+  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  target_metric: 'MAP@3'
+  
   # Core configuration - extreme speed focus
   included_model_types: ['XGB']           # Only XGBoost
   enable_gpu: true                        # GPU for speed
-  train_size: 0.02                        # Only 2% of training data
+  train_size: 100                         # Fixed 100 samples for ultra-fast testing
   
   # Model training settings
   time_limit: 8                           # Extremely short evaluation
@@ -35,8 +40,9 @@ autogluon:
   holdout_frac: 0.4                       # Large holdout for speed
   verbosity: 0                            # Silent mode
 
-# Feature Space - Minimal features
+# Feature Space - Minimal features for fertilizer domain
 feature_space:
+  domain_module: 'domains.fertilizer_s5e6'
   max_features_per_node: 50               # Very few features
   feature_timeout: 30                     # Short timeout
   max_cache_size_mb: 256                  # Tiny cache
@@ -59,40 +65,33 @@ resources:
   max_cpu_cores: 2                        # Limit CPU cores
   max_disk_usage_gb: 5                    # Minimal disk
 
-# Data - Ultra-small datasets
+# Data - Fast loading only (train_size controls sampling)
 data:
   prefer_parquet: true                    # Fast loading
   auto_convert_csv: true                  
-  use_small_dataset: true                 
-  small_dataset_size: 1000                # Only 1K samples
   memory_limit_mb: 50                     # Very low memory limit
   dtype_optimization: true                
 
 # Database - Minimal settings
 database:
-  path: '../data/feature_discovery_test.db'      # Separate test DB
+  path: 'data/feature_discovery_test.db'      # Separate test DB
   max_history_size: 1000                  # Tiny history
   backup_interval: 10                     # Frequent backups
   retention_days: 1                       # Very short retention
 
 # Logging - Minimal for speed
 logging:
-  log_file: '../logs/mcts_discovery_test.log'    # Separate test log
+  log_file: 'logs/mcts_discovery_test.log'    # Separate test log
   max_log_size_mb: 10                     # Small logs
   progress_interval: 1                    # Report every iteration
   log_autogluon_details: false           # Skip details
 
-# Testing - Minimal datasets
-testing:
-  small_dataset_size: 1000                # Match data.small_dataset_size
-  use_mock_evaluator: false               # Use real AutoGluon
-
 # Export - Minimal output
 export:
   formats: ['python']                     # Only Python code
-  python_output: '../outputs/best_features_test.py'
+  python_output: 'outputs/s5e6_best_features_test.py'
   include_documentation: false            
-  output_dir: '../outputs/reports_test'
+  output_dir: 'outputs/reports_test'
   export_on_improvement: false            # Skip intermediate
   export_on_completion: true              # Only final export
 

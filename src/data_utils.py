@@ -16,6 +16,7 @@ import pandas as pd
 import numpy as np
 
 from .timing import timed, timing_context, record_timing
+from .feature_cache import FeatureCacheManager
 
 logger = logging.getLogger(__name__)
 
@@ -414,3 +415,29 @@ def smart_sample(df: pd.DataFrame, target_rows: int, stratify_column: str = None
     
     # Simple random sampling
     return df.sample(n=target_rows, random_state=42).reset_index(drop=True)
+
+def prepare_training_data(df: pd.DataFrame, train_size: Union[int, float]) -> pd.DataFrame:
+    """
+    Prepare training data with flexible train_size logic.
+    
+    Args:
+        df: Input DataFrame
+        train_size: Either percentage (0.0-1.0) or absolute number of samples
+        
+    Returns:
+        Sampled DataFrame
+    """
+    if isinstance(train_size, float) and 0 <= train_size <= 1:
+        n_samples = int(len(df) * train_size)
+        logger.info(f"📊 Using {train_size*100:.1f}% of data: {n_samples}/{len(df)} samples")
+    else:
+        n_samples = min(int(train_size), len(df))
+        logger.info(f"📊 Using fixed sample size: {n_samples}/{len(df)} samples")
+    
+    if n_samples < len(df):
+        sampled_df = df.sample(n=n_samples, random_state=42).reset_index(drop=True)
+        logger.info(f"✅ Sampled training data: {len(sampled_df)} rows")
+        return sampled_df
+    else:
+        logger.info(f"📊 Using full dataset: {len(df)} rows")
+        return df

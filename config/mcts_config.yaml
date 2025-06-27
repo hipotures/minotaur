@@ -32,10 +32,10 @@ mcts:
 
 # AutoGluon Evaluation Settings
 autogluon:
-  # Base data paths
-  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
-  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
-  target_metric: 'MAP@3'
+  # Base data paths (override in domain-specific configs)
+  train_path: null
+  test_path: null
+  target_metric: null
   
   # Production AutoGluon Configuration
   included_model_types: ['XGB', 'GBM', 'CAT']  # XGBoost, LightGBM, CatBoost
@@ -204,14 +204,11 @@ analytics:
   generate_charts: true
   include_timing_analysis: true
 
-# Testing Configuration
+# Testing Configuration (use --test-mode flag instead)
 testing:
   use_mock_evaluator: false   # Use mock evaluator instead of AutoGluon
   mock_base_score: 0.30      # Base score for mock evaluator
   mock_score_variance: 0.05   # Random variance in mock scores
-  fast_test_mode: false      # Enable for very fast testing (minimal iterations)
-  use_small_dataset: true    # Use small dataset for fast testing
-  small_dataset_size: 5000   # Size of small dataset sample
 
 # Validation and Testing
 validation:

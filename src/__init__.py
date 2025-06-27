@@ -29,7 +29,9 @@ except ImportError:
 from .mock_evaluator import MockAutoGluonEvaluator
 from .timing import TimingCollector, initialize_timing, get_timing_collector, timed, timing_context, performance_monitor
 from .analytics import AnalyticsGenerator, generate_quick_report
-from .data_utils import DataManager
+from .data_utils import DataManager, prepare_training_data
+from .feature_cache import FeatureCacheManager
+from .domains import GenericFeatureOperations, FertilizerS5E6Operations
 
 __all__ = [
     'FeatureDiscoveryDB',
@@ -48,5 +50,9 @@ __all__ = [
     'AnalyticsGenerator',
     'generate_quick_report',
     'DataManager',
+    'prepare_training_data',
+    'FeatureCacheManager',
+    'GenericFeatureOperations',
+    'FertilizerS5E6Operations',
     'AUTOGLUON_AVAILABLE'
 ]
