@@ -26,7 +26,6 @@ except ImportError:
     AUTOGLUON_AVAILABLE = False
     AutoGluonEvaluator = None
 
-from .mock_evaluator import MockAutoGluonEvaluator
 from .timing import TimingCollector, initialize_timing, get_timing_collector, timed, timing_context, performance_monitor
 from .analytics import AnalyticsGenerator, generate_quick_report
 from .data_utils import DataManager, prepare_training_data
@@ -40,7 +39,6 @@ __all__ = [
     'FeatureSpace',
     'FeatureOperation',
     'AutoGluonEvaluator',
-    'MockAutoGluonEvaluator',
     'TimingCollector',
     'initialize_timing',
     'get_timing_collector',

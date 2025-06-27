@@ -505,7 +505,7 @@ class AnalyticsGenerator:
             recommendations.append("🎯 Consider increasing exploration time or trying different feature operation combinations")
         
         if stats.get('operations_per_minute', 0) < 5:
-            recommendations.append("⚡ Performance could be improved - consider using mock evaluator for faster testing")
+            recommendations.append("⚡ Performance could be improved - consider using smaller train_size for faster testing")
         
         if stats.get('total_iterations', 0) < 50:
             recommendations.append("🔄 Consider running more iterations for better exploration coverage")

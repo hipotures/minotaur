@@ -70,9 +70,8 @@ class DataManager:
             testing_config.get('small_dataset_size', 5000)
         )
         
-        # Create cache key that includes sampling parameters
-        cache_suffix = f"_small_{small_dataset_size}" if use_small_dataset else ""
-        cache_key = self._get_cache_key(str(file_path), data_type + cache_suffix)
+        # Create cache key without sampling parameters - cache full data only
+        cache_key = self._get_cache_key(str(file_path), data_type)
         
         # Check cache first
         if use_cache and self.enable_cache:
@@ -102,17 +101,10 @@ class DataManager:
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
         
-        # Apply smart sampling if enabled
+        # NOTE: Smart sampling moved to evaluation level to preserve full cache
+        # Cache should always contain full dataset for consistency
         if use_small_dataset and len(df) > small_dataset_size:
-            logger.info(f"Applying smart sampling: {len(df)} -> {small_dataset_size} rows")
-            
-            # Determine stratification column
-            stratify_col = data_config.get('stratify_column')
-            if stratify_col and stratify_col not in df.columns:
-                stratify_col = None
-                
-            df = smart_sample(df, small_dataset_size, stratify_col)
-            logger.info(f"Dataset sampled to {len(df)} rows")
+            logger.info(f"📋 NOTE: Dataset has {len(df)} rows, sampling will be applied during evaluation")
         
         # Apply memory optimization if enabled
         if data_config.get('dtype_optimization', True):

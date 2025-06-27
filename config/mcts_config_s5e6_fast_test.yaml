@@ -34,11 +34,18 @@ autogluon:
   
   # Model training settings
   time_limit: 8                           # Extremely short evaluation
-  presets: 'medium_quality_faster_train'  # Fast preset
-  num_bag_folds: 1                        # No bagging for speed
-  num_bag_sets: 1                         # Single bagging set
+  presets: 'medium_quality'               # Fast preset
+  skip_final_evaluation: true             # Skip expensive final evaluation
   holdout_frac: 0.4                       # Large holdout for speed
-  verbosity: 0                            # Silent mode
+  verbosity: 2                            # Show AutoGluon output
+  
+  # Ray GPU configuration - disable Ray completely
+  ag_args_fit:
+    num_cpus: 1
+    num_gpus: 1
+  ag_args_ensemble:
+    fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
+    enable_ray: false  # Force disable Ray
 
 # Feature Space - Minimal features for fertilizer domain
 feature_space:
@@ -87,7 +94,6 @@ database:
 
 # Logging - Minimal for speed
 logging:
-  log_file: 'logs/mcts_discovery_test.log'    # Separate test log
   max_log_size_mb: 10                     # Small logs
   progress_interval: 1                    # Report every iteration
   log_autogluon_details: false           # Skip details

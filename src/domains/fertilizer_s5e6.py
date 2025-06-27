@@ -204,3 +204,89 @@ class FertilizerS5E6Operations:
             features['soil_crop'] = features['soil_crop'].astype('category')
             
         return features
+    
+    @staticmethod
+    def get_nutrient_adequacy_ratios(df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Nutrient adequacy ratios for crops."""
+        features = {}
+        
+        if all(col in df.columns for col in ['Nitrogen', 'Phosphorous', 'Potassium', 'Crop Type']):
+            # Crop-specific optimal nutrient levels (simplified)
+            crop_requirements = {
+                'Corn': {'N': 150, 'P': 60, 'K': 120},
+                'Wheat': {'N': 120, 'P': 50, 'K': 100},
+                'Rice': {'N': 100, 'P': 40, 'K': 80},
+                'Soybean': {'N': 50, 'P': 60, 'K': 120},  # Lower N due to fixation
+                'Tomato': {'N': 140, 'P': 80, 'K': 160},
+                'Potato': {'N': 120, 'P': 70, 'K': 180}
+            }
+            
+            # Default requirements for unknown crops
+            default_req = {'N': 100, 'P': 50, 'K': 100}
+            
+            # Calculate adequacy ratios for each nutrient
+            n_adequacy = []
+            p_adequacy = []
+            k_adequacy = []
+            
+            for idx, row in df.iterrows():
+                crop = row['Crop Type']
+                req = crop_requirements.get(crop, default_req)
+                
+                n_adequacy.append(min(row['Nitrogen'] / req['N'], 2.0))  # Cap at 200%
+                p_adequacy.append(min(row['Phosphorous'] / req['P'], 2.0))
+                k_adequacy.append(min(row['Potassium'] / req['K'], 2.0))
+            
+            features['n_adequacy_ratio'] = pd.Series(n_adequacy, index=df.index)
+            features['p_adequacy_ratio'] = pd.Series(p_adequacy, index=df.index)
+            features['k_adequacy_ratio'] = pd.Series(k_adequacy, index=df.index)
+            
+            # Overall adequacy score
+            features['overall_adequacy'] = (features['n_adequacy_ratio'] + 
+                                           features['p_adequacy_ratio'] + 
+                                           features['k_adequacy_ratio']) / 3
+        
+        return features
+    
+    @staticmethod
+    def get_npk_dominance_patterns(df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """NPK dominance and deficiency patterns."""
+        features = {}
+        
+        if all(col in df.columns for col in ['Nitrogen', 'Phosphorous', 'Potassium']):
+            # Which nutrient is dominant (highest)
+            npk_values = df[['Nitrogen', 'Phosphorous', 'Potassium']]
+            dominant_nutrient = npk_values.idxmax(axis=1)
+            
+            features['n_dominant'] = (dominant_nutrient == 'Nitrogen').astype(int)
+            features['p_dominant'] = (dominant_nutrient == 'Phosphorous').astype(int)
+            features['k_dominant'] = (dominant_nutrient == 'Potassium').astype(int)
+            
+            # Deficiency pattern (which nutrients are low)
+            if all(col in df.columns for col in ['low_Nitrogen', 'low_Phosphorous', 'low_Potassium']):
+                # Create deficiency pattern string
+                deficiency_patterns = []
+                for idx, row in df.iterrows():
+                    pattern = []
+                    if row['low_Nitrogen']: pattern.append('N')
+                    if row['low_Phosphorous']: pattern.append('P')
+                    if row['low_Potassium']: pattern.append('K')
+                    
+                    if not pattern:
+                        deficiency_patterns.append('none')
+                    else:
+                        deficiency_patterns.append('_'.join(pattern))
+                
+                features['npk_deficiency_pattern'] = pd.Series(deficiency_patterns, index=df.index).astype('category')
+            
+            # Nutrient ratios for dominance analysis
+            total_npk = npk_values.sum(axis=1)
+            features['n_proportion'] = df['Nitrogen'] / total_npk
+            features['p_proportion'] = df['Phosphorous'] / total_npk
+            features['k_proportion'] = df['Potassium'] / total_npk
+            
+            # Balanced vs unbalanced nutrients
+            max_proportion = npk_values.div(total_npk, axis=0).max(axis=1)
+            features['nutrient_balance_score'] = 1 - (max_proportion - 1/3) * 3  # 1 = perfect balance, 0 = extreme imbalance
+        
+        return features

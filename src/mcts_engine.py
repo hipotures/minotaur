@@ -398,7 +398,17 @@ class MCTSEngine:
                         parent_node_id=node.parent.node_id if node.parent else None,
                         memory_usage_mb=node.memory_usage_mb
                     )
-                    # Node ID is returned by log_exploration_step method
+                    
+                    # Log feature impact if this is a feature operation (not root)
+                    if node.operation_that_created_this and node.parent and node.parent.evaluation_score is not None:
+                        db.update_feature_impact(
+                            feature_name=node.operation_that_created_this,
+                            baseline_score=node.parent.evaluation_score,
+                            with_feature_score=score,
+                            context_features=list(node.parent.current_features)
+                        )
+                        logger.debug(f"🔍 Logged feature impact: {node.operation_that_created_this} ({score:.5f} vs {node.parent.evaluation_score:.5f})")
+                    
                 except Exception as e:
                     logger.error(f"Failed to log to database: {e}")
         

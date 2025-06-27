@@ -27,7 +27,6 @@ from src import (
     MCTSEngine, 
     FeatureSpace,
     AutoGluonEvaluator,
-    MockAutoGluonEvaluator,
     initialize_timing,
     get_timing_collector,
     performance_monitor,
@@ -51,16 +50,21 @@ def setup_logging(config: Dict[str, Any]) -> None:
         backupCount=log_config['backup_count']
     )
     
+    # Console handler for stdout
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(log_format))
+    
     logging.basicConfig(
         level=getattr(logging, log_config['level']),
         format=log_format,
         handlers=[
-            file_handler
+            file_handler,
+            console_handler
         ]
     )
     
     # Reduce verbosity of some libraries
-    logging.getLogger('autogluon').setLevel(logging.WARNING)
+    logging.getLogger('autogluon').setLevel(logging.INFO)  # Show AutoGluon logs
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     
     logger = logging.getLogger(__name__)
@@ -135,20 +139,23 @@ class FeatureDiscoveryRunner:
             logger.info("Initializing feature space...")
             self.feature_space = FeatureSpace(self.config)
             
-            # Initialize evaluator (AutoGluon or Mock)
-            use_mock = self.config.get('testing', {}).get('use_mock_evaluator', False)
-            logger.info(f"DEBUG: use_mock={use_mock}, AUTOGLUON_AVAILABLE={AUTOGLUON_AVAILABLE}")
+            # Initialize AutoGluon evaluator (required)
+            if not AUTOGLUON_AVAILABLE:
+                logger.error("❌ CRITICAL: AutoGluon is not installed!")
+                logger.error("📦 Please install AutoGluon: pip install autogluon")
+                logger.error("🚫 Cannot proceed with real ML evaluation")
+                raise ImportError("AutoGluon is required for feature evaluation")
             
-            if use_mock or not AUTOGLUON_AVAILABLE:
-                logger.info("Initializing Mock evaluator...")
-                self.evaluator = MockAutoGluonEvaluator(self.config)
-                if not AUTOGLUON_AVAILABLE:
-                    logger.warning("AutoGluon not available, using mock evaluator")
-                else:
-                    logger.info("Using mock evaluator for testing mode")
-            else:
-                logger.info("Initializing AutoGluon evaluator...")
-                self.evaluator = AutoGluonEvaluator(self.config)
+            # Log AutoGluon version info
+            try:
+                import autogluon
+                autogluon_version = autogluon.__version__
+                logger.info(f"✅ AutoGluon v{autogluon_version} detected")
+            except Exception:
+                logger.info("✅ AutoGluon available (version unknown)")
+                
+            logger.info("Initializing AutoGluon evaluator...")
+            self.evaluator = AutoGluonEvaluator(self.config)
             
             # Initialize MCTS engine
             logger.info("Initializing MCTS engine...")
@@ -208,10 +215,12 @@ class FeatureDiscoveryRunner:
             
             # Perform final evaluation if we found improvements
             final_results = None
-            if search_results['best_score'] > 0:
+            if search_results['best_score'] > 0 and not self.config['autogluon'].get('skip_final_evaluation', False):
                 logger.info("Performing final thorough evaluation...")
                 best_features_df = self.feature_space.generate_features_for_node(self.mcts_engine.best_node)
                 final_results = self.evaluator.evaluate_final_features(best_features_df)
+            elif self.config['autogluon'].get('skip_final_evaluation', False):
+                logger.info("Skipping final evaluation (skip_final_evaluation=True)")
             
             # Get timing statistics
             timing_stats = None
@@ -733,11 +742,6 @@ def main():
         help='Start new session (overrides config session mode)'
     )
     parser.add_argument(
-        '--test-mode',
-        action='store_true',
-        help='Use mock evaluator for fast testing'
-    )
-    parser.add_argument(
         '--real-autogluon',
         action='store_true',
         help='Use real AutoGluon with small dataset for testing'
@@ -799,15 +803,9 @@ def main():
         elif args.new_session:
             config['session']['mode'] = 'new'
         
-        # Set test mode if specified
-        if args.test_mode:
-            config.setdefault('testing', {})['use_mock_evaluator'] = True
-            config['session']['max_iterations'] = min(config['session']['max_iterations'], 5)  # Very short for testing
-            print("TEST MODE: Using mock evaluator and limited iterations")
         
         # Add real autogluon test flag
         if args.real_autogluon:
-            config.setdefault('testing', {})['use_mock_evaluator'] = False
             config['session']['max_iterations'] = min(config['session']['max_iterations'], 3)  # Very few iterations for real testing
             config['testing']['use_small_dataset'] = True
             print("REAL AUTOGLUON MODE: Using small dataset for real evaluation")
@@ -834,9 +832,6 @@ def main():
     
     # Prepare config overrides
     config_overrides = {}
-    if args.test_mode:
-        logger.info("TEST MODE: Using real data with limited scope (no synthetic data)")
-        # Test mode now works through config limits only, no synthetic data
     
     # Run discovery process
     try:

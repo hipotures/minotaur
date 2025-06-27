@@ -15,7 +15,7 @@ N_FOLDS = 3
 CLASS_THRESHOLD = 0.2
 DATA_FRACTION = 1.0  # Fraction of training data to use (1.0 = full dataset)
 TIME_LIMIT = 8*3600  # AutoGluon training time limit in seconds (1 hour)
-PRESETS = 'best_quality'  # 'medium_quality_faster_train', 'good_quality_faster_inference', 'best_quality'
+PRESETS = 'best_quality'  # 'medium_quality_faster_train', 'medium_quality', 'best_quality'
 
 def map3(y_true, y_pred_proba):
     """Calculate MAP@3 metric for multi-class classification"""

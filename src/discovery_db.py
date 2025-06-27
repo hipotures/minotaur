@@ -317,8 +317,9 @@ class FeatureDiscoveryDB:
         if not session_name:
             session_name = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # Detect test mode
-        is_test_mode = self.config.get('testing', {}).get('use_mock_evaluator', False)
+        # Detect test mode (based on config name and parameters)
+        config_path = getattr(self, 'config_path', '')
+        is_test_mode = 'test' in config_path.lower() or self.config.get('session', {}).get('max_iterations', 0) <= 5
         
         conn.execute("""
             INSERT OR REPLACE INTO sessions (

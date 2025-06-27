@@ -52,9 +52,7 @@ class AutoGluonEvaluator:
         self.validation_data = None
         self.target_column = 'Fertilizer Name'
         
-        # Evaluation strategy
-        self.current_phase = 'exploration'  # 'exploration' or 'exploitation'
-        self.phase_switch_iteration = None
+        # Note: Multi-phase evaluation system removed per user request
         
         # Performance tracking
         self.evaluation_count = 0
@@ -108,29 +106,17 @@ class AutoGluonEvaluator:
             raise
     
     def _setup_evaluation_strategy(self) -> None:
-        """Setup adaptive evaluation strategy based on configuration."""
-        max_iterations = self.session_config['max_iterations']
-        threshold = self.autogluon_config['thorough_eval_threshold']
-        
-        self.phase_switch_iteration = int(max_iterations * threshold)
-        
-        logger.info(f"Evaluation strategy: exploration -> exploitation at iteration {self.phase_switch_iteration}")
+        """Setup evaluation strategy - simplified to single config."""
+        logger.info("Using single-phase evaluation strategy per user configuration")
     
     def get_current_config(self) -> Dict[str, Any]:
-        """Get current AutoGluon configuration based on evaluation phase."""
-        if self.current_phase == 'exploration':
-            base_config = self.autogluon_config['fast_eval'].copy()
-        else:
-            base_config = self.autogluon_config['thorough_eval'].copy()
+        """Get current AutoGluon configuration - use main config only."""
+        # Use main autogluon config directly, ignore phases
+        base_config = {}
         
-        # Adaptive time limit based on progress
-        if self.autogluon_config.get('adaptive_time_limit', False):
-            if self.evaluation_count > 0 and self.best_score > 0:
-                # Increase time limit if we're making good progress
-                recent_improvement = self._check_recent_improvement()
-                if recent_improvement:
-                    multiplier = self.autogluon_config.get('timeout_multiplier', 1.5)
-                    base_config['time_limit'] = int(base_config['time_limit'] * multiplier)
+        # Copy all parameters - multi-phase configs removed
+        for key, value in self.autogluon_config.items():
+            base_config[key] = value
         
         return base_config
     
@@ -155,8 +141,7 @@ class AutoGluonEvaluator:
         
         logger.info(f"AutoGluon evaluation #{self.evaluation_count}: {len(features_df)} rows, {len(features_df.columns)} cols")
         
-        # Update evaluation phase
-        self._update_evaluation_phase(iteration)
+        # Note: Multi-phase evaluation removed per user request
         
         # Check cache first
         feature_hash = self._hash_features(features_df)
@@ -217,16 +202,13 @@ class AutoGluonEvaluator:
         
         # Apply train_size sampling if configured
         train_data = self.base_train_data.copy()
-        train_size = eval_config.get('train_size', 1.0)
+        train_size = eval_config.get('train_size')
         
-        if train_size < 1.0:
-            sample_size = int(len(train_data) * train_size)
-            if sample_size > 0:
-                # Stratified sampling to maintain class distribution
-                train_data = train_data.groupby(self.target_column, group_keys=False).apply(
-                    lambda x: x.sample(min(len(x), max(1, int(sample_size * len(x) / len(train_data)))))
-                ).reset_index(drop=True)
-                logger.debug(f"Sampled training data: {len(self.base_train_data)} -> {len(train_data)} rows (train_size={train_size})")
+        if train_size is not None:
+            from .data_utils import prepare_training_data
+            original_size = len(train_data)
+            train_data = prepare_training_data(train_data, train_size)
+            logger.info(f"📊 Training data sampling: {original_size} -> {len(train_data)} rows (train_size={train_size})")
         
         # Merge features with base data
         train_ids = train_data['id'].values
@@ -286,10 +268,14 @@ class AutoGluonEvaluator:
             fit_params = {
                 'time_limit': eval_config['time_limit'],
                 'presets': eval_config['presets'],
-                'holdout_frac': eval_config.get('holdout_frac', 0.2),
-                'num_bag_folds': eval_config.get('num_bag_folds', 2),
-                'num_bag_sets': eval_config.get('num_bag_sets', 1)
+                'holdout_frac': eval_config.get('holdout_frac', 0.2)
             }
+            
+            # Add bagging parameters only if explicitly set in config
+            if 'num_bag_folds' in eval_config:
+                fit_params['num_bag_folds'] = eval_config['num_bag_folds']
+            if 'num_bag_sets' in eval_config:
+                fit_params['num_bag_sets'] = eval_config['num_bag_sets']
             
             # Add model type constraints
             if 'included_model_types' in eval_config:
@@ -299,12 +285,20 @@ class AutoGluonEvaluator:
             
             # Add GPU configuration
             if eval_config.get('enable_gpu', False):
-                fit_params['ag_args_fit'] = {'num_gpus': 1}
+                # Use custom ag_args_fit from config if available
+                if 'ag_args_fit' in eval_config:
+                    fit_params['ag_args_fit'] = eval_config['ag_args_fit']
+                else:
+                    fit_params['ag_args_fit'] = {'num_gpus': 1}
+            
+            # Add ensemble configuration
+            if 'ag_args_ensemble' in eval_config:
+                fit_params['ag_args_ensemble'] = eval_config['ag_args_ensemble']
             
             # Train model
-            logger.debug(f"Training AutoGluon with fit_params: {fit_params}")
+            logger.info(f"Training AutoGluon with fit_params: {fit_params}")
             predictor.fit(train_data, **fit_params)
-            logger.debug("AutoGluon training completed")
+            logger.info("AutoGluon training completed")
             
             # Make predictions on validation set
             val_data_for_pred = val_data.drop(columns=[self.target_column])
@@ -315,8 +309,11 @@ class AutoGluonEvaluator:
             logger.debug(f"Predictions shape: {val_predictions.shape}, True labels: {len(val_true)}")
             
             # Calculate MAP@3 score
-            map3_score = self._calculate_map3(val_true, val_predictions.values)
-            logger.debug(f"Calculated MAP@3 score: {map3_score:.5f}")
+            logger.info(f"Val predictions columns: {val_predictions.columns.tolist()}")
+            logger.info(f"Val true labels sample: {val_true[:5]}")
+            logger.info(f"Val predictions sample: {val_predictions.values[:3]}")
+            map3_score = self._calculate_map3(val_true, val_predictions)  # Pass DataFrame with columns
+            logger.info(f"Calculated MAP@3 score: {map3_score:.5f}")
             
             return map3_score
             
@@ -324,16 +321,16 @@ class AutoGluonEvaluator:
             logger.error(f"AutoGluon training/evaluation failed: {e}")
             return 0.0
     
-    def _calculate_map3(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> float:
+    def _calculate_map3(self, y_true: np.ndarray, y_pred_proba_df: pd.DataFrame) -> float:
         """Calculate MAP@3 metric for multi-class classification."""
         
-        if len(y_pred_proba.shape) != 2:
-            logger.error(f"Invalid prediction shape: {y_pred_proba.shape}")
+        if len(y_pred_proba_df.shape) != 2:
+            logger.error(f"Invalid prediction shape: {y_pred_proba_df.shape}")
             return 0.0
         
-        # Get class labels (assuming they match the order in predictions)
-        # This is a simplified implementation - in practice you'd want to ensure
-        # class alignment between true labels and prediction columns
+        # Get class labels from prediction DataFrame columns
+        class_names = y_pred_proba_df.columns.tolist()
+        y_pred_proba = y_pred_proba_df.values
         
         map_score = 0.0
         n_samples = len(y_true)
@@ -343,19 +340,15 @@ class AutoGluonEvaluator:
             sample_probs = y_pred_proba[i]
             top3_indices = np.argsort(sample_probs)[::-1][:3]
             
-            # Convert true label to index (this is simplified)
-            # In practice, you'd need proper label encoding
+            # Convert indices to class names
+            top3_classes = [class_names[idx] for idx in top3_indices]
+            
             try:
-                if hasattr(true_label, '__iter__') and not isinstance(true_label, str):
-                    # Handle case where true_label might be encoded differently
-                    continue
-                    
                 # Calculate score for this sample
-                for rank, pred_idx in enumerate(top3_indices):
-                    # This is a simplified check - in practice you'd need proper mapping
-                    # between class names and prediction indices
-                    if str(pred_idx) == str(true_label) or pred_idx == true_label:
+                for rank, predicted_class in enumerate(top3_classes):
+                    if str(predicted_class) == str(true_label):
                         map_score += 1.0 / (rank + 1)
+                        logger.debug(f"Sample {i}: True={true_label}, Predicted={predicted_class} at rank {rank+1}")
                         break
                         
             except Exception as e:
@@ -468,10 +461,8 @@ class AutoGluonEvaluator:
             return {'error': str(e)}
     
     def _update_evaluation_phase(self, iteration: int) -> None:
-        """Update evaluation phase based on current iteration."""
-        if iteration >= self.phase_switch_iteration and self.current_phase == 'exploration':
-            self.current_phase = 'exploitation'
-            logger.info(f"Switched to exploitation phase at iteration {iteration}")
+        """Update evaluation phase - removed multi-phase system."""
+        pass  # Removed multi-phase evaluation per user request
     
     def _hash_features(self, features_df: pd.DataFrame) -> str:
         """Create hash of feature set for caching."""

@@ -472,13 +472,8 @@ class FeatureSpace:
         # Load base dataset
         train_base = load_or_create_features(self.train_path, 'train', 'basic', self.data_manager)
         
-        # Apply sampling if configured
-        autogluon_config = self.config.get('autogluon', {})
-        train_size = autogluon_config.get('train_size')
-        
-        if train_size:
-            from .data_utils import prepare_training_data
-            train_base = prepare_training_data(train_base, train_size)
+        # Note: train_size sampling moved to AutoGluon evaluator level
+        # Feature generation should work on full dataset for cache consistency
         
         # Apply each operation in sequence using domain modules
         current_features = train_base.copy()
@@ -508,6 +503,8 @@ class FeatureSpace:
         operation_map = {
             'npk_basic_ratios': GenericFeatureOperations.get_npk_interactions,
             'npk_advanced_interactions': GenericFeatureOperations.get_nutrient_balance_features,
+            'npk_dominance_patterns': FertilizerS5E6Operations.get_npk_dominance_patterns,
+            'nutrient_adequacy_ratios': FertilizerS5E6Operations.get_nutrient_adequacy_ratios,
             'binning_categorical': GenericFeatureOperations.get_binning_categorical_features,
             'complex_mathematical': GenericFeatureOperations.get_complex_mathematical_features,
             'statistical_deviations': GenericFeatureOperations.get_statistical_deviations,

@@ -45,31 +45,13 @@ autogluon:
   
   # Model training settings
   time_limit: 120                             # Seconds per evaluation
-  presets: 'good_quality_faster_inference'    # good_quality, medium_quality_faster_train, best_quality
+  presets: 'medium_quality'    # good_quality, medium_quality_faster_train, best_quality
   num_bag_folds: 3                            # Cross-validation folds
   num_bag_sets: 1                             # Number of bagging sets
   holdout_frac: 0.2                           # Holdout fraction for validation
   verbosity: 1                                # 0=silent, 1=minimal, 2=verbose
   
-  # Evaluation phases
-  fast_eval:
-    time_limit: 20                            # Fast exploration phase
-    presets: 'good_quality_faster_inference'
-  
-  thorough_eval:
-    time_limit: 60                            # Thorough exploitation phase
-    presets: 'good_quality'
-  
-  thorough_eval_threshold: 0.7                # Switch to thorough eval at 70% of iterations
-  
-  # Final evaluation (best features only)
-  final_eval:
-    time_limit: 600                           # 10 minutes for final evaluation
-    presets: 'best_quality'
-    num_bag_folds: 5
-    num_bag_sets: 2
-    holdout_frac: 0.15
-    verbosity: 2
+  # Note: Multi-phase evaluation removed - using single configuration above
 
 # Feature Space Configuration
 feature_space:
@@ -210,11 +192,9 @@ analytics:
   generate_charts: true
   include_timing_analysis: true
 
-# Testing Configuration (use --test-mode flag instead)
+# Testing Configuration (AutoGluon required - no mock mode)
 testing:
-  use_mock_evaluator: false   # Use mock evaluator instead of AutoGluon
-  mock_base_score: 0.30      # Base score for mock evaluator
-  mock_score_variance: 0.05   # Random variance in mock scores
+  fast_test_mode: false      # Enable ultra-fast testing mode
 
 # Validation and Testing
 validation:
