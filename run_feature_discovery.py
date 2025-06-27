@@ -773,11 +773,8 @@ def main():
     # Prepare config overrides
     config_overrides = {}
     if args.test_mode:
-        config_overrides['testing'] = {
-            'use_mock_evaluator': True,
-            'fast_test_mode': True,
-            'use_small_dataset': True
-        }
+        logger.info("TEST MODE: Using real data with limited scope (no synthetic data)")
+        # Test mode now works through config limits only, no synthetic data
     
     # Run discovery process
     try:

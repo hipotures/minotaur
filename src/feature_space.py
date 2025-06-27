@@ -21,7 +21,6 @@ from pathlib import Path
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from scripts.feature_engineering import load_or_create_features
-from .synthetic_data import generate_synthetic_features, augment_synthetic_features
 from .timing import timed, timing_context, record_timing
 from .data_utils import DataManager, smart_sample, estimate_memory_usage
 
@@ -433,13 +432,8 @@ class FeatureSpace:
         """
         generation_start = time.time()
         
-        # Check if we're in mock testing mode
-        testing_config = self.config.get('testing', {})
-        use_mock = testing_config.get('use_mock_evaluator', False)
-        
-        if use_mock:
-            # Use fast synthetic data generation for testing
-            return self._generate_synthetic_features_for_node(node, generation_start)
+        # Always use real data now - no more synthetic data
+        # Testing mode is controlled by config limits (train_size, max_iterations, etc.)
         
         # Check cache first
         if self.cache_features:
@@ -449,36 +443,8 @@ class FeatureSpace:
                 return self.feature_cache[cache_key].copy()
         
         try:
-            # Determine feature set type based on applied operations
-            feature_set = self._determine_feature_set(node.applied_operations)
-            
-            # Generate features using existing infrastructure
-            if len(node.applied_operations) == 0:
-                # Base features only
-                train_features = load_or_create_features(self.train_path, 'train', feature_set, self.data_manager)
-                test_features = load_or_create_features(self.test_path, 'test', feature_set, self.data_manager)
-            else:
-                # Apply operations incrementally
-                train_features, test_features = self._apply_operations_incrementally(
-                    node.applied_operations, feature_set
-                )
-            
-            # Combine train and test for unified feature set
-            combined_features = pd.concat([train_features, test_features], ignore_index=True)
-            
-            # Apply feature limits
-            combined_features = self._apply_feature_limits(combined_features)
-            
-            # Cache if enabled
-            if self.cache_features:
-                self._cache_features(cache_key, combined_features)
-            
-            generation_time = time.time() - generation_start
-            node.feature_generation_time = generation_time
-            
-            logger.debug(f"Generated {combined_features.shape[1]} features for node in {generation_time:.2f}s")
-            
-            return combined_features
+            # Use real data generation function
+            return self._generate_real_features_for_node(node, generation_start)
             
         except Exception as e:
             logger.error(f"Feature generation failed for node: {e}")
@@ -487,36 +453,63 @@ class FeatureSpace:
             test_base = load_or_create_features(self.test_path, 'test', 'basic', self.data_manager)
             return pd.concat([train_base, test_base], ignore_index=True)
     
-    @timed("feature_space.synthetic_generation")
-    def _generate_synthetic_features_for_node(self, node, generation_start: float) -> pd.DataFrame:
-        """Generate synthetic features for mock testing mode."""
-        logger.debug("Using synthetic feature generation for mock testing")
+    @timed("feature_space.real_data_generation")
+    def _generate_real_features_for_node(self, node, generation_start: float) -> pd.DataFrame:
+        """Generate features using real data with applied operations."""
+        logger.debug("Using real data feature generation")
         
-        # Get sample size from config
-        testing_config = self.config.get('testing', {})
-        sample_size = testing_config.get('small_dataset_size', 1000)
+        # Load base dataset
+        train_base = load_or_create_features(self.train_path, 'train', 'basic', self.data_manager)
         
-        # Generate base synthetic features
-        if len(node.applied_operations) == 0:
-            # Root node - generate base features
-            synthetic_features = generate_synthetic_features(self.config, sample_size)
-        else:
-            # Apply operations to synthetic data
-            synthetic_features = generate_synthetic_features(self.config, sample_size)
-            
-            # Apply each operation in sequence
-            for operation_name in node.applied_operations:
-                synthetic_features = augment_synthetic_features(synthetic_features, operation_name)
+        # Apply sampling if configured
+        autogluon_config = self.config.get('autogluon', {})
+        train_size = autogluon_config.get('train_size')
+        
+        if train_size:
+            from .data_utils import prepare_training_data
+            train_base = prepare_training_data(train_base, train_size)
+        
+        # Apply each operation in sequence using domain modules
+        current_features = train_base.copy()
+        for operation_name in node.applied_operations:
+            new_features = self._apply_domain_operation(current_features, operation_name)
+            # Merge new features
+            for feature_name, feature_data in new_features.items():
+                current_features[feature_name] = feature_data
         
         # Apply feature limits
-        synthetic_features = self._apply_feature_limits(synthetic_features)
+        current_features = self._apply_feature_limits(current_features)
         
         generation_time = time.time() - generation_start
         node.feature_generation_time = generation_time
         
-        logger.debug(f"Generated {synthetic_features.shape[1]} synthetic features in {generation_time:.3f}s")
+        logger.debug(f"Generated {current_features.shape[1]} real features in {generation_time:.3f}s")
         
-        return synthetic_features
+        return current_features
+    
+    def _apply_domain_operation(self, df: pd.DataFrame, operation_name: str) -> Dict[str, pd.Series]:
+        """Apply domain-specific operation to generate new features."""
+        # Import domain modules
+        from .domains.generic import GenericFeatureOperations
+        from .domains.fertilizer_s5e6 import FertilizerS5E6Operations
+        
+        # Map operation names to domain methods
+        operation_map = {
+            'npk_basic_ratios': GenericFeatureOperations.get_npk_interactions,
+            'npk_advanced_interactions': GenericFeatureOperations.get_nutrient_balance_features,
+            'binning_categorical': GenericFeatureOperations.get_binning_categorical_features,
+            'complex_mathematical': GenericFeatureOperations.get_complex_mathematical_features,
+            'statistical_deviations': GenericFeatureOperations.get_statistical_deviations,
+            'environmental_stress': FertilizerS5E6Operations.get_environmental_stress,
+            'temp_humidity_interactions': FertilizerS5E6Operations.get_temperature_humidity_interactions,
+            'soil_crop_combinations': FertilizerS5E6Operations.get_soil_crop_combinations,
+        }
+        
+        if operation_name in operation_map:
+            return operation_map[operation_name](df)
+        else:
+            logger.warning(f"Unknown operation: {operation_name}")
+            return {}
     
     def _get_node_features(self, node) -> Set[str]:
         """Get current feature set for a node (for dependency checking)."""

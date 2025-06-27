@@ -96,10 +96,87 @@ class FeatureCacheManager:
             "cache_size_mb": total_size / (1024 * 1024),
             "cache_dir": str(self.cache_dir)
         }
+    
+    def build_feature_if_missing(self, feature_name: str, data_type: str, build_func):
+        """Build feature only if not in cache, with detailed logging."""
+        if self.is_feature_cached(feature_name, data_type):
+            logger.info(f"📂 CACHE HIT: {feature_name} ({data_type})")
+            return self.load_feature(feature_name, data_type)
+        else:
+            logger.info(f"🔨 CACHE MISS: Building {feature_name} ({data_type})")
+            start_time = time.time()
+            feature_data = build_func()
+            build_time = time.time() - start_time
+            self.save_feature(feature_name, data_type, feature_data)
+            logger.info(f"✅ BUILT & CACHED: {feature_name} ({data_type}) in {build_time:.2f}s")
+            return feature_data
+    
+    def batch_build_features(self, feature_definitions: list):
+        """Build all missing features in batch at startup."""
+        missing_features = []
+        total_features = len(feature_definitions)
         
-    def clear_cache(self):
-        """Clear all cached features."""
-        if self.features_dir.exists():
-            import shutil
-            shutil.rmtree(self.features_dir)
-            logger.info(f"🗑️ Cleared feature cache: {self.features_dir}")
+        # Check which features are missing
+        for feature_def in feature_definitions:
+            if not self.is_feature_cached(feature_def['name'], feature_def['data_type']):
+                missing_features.append(feature_def)
+                
+        missing_count = len(missing_features)
+        
+        if missing_count > 0:
+            logger.info(f"🏗️ Building {missing_count}/{total_features} missing features...")
+            
+            # Build each missing feature with progress tracking
+            for i, feature_def in enumerate(missing_features, 1):
+                logger.info(f"📊 Progress: {i}/{missing_count} - Building {feature_def['name']}")
+                self.build_feature_if_missing(
+                    feature_def['name'], 
+                    feature_def['data_type'], 
+                    feature_def['build_func']
+                )
+            
+            logger.info(f"✅ Completed building {missing_count} features")
+        else:
+            logger.info(f"✅ All {total_features} features cached - no building needed")
+    
+    def get_missing_features(self, feature_definitions: list) -> list:
+        """Get list of missing features that need to be built."""
+        missing = []
+        for feature_def in feature_definitions:
+            if not self.is_feature_cached(feature_def['name'], feature_def['data_type']):
+                missing.append(feature_def)
+        return missing
+    
+    def clear_cache(self, data_type: str = None):
+        """Clear cache for specific data type or all cache."""
+        if data_type:
+            data_type_dir = self.features_dir / data_type
+            if data_type_dir.exists():
+                import shutil
+                shutil.rmtree(data_type_dir)
+                logger.info(f"🗑️ Cleared {data_type} cache")
+        else:
+            if self.cache_dir.exists():
+                import shutil
+                shutil.rmtree(self.cache_dir)
+                logger.info(f"🗑️ Cleared entire cache: {self.cache_dir}")
+    
+    def validate_cache_integrity(self) -> dict:
+        """Validate cache file integrity."""
+        validation_results = {"valid": 0, "corrupted": 0, "missing": 0}
+        
+        if not self.features_dir.exists():
+            return validation_results
+            
+        for data_type_dir in self.features_dir.iterdir():
+            if data_type_dir.is_dir():
+                for feature_file in data_type_dir.glob("*.parquet"):
+                    try:
+                        # Try to read the parquet file
+                        pd.read_parquet(feature_file)
+                        validation_results["valid"] += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ Corrupted cache file: {feature_file} - {e}")
+                        validation_results["corrupted"] += 1
+                        
+        return validation_results

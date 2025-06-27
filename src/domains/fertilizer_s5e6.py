@@ -181,3 +181,26 @@ class FertilizerS5E6Operations:
                 features['high_K_crop_need'] = df['Crop Type'].isin(high_k_crops).astype(int)
         
         return features
+    
+    @staticmethod
+    def get_temperature_humidity_interactions(df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Temperature-humidity interaction features (from synthetic_data)."""
+        features = {}
+        
+        if all(col in df.columns for col in ['Temperature', 'Humidity']):
+            # Temperature-humidity interaction
+            features['temp_humidity'] = df['Temperature'] * df['Humidity'] / 100
+            
+        return features
+    
+    @staticmethod
+    def get_soil_crop_combinations(df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Soil-crop combination features (from synthetic_data)."""
+        features = {}
+        
+        if all(col in df.columns for col in ['Soil Type', 'Crop Type']):
+            # Soil-crop combination
+            features['soil_crop'] = df['Soil Type'] + '_' + df['Crop Type']
+            features['soil_crop'] = features['soil_crop'].astype('category')
+            
+        return features
