@@ -13,6 +13,7 @@ import time
 import signal
 import logging
 import argparse
+import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional
 import warnings
@@ -185,6 +186,9 @@ class FeatureDiscoveryRunner:
         try:
             # Initialize all components
             self._initialize_components()
+            
+            # Pre-build features at startup on 100% data
+            self._prebuild_features()
             
             # Get initial features
             initial_features = self._get_initial_features()
@@ -443,6 +447,64 @@ class FeatureDiscoveryRunner:
             
         except Exception as e:
             logger.error(f"Cleanup failed: {e}")
+    
+    def _prebuild_features(self) -> None:
+        """Pre-build all possible features at startup on 100% dataset."""
+        logger = logging.getLogger(__name__)
+        logger.info("🏗️ Pre-building features on 100% dataset...")
+        
+        try:
+            # Import feature cache manager 
+            from src.feature_cache import FeatureCacheManager
+            from src.data_utils import prepare_training_data
+            
+            # Get dataset paths
+            train_path = self.config['autogluon']['train_path']
+            test_path = self.config['autogluon']['test_path']
+            
+            if not train_path or not test_path:
+                logger.warning("⚠️ No dataset paths configured - skipping feature pre-building")
+                return
+                
+            # Initialize cache manager
+            cache_manager = FeatureCacheManager(train_path)
+            
+            # Ensure base datasets are cached
+            cache_manager.ensure_base_datasets(train_path, test_path)
+            
+            # Load 100% of data (ignore train_size for pre-building)
+            train_full_df = pd.read_csv(train_path)
+            test_full_df = pd.read_csv(test_path)
+            
+            logger.info(f"📊 Loaded full datasets: train={len(train_full_df)}, test={len(test_full_df)}")
+            
+            # Get all possible feature operations from feature space
+            all_operations = list(self.feature_space.operations.keys())
+            
+            # Build feature definitions for cache manager
+            feature_definitions = []
+            
+            for operation_name in all_operations:
+                for data_type, df in [('train', train_full_df), ('test', test_full_df)]:
+                    def build_func():
+                        return self.feature_space._apply_domain_operation(df, operation_name)
+                    
+                    feature_definitions.append({
+                        'name': operation_name,
+                        'data_type': data_type,
+                        'build_func': build_func
+                    })
+            
+            # Batch build all missing features
+            cache_manager.batch_build_features(feature_definitions)
+            
+            # Log cache statistics
+            cache_stats = cache_manager.get_cache_stats()
+            logger.info(f"✅ Feature pre-building complete: {cache_stats['total_features']} features, {cache_stats['cache_size_mb']:.1f}MB")
+            
+        except Exception as e:
+            logger.error(f"❌ Feature pre-building failed: {e}")
+            logger.info("🔄 Continuing without pre-built features...")
 
 def list_sessions(config_path: str, limit: int = 10) -> None:
     """List recent sessions from database."""

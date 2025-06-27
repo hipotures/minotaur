@@ -85,6 +85,17 @@ class FeatureSpace:
         self.min_improvement_threshold = self.feature_config['min_improvement_threshold']
         self.feature_timeout = self.feature_config['feature_timeout']
         
+        # NEW: Feature building control parameters
+        self.max_features_to_build = self.feature_config.get('max_features_to_build')
+        self.max_features_per_iteration = self.feature_config.get('max_features_per_iteration')
+        self.feature_build_timeout = self.feature_config.get('feature_build_timeout', 300)
+        self.cache_miss_limit = self.feature_config.get('cache_miss_limit', 50)
+        
+        # Tracking counters
+        self.features_built_count = 0
+        self.iteration_feature_count = 0
+        self.cache_miss_count = 0
+        
         # Caching system
         self.feature_cache: Dict[str, pd.DataFrame] = {}
         self.cache_metadata: Dict[str, Dict] = {}
@@ -767,3 +778,48 @@ class FeatureSpace:
         self.cache_metadata.clear()
         self.cache_size_mb = 0.0
         logger.info("Feature space cleanup completed")
+    
+    # NEW: Feature building control methods
+    def can_build_more_features(self) -> bool:
+        """Check if more features can be built based on limits."""
+        if self.max_features_to_build and self.features_built_count >= self.max_features_to_build:
+            logger.warning(f"🚫 Reached feature build limit: {self.max_features_to_build}")
+            return False
+        
+        if self.cache_miss_limit and self.cache_miss_count >= self.cache_miss_limit:
+            logger.warning(f"🚫 Reached cache miss limit: {self.cache_miss_limit}")
+            return False
+            
+        return True
+    
+    def can_build_more_features_this_iteration(self) -> bool:
+        """Check if more features can be built in this MCTS iteration."""
+        if self.max_features_per_iteration and self.iteration_feature_count >= self.max_features_per_iteration:
+            logger.warning(f"🚫 Reached per-iteration feature limit: {self.max_features_per_iteration}")
+            return False
+        return True
+    
+    def reset_iteration_counter(self):
+        """Reset iteration feature counter for new MCTS iteration."""
+        self.iteration_feature_count = 0
+        logger.debug(f"🔄 Reset iteration counter. Total built: {self.features_built_count}")
+    
+    def increment_feature_counters(self):
+        """Increment feature building counters."""
+        self.features_built_count += 1
+        self.iteration_feature_count += 1
+        self.cache_miss_count += 1
+        logger.debug(f"📊 Features built: {self.features_built_count}, iteration: {self.iteration_feature_count}")
+    
+    def get_build_stats(self) -> dict:
+        """Get feature building statistics."""
+        return {
+            'features_built_total': self.features_built_count,
+            'features_built_this_iteration': self.iteration_feature_count,
+            'cache_misses': self.cache_miss_count,
+            'max_features_to_build': self.max_features_to_build,
+            'max_features_per_iteration': self.max_features_per_iteration,
+            'cache_miss_limit': self.cache_miss_limit,
+            'can_build_more': self.can_build_more_features(),
+            'can_build_more_this_iteration': self.can_build_more_features_this_iteration()
+        }

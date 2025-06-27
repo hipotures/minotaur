@@ -47,6 +47,12 @@ feature_space:
   feature_timeout: 30                     # Short timeout
   max_cache_size_mb: 256                  # Tiny cache
   
+  # NEW: Feature building limits for ultra-fast testing
+  max_features_to_build: 10               # Only build 10 features total
+  max_features_per_iteration: 3           # Max 3 features per MCTS iteration
+  feature_build_timeout: 60               # 1 minute timeout per feature
+  cache_miss_limit: 10                    # Max 10 cache misses
+  
   # Only most effective categories
   enabled_categories:
     - 'npk_interactions'                  # Essential only

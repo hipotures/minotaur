@@ -78,6 +78,12 @@ feature_space:
   min_improvement_threshold: 0.0005  # Minimum MAP@3 improvement to consider
   feature_timeout: 300          # Max seconds to generate features
   
+  # NEW: Feature building control parameters
+  max_features_to_build: null        # null = unlimited, number = limit total features built
+  max_features_per_iteration: null   # null = unlimited, number = limit per MCTS iteration  
+  feature_build_timeout: 300         # Timeout per individual feature building (seconds)
+  cache_miss_limit: 50              # Max cache misses allowed per session
+  
   # Feature categories to explore
   enabled_categories:
     - 'npk_interactions'
