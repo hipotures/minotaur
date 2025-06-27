@@ -20,7 +20,7 @@ from pathlib import Path
 # Import existing feature engineering module
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from feature_engineering import load_or_create_features
+from scripts.feature_engineering import load_or_create_features
 from .synthetic_data import generate_synthetic_features, augment_synthetic_features
 from .timing import timed, timing_context, record_timing
 from .data_utils import DataManager, smart_sample, estimate_memory_usage
