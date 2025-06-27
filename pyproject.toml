@@ -1,0 +1,29 @@
+[project]
+name = "minotaur"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "autogluon>=1.0.0",
+    "catboost>=1.2.0",
+    "cloudpickle>=3.1.0",
+    "dill>=0.3.7",
+    "hyperopt>=0.2.7",
+    "joblib>=1.5.0",
+    "lightgbm>=3.3.0",
+    "matplotlib>=3.10.0",
+    "numpy>=1.21.0",
+    "optuna>=3.0.0",
+    "pandas>=1.5.0",
+    "plotly>=6.0.0",
+    "pyyaml>=6.0.0",
+    "requests>=2.32.0",
+    "rtdl-num-embeddings>=0.0.11,<0.1",
+    "scikit-learn>=1.1.0",
+    "scipy>=1.8.0",
+    "seaborn>=0.13.0",
+    "torch>=2.0,<3",
+    "tqdm>=4.60.0",
+    "xgboost>=2.0.0",
+]

@@ -30,7 +30,7 @@ minotaur/
 │   ├── 008_fertilizer_prediction_autogluon.py   # AutoGluon models
 │   └── 009_fertilizer_prediction_autogluon_full_features.py
 │
-├── 📁 mcts_feature_discovery/  # MCTS system modules
+├── 📁 src/                     # Source code modules
 │   ├── __init__.py
 │   ├── mcts_engine.py           # Monte Carlo Tree Search engine
 │   ├── autogluon_evaluator.py   # AutoGluon evaluation wrapper
@@ -82,6 +82,17 @@ minotaur/
 ```
 
 ## 🚀 Quick Start
+
+### Environment Setup
+```bash
+# Initialize UV environment (Python 3.12)
+uv init
+uv venv --python 3.12
+source .venv/bin/activate
+
+# Install dependencies with UV
+uv add -r requirements.txt
+```
 
 ### 1. MCTS Feature Discovery
 

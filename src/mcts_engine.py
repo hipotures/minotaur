@@ -317,7 +317,7 @@ class MCTSEngine:
             if score > self.best_score:
                 self.best_score = score
                 self.best_node = node
-                logger.info(f"New best score: {score:.5f} at iteration {self.current_iteration}")
+                logger.info(f"\033[91m🎯 New best score: {score:.5f} at iteration {self.current_iteration}\033[0m")
             
             logger.debug(f"Evaluated node: score={score:.5f}, time={evaluation_time:.2f}s")
             
@@ -630,9 +630,9 @@ class MCTSEngine:
         progress = (self.current_iteration / self.max_iterations) * 100
         
         logger.info(
-            f"Progress: {progress:.1f}% ({self.current_iteration}/{self.max_iterations}) | "
+            f"\033[94m📊 Progress: {progress:.1f}% ({self.current_iteration}/{self.max_iterations}) | "
             f"Best: {self.best_score:.5f} | "
             f"Nodes: {stats['total_nodes']} | "
             f"Memory: {stats['memory_usage_mb']:.1f}MB | "
-            f"Eval/iter: {stats['evaluations']}"
+            f"Eval/iter: {stats['evaluations']}\033[0m"
         )

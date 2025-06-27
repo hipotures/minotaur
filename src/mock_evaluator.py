@@ -91,7 +91,6 @@ class MockAutoGluonEvaluator:
         # Update best score
         if score > self.best_score:
             self.best_score = score
-            logger.info(f"Mock: New best score {score:.5f}")
         
         logger.debug(f"Mock evaluation: {score:.5f} for {len(features_df.columns)} features")
         return score

@@ -51,6 +51,17 @@ autogluon:
   holdout_frac: 0.2                           # Holdout fraction for validation
   verbosity: 1                                # 0=silent, 1=minimal, 2=verbose
   
+  # Evaluation phases
+  fast_eval:
+    time_limit: 20                            # Fast exploration phase
+    presets: 'good_quality_faster_inference'
+  
+  thorough_eval:
+    time_limit: 60                            # Thorough exploitation phase
+    presets: 'good_quality'
+  
+  thorough_eval_threshold: 0.7                # Switch to thorough eval at 70% of iterations
+  
   # Final evaluation (best features only)
   final_eval:
     time_limit: 600                           # 10 minutes for final evaluation
@@ -112,7 +123,7 @@ database:
 # Logging and Monitoring  
 logging:
   level: 'INFO'                # DEBUG, INFO, WARNING, ERROR
-  log_file: '../logs/mcts_discovery.log'
+  log_file: 'logs/mcts_discovery.log'
   max_log_size_mb: 100
   backup_count: 5
   

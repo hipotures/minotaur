@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from mcts_feature_discovery import (
+from src import (
     FeatureDiscoveryDB,
     MCTSEngine, 
     FeatureSpace,

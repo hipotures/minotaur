@@ -28,10 +28,15 @@ python run_feature_discovery.py --list-sessions
 python run_feature_discovery.py --resume [SESSION_ID]
 ```
 
-### Example ML Model Execution
+### Environment Setup and Dependencies
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Initialize UV environment (Python 3.12)
+uv init
+uv venv --python 3.12
+source .venv/bin/activate
+
+# Install dependencies with UV
+uv add -r requirements.txt
 
 # Run example models (generates Kaggle submissions)
 python examples/001_fertilizer_prediction_gpu.py      # Baseline LightGBM (MAP@3: 0.32065)
@@ -43,67 +48,33 @@ python examples/006_fertilizer_prediction_tabm.py # Neural network approach
 ### MCTS Feature Discovery - Configuration System
 ```bash
 # Ultra-fast development with mock evaluator (30 seconds)
-python fertilizer_models/run_feature_discovery.py --test-mode
+python run_feature_discovery.py --test-mode
 
 # Fast real AutoGluon with override config (2-5 minutes) 
 # Uses mcts_config.yaml + mcts_config_fast_real.yaml overrides
-python fertilizer_models/run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autogluon
+python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --real-autogluon
 
 # Production feature discovery with base config (hours)
-python fertilizer_models/run_feature_discovery.py --config mcts_config.yaml
+python run_feature_discovery.py --config config/mcts_config.yaml
 
 # Session management
-python fertilizer_models/run_feature_discovery.py --list-sessions
-python fertilizer_models/run_feature_discovery.py --resume [SESSION_ID]
+python run_feature_discovery.py --list-sessions
+python run_feature_discovery.py --resume [SESSION_ID]
 
 # Configuration validation
-python fertilizer_models/run_feature_discovery.py --config mcts_config_fast_real.yaml --validate-config
+python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --validate-config
 ```
 
-### AIDE Framework (Embedded)
-```bash
-# Install AIDE framework
-pip install -e aideml/
-
-# Web UI
-cd aideml/aide/webui && streamlit run app.py
-
-# CLI usage
-aide data_dir="competitions/playground-series-s5e6" goal="Predict fertilizer type" eval="MAP@3"
-```
 
 ## Architecture
 
-### Multi-Agent Orchestrator System
-- **Orchestrator** (orchestrator.go): Main controller managing agent execution
-- **Agent Configurations** (agents/*.yaml): Specialized AI agents for different ML tasks
-- **Strategies**: Different approaches to problem-solving (data_first, domain_first, solution_space)
-- **Session Management**: All interactions logged in sessions/[timestamp]_[strategy]/
-
-### Agent Types
-- **data_explorer**: EDA and data understanding
-- **feature_engineer**: Domain-specific feature creation  
-- **algorithm_selector**: ML model recommendations
-- **code_generator**: Python implementation
-- **validator**: Code quality checks
-- **experiment_tracker**: Performance optimization
-- **solution_space_explorer**: Research existing solutions
-- **submission**: Final Kaggle preparation
-
-### LLM Integration
-The system supports multiple LLM backends:
-- **Claude CLI**: Direct integration with Anthropic's CLI
-- **OpenAI APIs**: Including OpenRouter for DeepSeek models
-- **DeepSeek**: Current default (deepseek-reasoner for complex reasoning)
-
-Configure via `config.yaml`:
-```yaml
-llm:
-  type: "openai"  # or "claude"
-  openai:
-    model: "deepseek-reasoner"
-    base_url: "https://api.deepseek.com"
-```
+### MCTS-Driven Feature Discovery System
+- **MCTSEngine**: Monte Carlo Tree Search with UCB1 selection algorithm
+- **FeatureSpace**: 6 categories of agricultural domain feature operations
+- **AutoGluonEvaluator**: Fast ML model evaluation using AutoGluon TabularPredictor
+- **MockEvaluator**: Ultra-fast testing mode for development
+- **Analytics**: Comprehensive performance monitoring and visualization
+- **Database**: SQLite logging of complete exploration history
 
 ## MCTS Configuration System
 
@@ -212,23 +183,20 @@ Each model includes comprehensive feature engineering with agricultural domain k
 
 ### Quick Start - MCTS Feature Discovery
 ```bash
-# Navigate to fertilizer models directory
-cd fertilizer_models/
-
 # 1. Ultra-fast testing with mock evaluator (30 seconds)
 python run_feature_discovery.py --test-mode
 
 # 2. Real AutoGluon validation with small dataset (2-5 minutes)
-python run_feature_discovery.py --real-autogluon
+python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --real-autogluon
 
 # 3. Full production feature discovery (hours)
-python run_feature_discovery.py
+python run_feature_discovery.py --config config/mcts_config.yaml
 
 # 4. Resume interrupted session
 python run_feature_discovery.py --resume
 
 # 5. Configuration validation
-python run_feature_discovery.py --validate-config
+python run_feature_discovery.py --config config/mcts_config_fast_real.yaml --validate-config
 ```
 
 ### MCTS Configuration (mcts_config.yaml)
@@ -314,7 +282,7 @@ The system includes advanced data optimization for rapid iteration:
 tail -f mcts_discovery.log
 
 # Check system resources
-python -c "from mcts_feature_discovery import performance_monitor; print('System OK')"
+python -c "from src import performance_monitor; print('System OK')"
 
 # Database inspection
 sqlite3 feature_discovery.db "SELECT * FROM exploration_history ORDER BY evaluation_score DESC LIMIT 10;"

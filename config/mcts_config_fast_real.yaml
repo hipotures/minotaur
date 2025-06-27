@@ -53,34 +53,32 @@ resources:
 data:
   prefer_parquet: true                    # Always use parquet
   auto_convert_csv: true                  # Auto convert
-  use_small_dataset: true                 # Enable sampling
-  small_dataset_size: 5000                # 5K samples
   memory_limit_mb: 100                    # Low memory limit
   dtype_optimization: true                # Optimize types
 
 # Database - Smaller limits
 database:
-  path: '../data/feature_discovery_fast.db'      # Separate DB
+  path: 'data/feature_discovery_fast.db'      # Separate DB
   max_history_size: 10000                 # Smaller history
   backup_interval: 25                     # More frequent
   retention_days: 7                       # Shorter retention
 
 # Logging - Faster reporting
 logging:
-  log_file: '../logs/mcts_discovery_fast.log'    # Separate log
+  log_file: 'logs/mcts_discovery_fast.log'    # Separate log
   max_log_size_mb: 50                     # Smaller logs
   progress_interval: 5                    # More frequent progress
 
-# Testing - Consistent with data settings
+# Testing - Mock evaluator settings
 testing:
-  small_dataset_size: 5000                # Match data.small_dataset_size
+  fast_test_mode: false                   # Real AutoGluon mode
 
 # Export - Minimal for speed
 export:
   formats: ['python', 'json']             # Skip HTML
-  python_output: '../outputs/best_features_fast.py'
+  python_output: 'outputs/best_features_fast.py'
   include_documentation: false            # Skip docs
-  output_dir: '../outputs/reports_fast'
+  output_dir: 'outputs/reports'
   export_on_improvement: false            # Skip intermediate exports
 
 # Analytics - Minimal

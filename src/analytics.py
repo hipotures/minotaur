@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Optional visualization imports
 try:
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend
     import matplotlib.pyplot as plt
     import seaborn as sns
     PLOTTING_AVAILABLE = True
