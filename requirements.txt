@@ -1,12 +1,37 @@
+# Core ML Frameworks
 lightgbm>=3.3.0
 xgboost>=2.0.0
 catboost>=1.2.0
-optuna>=3.0.0
+autogluon>=1.0.0
 torch>=2.0,<3
-rtdl_num_embeddings>=0.0.11,<0.1
-tqdm>=4.60.0
+scikit-learn>=1.1.0
+
+# Data Processing
 numpy>=1.21.0
 pandas>=1.5.0
-scikit-learn>=1.1.0
 scipy>=1.8.0
-autogluon>=1.0.0
+
+# Hyperparameter Optimization
+optuna>=3.0.0
+hyperopt>=0.2.7
+
+# Visualization and Analysis
+matplotlib>=3.10.0
+seaborn>=0.13.0
+plotly>=6.0.0
+
+# Configuration and Utilities
+PyYAML>=6.0.0
+tqdm>=4.60.0
+joblib>=1.5.0
+cloudpickle>=3.1.0
+dill>=0.3.7
+
+# Web and API (for potential web interfaces)
+requests>=2.32.0
+
+# Neural Network Specific (TabM)
+rtdl_num_embeddings>=0.0.11,<0.1
+
+# Distributed Computing (optional for large-scale)
+# ray>=2.44.0  # Uncomment if using Ray for distributed processing
