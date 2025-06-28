@@ -25,22 +25,22 @@ python run_feature_discovery.py --config config/mcts_config.yaml --new-session
 
 # This will fail with dataset registration error, but creates the database
 # Then list available datasets:
-python scripts/duckdb_manager.py datasets --list
+python manager.py datasets --list
 ```
 
 ### Dataset Management
 ```bash
 # Register datasets (required for system operation)
-python scripts/duckdb_manager.py datasets --register \
+python manager.py datasets --register \
   --dataset-name playground-series-s5e6-2025 \
   --auto \
   --dataset-path /path/to/your/dataset/
 
 # Verify dataset registration
-python scripts/duckdb_manager.py datasets --show playground-series-s5e6-2025
+python manager.py datasets --show playground-series-s5e6-2025
 
 # List all registered datasets
-python scripts/duckdb_manager.py datasets --list
+python manager.py datasets --list
 ```
 
 ### MCTS Feature Discovery
@@ -199,25 +199,25 @@ autogluon:
 ### DuckDB Manager - Modular System
 ```bash
 # Show available modules and commands
-python scripts/duckdb_manager.py
+python manager.py
 
 # Dataset management
-python scripts/duckdb_manager.py datasets --list
-python scripts/duckdb_manager.py datasets --register --help
-python scripts/duckdb_manager.py datasets --show DATASET_NAME
+python manager.py datasets --list
+python manager.py datasets --register --help
+python manager.py datasets --show DATASET_NAME
 
 # Session analysis
-python scripts/duckdb_manager.py sessions --list
-python scripts/duckdb_manager.py sessions --compare session1 session2
+python manager.py sessions --list
+python manager.py sessions --compare session1 session2
 
 # Feature analysis
-python scripts/duckdb_manager.py features --top 10
-python scripts/duckdb_manager.py features --search npk
+python manager.py features --top 10
+python manager.py features --search npk
 
 # System maintenance
-python scripts/duckdb_manager.py backup --create
-python scripts/duckdb_manager.py selfcheck --run
-python scripts/duckdb_manager.py verification --verify-latest
+python manager.py backup --create
+python manager.py selfcheck --run
+python manager.py verification --verify-latest
 ```
 
 ### Database Architecture
@@ -336,7 +336,7 @@ outputs/sessions/session_YYYYMMDD_HHMMSS/
 - **Validate configs** before running: `--validate-config`
 
 ### Dataset Requirements
-- **Register datasets first** using `scripts/duckdb_manager.py datasets --register`
+- **Register datasets first** using `manager.py datasets --register`
 - **Verify registration** before running MCTS discovery
 - **Use centralized dataset names** instead of hardcoded paths
 - **Monitor dataset integrity** with verification modules
