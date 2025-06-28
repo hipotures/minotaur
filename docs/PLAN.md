@@ -21,7 +21,7 @@ fertilizer_models/
 │   └── analytics.py             # Dashboard i raporty
 ├── feature_discovery.db         # SQLite baza danych
 ├── mcts_config.yaml            # Konfiguracja systemu
-└── run_feature_discovery.py    # Główny skrypt uruchomieniowy
+└── mcts.py    # Główny skrypt uruchomieniowy
 ```
 
 ### 2.2 SQLite Schema

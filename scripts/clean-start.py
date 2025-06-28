@@ -293,9 +293,9 @@ def main():
     print("✅ .venv/ and .pytest_cache/ left intact")
     print("✅ .git/ repository preserved")
     print("\n📋 Next steps:")
-    print("1. Run: python run_feature_discovery.py --config config/mcts_config.yaml --new-session")
-    print("2. Register datasets: python scripts/duckdb_manager.py datasets --register")
-    print("3. Verify setup: python scripts/duckdb_manager.py selfcheck --run")
+    print("1. Run: python mcts.py --config config/mcts_config.yaml --new-session")
+    print("2. Register datasets: python manager.py datasets --register")
+    print("3. Verify setup: python manager.py selfcheck --run")
     
     if failed_count > 0:
         print(f"\n⚠️  Warning: {failed_count} items could not be removed (likely permission issues)")

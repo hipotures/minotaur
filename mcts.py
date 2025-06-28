@@ -749,10 +749,10 @@ def list_sessions(config_path: str, limit: int = 10) -> None:
         
         print("-" * 120)
         print(f"\n💡 Usage:")
-        print(f"   Continue last session:     python run_feature_discovery.py --resume")
-        print(f"   Continue specific session: python run_feature_discovery.py --resume {sessions[0][0][:8]}")
-        print(f"   Start new session:         python run_feature_discovery.py --new-session")
-        print(f"   List more sessions:        python run_feature_discovery.py --list-sessions --session-limit 20")
+        print(f"   Continue last session:     python mcts.py --resume")
+        print(f"   Continue specific session: python mcts.py --resume {sessions[0][0][:8]}")
+        print(f"   Start new session:         python mcts.py --new-session")
+        print(f"   List more sessions:        python mcts.py --list-sessions --session-limit 20")
         
     except Exception as e:
         print(f"❌ Error listing sessions: {e}")

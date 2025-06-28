@@ -17,17 +17,17 @@ This is an **independent MCTS-driven feature discovery system** for agricultural
 ### MCTS Feature Discovery Operations
 ```bash
 # Ultra-fast testing with 100 samples (30 seconds)
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_test.yaml --test-mode
+python mcts.py --config config/mcts_config_s5e6_fast_test.yaml --test-mode
 
 # Fast real evaluation with 5% data (2-5 minutes)
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
+python mcts.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
 
 # Production feature discovery with 80% data (hours)
-python run_feature_discovery.py --config config/mcts_config_s5e6_production.yaml
+python mcts.py --config config/mcts_config_s5e6_production.yaml
 
 # Session management
-python run_feature_discovery.py --list-sessions
-python run_feature_discovery.py --resume [SESSION_ID]
+python mcts.py --list-sessions
+python mcts.py --resume [SESSION_ID]
 ```
 
 ### Environment Setup and Dependencies
@@ -68,24 +68,24 @@ python -m py_compile src/db_service.py   # Check refactored database layer
 ### MCTS Feature Discovery - Configuration System
 ```bash
 # Ultra-fast development with mock evaluator (30 seconds)
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 
 # Fast real AutoGluon with S5E6 override config (2-5 minutes) 
 # Uses mcts_config.yaml + mcts_config_s5e6_fast_real.yaml overrides
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
+python mcts.py --config config/mcts_config_s5e6_fast_real.yaml --real-autogluon
 
 # Production feature discovery with S5E6 config (hours)
-python run_feature_discovery.py --config config/mcts_config_s5e6_production.yaml
+python mcts.py --config config/mcts_config_s5e6_production.yaml
 
 # Titanic domain testing and validation (30-60 seconds)
-python run_feature_discovery.py --config config/mcts_config_titanic_test.yaml
+python mcts.py --config config/mcts_config_titanic_test.yaml
 
 # Session management
-python run_feature_discovery.py --list-sessions
-python run_feature_discovery.py --resume [SESSION_ID]
+python mcts.py --list-sessions
+python mcts.py --resume [SESSION_ID]
 
 # Configuration validation
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml --validate-config
+python mcts.py --config config/mcts_config_s5e6_fast_real.yaml --validate-config
 ```
 
 ## Memories

@@ -21,7 +21,7 @@ uv add -r requirements.txt
 ### First Run - Database Initialization
 ```bash
 # Create database and initialize schema (required first step)
-python run_feature_discovery.py --config config/mcts_config.yaml --new-session
+python mcts.py --config config/mcts_config.yaml --new-session
 
 # This will fail with dataset registration error, but creates the database
 # Then list available datasets:
@@ -46,28 +46,28 @@ python manager.py datasets --list
 ### MCTS Feature Discovery
 ```bash
 # Fast testing with S5E6 dataset (2-5 minutes)
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_real.yaml
+python mcts.py --config config/mcts_config_s5e6_fast_real.yaml
 
 # Ultra-fast testing with small sample (30 seconds)
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_test.yaml
+python mcts.py --config config/mcts_config_s5e6_fast_test.yaml
 
 # Production feature discovery (hours)
-python run_feature_discovery.py --config config/mcts_config_s5e6_production.yaml
+python mcts.py --config config/mcts_config_s5e6_production.yaml
 
 # Titanic domain testing (30-60 seconds)
-python run_feature_discovery.py --config config/mcts_config_titanic_test.yaml
+python mcts.py --config config/mcts_config_titanic_test.yaml
 ```
 
 ### Session Management
 ```bash
 # List recent sessions
-python run_feature_discovery.py --list-sessions
+python mcts.py --list-sessions
 
 # Resume last session
-python run_feature_discovery.py --resume
+python mcts.py --resume
 
 # Resume specific session
-python run_feature_discovery.py --resume SESSION_ID
+python mcts.py --resume SESSION_ID
 ```
 
 ## 🏗️ Architecture
@@ -104,7 +104,7 @@ minotaur/
 │   ├── mcts_config_s5e6_fast_test.yaml  # S5E6 ultra-fast testing
 │   └── mcts_config_titanic_test.yaml    # Titanic domain testing
 │
-├── 📄 run_feature_discovery.py         # **MAIN SCRIPT** - MCTS orchestration
+├── 📄 mcts.py                          # **MAIN SCRIPT** - MCTS orchestration
 │
 ├── 📁 src/              # Source code modules
 │   ├── db/                               # Database abstraction layer

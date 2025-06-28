@@ -189,7 +189,7 @@ Twórz własne konfiguracje dziedziczące z tego pliku.
 
 ### B. Test cache'owania:
 ```bash
-python run_feature_discovery.py --config config/mcts_config_s5e6_fast_test.yaml --test-mode
+python mcts.py --config config/mcts_config_s5e6_fast_test.yaml --test-mode
 ```
 
 ## REZULTAT:

@@ -65,7 +65,7 @@ operation_performance (operation_name, execution_time, memory_usage)
 
 ### Mock Evaluator Testing
 ```bash
-$ python run_feature_discovery.py --test-mode
+$ python mcts.py --test-mode
 # Results: 10 iterations completed in 28.4 seconds
 # Mock score progression: 0.300 → 0.315 → 0.328 → 0.342
 # All system components functional
@@ -73,7 +73,7 @@ $ python run_feature_discovery.py --test-mode
 
 ### Real AutoGluon Validation
 ```bash
-$ python run_feature_discovery.py --real-autogluon
+$ python mcts.py --real-autogluon
 # Results: 3 iterations completed in 4.2 minutes
 # Data: train=4000, val=1000, test=1250 (small dataset mode)
 # Real MAP@3 progression: 0.301 → 0.318 → 0.331
@@ -222,19 +222,19 @@ $ python run_feature_discovery.py --real-autogluon
 ### Development Environment
 ```bash
 # Ultra-fast development cycle (30 seconds)
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 ```
 
 ### Validation Environment
 ```bash
 # Real model validation (2-5 minutes)
-python run_feature_discovery.py --real-autogluon
+python mcts.py --real-autogluon
 ```
 
 ### Production Environment
 ```bash
 # Full feature discovery (hours to days)
-python run_feature_discovery.py --config production_config.yaml
+python mcts.py --config production_config.yaml
 ```
 
 ### Monitoring Dashboard

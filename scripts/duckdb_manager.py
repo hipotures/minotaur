@@ -88,7 +88,7 @@ class ModularDuckDBManager:
         }
     
     def _create_database_with_migrations(self) -> None:
-        """Create database and run migrations using the same system as run_feature_discovery.py"""
+        """Create database and run migrations using the same system as mcts.py"""
         try:
             # Import the database service from the main system
             import sys
@@ -123,7 +123,7 @@ class ModularDuckDBManager:
                 
         except Exception as e:
             print(f"❌ Failed to create database: {e}")
-            print("💡 Try running: python run_feature_discovery.py --list-sessions")
+            print("💡 Try running: python mcts.py --list-sessions")
             raise
     
     def _discover_modules(self) -> None:

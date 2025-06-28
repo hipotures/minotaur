@@ -1045,7 +1045,7 @@ class SelfCheckModule(ModuleInterface):
             # Run feature discovery
             cmd = [
                 sys.executable, 
-                str(manager.project_root / "run_feature_discovery.py"),
+                str(manager.project_root / "mcts.py"),
                 "--config", config_path,
                 "--real-autogluon"
             ]

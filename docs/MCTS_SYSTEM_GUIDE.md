@@ -58,7 +58,7 @@ mcts_feature_discovery/
 - **feature_engineering.py**: Shared feature generation module
 - **CLAUDE.md**: System documentation and commands
 - **mcts_config.yaml**: Centralized configuration
-- **run_feature_discovery.py**: Main orchestrator script
+- **mcts.py**: Main orchestrator script
 
 ### Data Flow
 ```
@@ -92,19 +92,19 @@ pip install pytest jupyter
 cd fertilizer_models/
 
 # 2. Test with mock evaluator (30 seconds)
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 
 # 3. Test with real AutoGluon (2-5 minutes)
-python run_feature_discovery.py --real-autogluon
+python mcts.py --real-autogluon
 
 # 4. Full production run (hours)
-python run_feature_discovery.py
+python mcts.py
 ```
 
 ### Verify Installation
 ```bash
 # Check configuration
-python run_feature_discovery.py --validate-config
+python mcts.py --validate-config
 
 # Test components individually
 python -c "from mcts_feature_discovery import MCTSEngine, AUTOGLUON_AVAILABLE; print(f'AutoGluon: {AUTOGLUON_AVAILABLE}')"
@@ -165,12 +165,12 @@ autogluon:
 ### Command Line Overrides
 ```bash
 # Override session mode
-python run_feature_discovery.py --new-session
-python run_feature_discovery.py --resume
+python mcts.py --new-session
+python mcts.py --resume
 
 # Testing modes
-python run_feature_discovery.py --test-mode      # Mock evaluator
-python run_feature_discovery.py --real-autogluon # Small dataset
+python mcts.py --test-mode      # Mock evaluator
+python mcts.py --real-autogluon # Small dataset
 ```
 
 ---
@@ -180,7 +180,7 @@ python run_feature_discovery.py --real-autogluon # Small dataset
 ### Example 1: Quick Development Testing
 ```bash
 # Fast mock testing (30 seconds)
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 
 # Expected output:
 # INFO - MCTS-Driven Automated Feature Engineering System
@@ -192,7 +192,7 @@ python run_feature_discovery.py --test-mode
 ### Example 2: Real AutoGluon Validation
 ```bash
 # Small dataset real evaluation (2-5 minutes)
-python run_feature_discovery.py --real-autogluon
+python mcts.py --real-autogluon
 
 # Monitor progress:
 tail -f mcts_discovery.log
@@ -201,11 +201,11 @@ tail -f mcts_discovery.log
 ### Example 3: Production Run
 ```bash
 # Full feature discovery (hours)
-python run_feature_discovery.py --config production_config.yaml
+python mcts.py --config production_config.yaml
 
 # Session management:
-python run_feature_discovery.py --resume        # Continue last session
-python run_feature_discovery.py --new-session   # Start fresh
+python mcts.py --resume        # Continue last session
+python mcts.py --new-session   # Start fresh
 ```
 
 ### Example 4: Custom Configuration
@@ -371,7 +371,7 @@ Error: Using real AutoGluon despite --test-mode flag
 ```
 **Solution**: Check config override application:
 ```python
-# Verify override in run_feature_discovery.py:
+# Verify override in mcts.py:
 config_overrides = {
     'testing': {
         'use_mock_evaluator': True,
@@ -421,7 +421,7 @@ Error: Missing required config section: 'mcts'
 ```
 **Solution**: Validate config file:
 ```bash
-python run_feature_discovery.py --validate-config
+python mcts.py --validate-config
 ```
 
 ### Debug Mode

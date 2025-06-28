@@ -26,7 +26,7 @@ The MCTS system uses a **base + override** configuration architecture:
 
 ```bash
 # This command:
-python run_feature_discovery.py --config mcts_config_fast_real.yaml
+python mcts.py --config mcts_config_fast_real.yaml
 
 # Actually does:
 # 1. Load mcts_config.yaml (base)
@@ -62,7 +62,7 @@ autogluon:
 
 ### Mock Mode (Development)
 ```bash
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 ```
 - **Purpose**: Ultra-fast development and debugging
 - **Evaluator**: Synthetic mock scores
@@ -71,7 +71,7 @@ python run_feature_discovery.py --test-mode
 
 ### Fast Test Mode (Quick Testing)
 ```bash
-python run_feature_discovery.py --config mcts_config_fast_test.yaml --real-autogluon
+python mcts.py --config mcts_config_fast_test.yaml --real-autogluon
 ```
 - **Purpose**: Ultra-fast testing with real AutoGluon
 - **Configuration**: mcts_config.yaml + mcts_config_fast_test.yaml overrides
@@ -81,7 +81,7 @@ python run_feature_discovery.py --config mcts_config_fast_test.yaml --real-autog
 
 ### Fast Real Mode (Validation)
 ```bash
-python run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autogluon
+python mcts.py --config mcts_config_fast_real.yaml --real-autogluon
 ```
 - **Purpose**: Quick validation with real AutoGluon
 - **Configuration**: mcts_config.yaml + mcts_config_fast_real.yaml overrides
@@ -91,7 +91,7 @@ python run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autog
 
 ### Production Mode (Full Discovery)
 ```bash
-python run_feature_discovery.py --config mcts_config.yaml
+python mcts.py --config mcts_config.yaml
 ```
 - **Purpose**: Complete feature discovery
 - **Evaluator**: Full AutoGluon suite on complete data
@@ -182,19 +182,19 @@ python run_feature_discovery.py --config mcts_config.yaml
 ### Development → Fast Real
 ```bash
 # From:
-python run_feature_discovery.py --test-mode
+python mcts.py --test-mode
 
 # To:
-python run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autogluon
+python mcts.py --config mcts_config_fast_real.yaml --real-autogluon
 ```
 
 ### Fast Real → Production
 ```bash
 # From:
-python run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autogluon
+python mcts.py --config mcts_config_fast_real.yaml --real-autogluon
 
 # To:
-python run_feature_discovery.py --config mcts_config.yaml
+python mcts.py --config mcts_config.yaml
 ```
 
 ## Common Configuration Patterns
@@ -260,8 +260,8 @@ autogluon:
 
 ```bash
 # Validate configuration syntax
-python run_feature_discovery.py --config mcts_config_fast_real.yaml --validate-config
+python mcts.py --config mcts_config_fast_real.yaml --validate-config
 
 # Test configuration with minimal run
-python run_feature_discovery.py --config mcts_config_fast_real.yaml --real-autogluon
+python mcts.py --config mcts_config_fast_real.yaml --real-autogluon
 ```
