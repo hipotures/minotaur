@@ -121,7 +121,13 @@ class ModularDuckDBManager:
                         
                         # Inject required services
                         if hasattr(instance, 'inject_services'):
-                            instance.inject_services(self.services)
+                            # Include config and db_pool in services
+                            services_with_core = {
+                                **self.services,
+                                'config': self.config,
+                                'db_pool': self.db_pool
+                            }
+                            instance.inject_services(services_with_core)
                         
                         self.modules[instance.name] = instance
                         logging.debug(f"Loaded module: {instance.name}")
