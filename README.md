@@ -3,7 +3,6 @@
 Advanced automated feature engineering system using Monte Carlo Tree Search (MCTS) with enterprise-grade dataset management for agricultural fertilizer prediction.
 
 > **Primary Focus**: Kaggle competition "Predicting Optimal Fertilizers" (Playground Series S5E6)  
-> **Data Source**: Read-only access to `/mnt/ml/competitions/2025/playground-series-s5e6/`  
 > **Architecture**: Modern DuckDB-based system with repository pattern and connection pooling
 
 ## 🚀 Quick Start
@@ -31,11 +30,11 @@ python scripts/duckdb_manager.py datasets --list
 
 ### Dataset Management
 ```bash
-# Register the S5E6 dataset (required for system operation)
+# Register datasets (required for system operation)
 python scripts/duckdb_manager.py datasets --register \
   --dataset-name playground-series-s5e6-2025 \
   --auto \
-  --dataset-path /mnt/ml/competitions/2025/playground-series-s5e6/
+  --dataset-path /path/to/your/dataset/
 
 # Verify dataset registration
 python scripts/duckdb_manager.py datasets --show playground-series-s5e6-2025
@@ -191,8 +190,8 @@ autogluon:
 
 # Legacy system (still supported for backward compatibility)
 autogluon:
-  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
-  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  train_path: "/path/to/train.csv"
+  test_path: "/path/to/test.csv"
 ```
 
 ## 🗄️ Database Management
