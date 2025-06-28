@@ -20,7 +20,7 @@ from pathlib import Path
 # Import existing feature engineering module
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from scripts.feature_engineering import load_or_create_features
+from .feature_engineering import load_or_create_features
 from .timing import timed, timing_context, record_timing
 from .data_utils import DataManager, smart_sample, estimate_memory_usage
 
@@ -91,6 +91,20 @@ class FeatureSpace:
         self.feature_build_timeout = self.feature_config.get('feature_build_timeout', 300)
         self.cache_miss_limit = self.feature_config.get('cache_miss_limit', 50)
         
+        # Generic operations configuration
+        self.generic_operations = self.feature_config.get('generic_operations', {
+            'statistical_aggregations': True,
+            'polynomial_features': True,
+            'binning_features': True,
+            'ranking_features': True
+        })
+        self.generic_params = self.feature_config.get('generic_params', {
+            'polynomial_degree': 2,
+            'binning_bins': 5,
+            'groupby_columns': [],
+            'aggregate_columns': []
+        })
+        
         # Tracking counters
         self.features_built_count = 0
         self.iteration_feature_count = 0
@@ -101,49 +115,150 @@ class FeatureSpace:
         self.cache_metadata: Dict[str, Dict] = {}
         self.cache_size_mb = 0.0
         
-        # Base data paths
-        self.train_path = self.autogluon_config['train_path']
-        self.test_path = self.autogluon_config['test_path']
+        # Base data paths - support both new dataset_name system and legacy paths
+        dataset_name = self.autogluon_config.get('dataset_name')
+        if dataset_name:
+            # New system: use cached dataset
+            cache_dir = Path(config.get('project_root', '.')) / 'cache' / dataset_name
+            cache_db_path = cache_dir / 'dataset.duckdb'
+            
+            if cache_db_path.exists():
+                self.train_path = str(cache_db_path)
+                self.test_path = str(cache_db_path)  # Same file contains both tables
+                self.use_cached_dataset = True
+                self.dataset_name = dataset_name
+                logger.info(f"Using cached dataset for feature space: {dataset_name}")
+            else:
+                raise ValueError(f"Cached dataset not found: {cache_db_path}")
+        else:
+            # Legacy system: direct file paths
+            self.train_path = self.autogluon_config.get('train_path')
+            self.test_path = self.autogluon_config.get('test_path')
+            self.use_cached_dataset = False
+            self.dataset_name = None
+            
+            if not self.train_path:
+                raise ValueError("Either 'dataset_name' or 'train_path' must be specified in autogluon configuration")
         
         # Initialize data manager for optimized loading
         self.data_manager = DataManager(config)
         
-        # Initialize operations
+        # Initialize operations with custom domain support
+        self.custom_domain_module = self.feature_config.get('custom_domain_module')
         self._initialize_operations()
         
         logger.info(f"Initialized FeatureSpace with {len(self.operations)} operations")
     
     def _initialize_operations(self) -> None:
-        """Initialize all available feature operations."""
+        """Initialize all available feature operations with dynamic domain loading."""
         
-        # Basic NPK Operations
-        if 'npk_interactions' in self.enabled_categories:
-            self._add_npk_operations()
+        # Always load generic operations
+        self._add_generic_operations()
         
-        # Environmental Operations
-        if 'environmental_stress' in self.enabled_categories:
-            self._add_environmental_operations()
+        # Load custom domain operations if specified
+        if self.custom_domain_module:
+            self._load_custom_domain_operations(self.custom_domain_module)
         
-        # Agricultural Domain Operations
-        if 'agricultural_domain' in self.enabled_categories:
-            self._add_agricultural_operations()
-        
-        # Statistical Operations
-        if 'statistical_aggregations' in self.enabled_categories:
-            self._add_statistical_operations()
-        
-        # Feature Transformation Operations
-        if 'feature_transformations' in self.enabled_categories:
-            self._add_transformation_operations()
-        
-        # Feature Selection Operations
-        if 'feature_selection' in self.enabled_categories:
-            self._add_selection_operations()
-        
-        logger.info(f"Initialized {len(self.operations)} feature operations across "
-                   f"{len(self.enabled_categories)} categories")
+        logger.info(f"Initialized {len(self.operations)} feature operations with "
+                   f"custom_domain_module: {self.custom_domain_module}")
     
-    def _add_npk_operations(self) -> None:
+    def _add_generic_operations(self) -> None:
+        """Add truly generic operations that work with any dataset (configurable)."""
+        
+        # All possible generic operations
+        all_operations = {
+            'statistical_aggregations': FeatureOperation(
+                name='statistical_aggregations',
+                category='statistical_aggregations',
+                description='Statistical aggregations by categorical features',
+                dependencies=[],  # Works with any columns
+                computational_cost=0.6,
+                output_features=[]
+            ),
+            'polynomial_features': FeatureOperation(
+                name='polynomial_features',
+                category='feature_transformations',
+                description=f'Polynomial features (degree {self.generic_params["polynomial_degree"]})',
+                dependencies=[],  # Works with any numeric columns
+                computational_cost=0.4,
+                output_features=[]
+            ),
+            'binning_features': FeatureOperation(
+                name='binning_features',
+                category='feature_transformations',
+                description=f'Binning of numerical features ({self.generic_params["binning_bins"]} bins)',
+                dependencies=[],  # Works with any numeric columns
+                computational_cost=0.3,
+                output_features=[]
+            ),
+            'ranking_features': FeatureOperation(
+                name='ranking_features',
+                category='feature_transformations',
+                description='Ranking features for numeric columns',
+                dependencies=[],  # Works with any numeric columns
+                computational_cost=0.2,
+                output_features=[]
+            )
+        }
+        
+        # Add only enabled operations
+        enabled_ops = []
+        for op_name, operation in all_operations.items():
+            if self.generic_operations.get(op_name, False):
+                self.operations[operation.name] = operation
+                enabled_ops.append(op_name)
+        
+        logger.info(f"Enabled generic operations: {enabled_ops}")
+        if len(enabled_ops) < len(all_operations):
+            disabled_ops = [op for op in all_operations.keys() if not self.generic_operations.get(op, False)]
+            logger.info(f"Disabled generic operations: {disabled_ops}")
+    
+    def _load_custom_domain_operations(self, custom_domain_module: str) -> None:
+        """Dynamically load custom domain operations from specified module."""
+        try:
+            # Import the custom domain module
+            import importlib
+            module = importlib.import_module(f'src.domains.{custom_domain_module.replace("domains.", "")}')
+            
+            # Get the CustomFeatureOperations class
+            if not hasattr(module, 'CustomFeatureOperations'):
+                logger.warning(f"No CustomFeatureOperations class found in {custom_domain_module}")
+                return
+            
+            custom_class = module.CustomFeatureOperations
+            
+            # Discover all get_* methods
+            method_names = [name for name in dir(custom_class) 
+                          if name.startswith('get_') and callable(getattr(custom_class, name))]
+            
+            logger.info(f"Found {len(method_names)} custom operations in {custom_domain_module}: {method_names}")
+            
+            # Add each method as an operation
+            for method_name in method_names:
+                method = getattr(custom_class, method_name)
+                
+                # Extract operation name (remove 'get_' prefix)
+                operation_name = method_name[4:]  # Remove 'get_'
+                
+                # Create operation
+                operation = FeatureOperation(
+                    name=operation_name,
+                    category='custom_domain',
+                    description=f'Custom domain operation: {operation_name}',
+                    dependencies=[],  # Custom operations handle their own dependencies
+                    computational_cost=0.5,
+                    output_features=[]
+                )
+                
+                self.operations[operation_name] = operation
+                
+            logger.info(f"Loaded {len(method_names)} operations from {custom_domain_module}")
+            
+        except Exception as e:
+            logger.error(f"Failed to load custom domain module {custom_domain_module}: {e}")
+            logger.info("Falling back to generic operations only")
+    
+    def _add_npk_operations_old(self) -> None:
         """Add NPK interaction feature operations."""
         
         base_deps = ['Nitrogen', 'Phosphorous', 'Potassium']
@@ -186,7 +301,7 @@ class FeatureSpace:
         for op in operations:
             self.operations[op.name] = op
     
-    def _add_environmental_operations(self) -> None:
+    def _add_environmental_operations_old(self) -> None:
         """Add environmental stress feature operations."""
         
         env_deps = ['Temperature', 'Humidity', 'Moisture']
@@ -229,7 +344,7 @@ class FeatureSpace:
         for op in operations:
             self.operations[op.name] = op
     
-    def _add_agricultural_operations(self) -> None:
+    def _add_agricultural_operations_old(self) -> None:
         """Add agricultural domain-specific operations."""
         
         operations = [
@@ -278,7 +393,7 @@ class FeatureSpace:
         for op in operations:
             self.operations[op.name] = op
     
-    def _add_statistical_operations(self) -> None:
+    def _add_statistical_operations_old(self) -> None:
         """Add statistical aggregation operations."""
         
         operations = [
@@ -322,7 +437,7 @@ class FeatureSpace:
         for op in operations:
             self.operations[op.name] = op
     
-    def _add_transformation_operations(self) -> None:
+    def _add_transformation_operations_old(self) -> None:
         """Add feature transformation operations."""
         
         operations = [
@@ -363,7 +478,7 @@ class FeatureSpace:
         for op in operations:
             self.operations[op.name] = op
     
-    def _add_selection_operations(self) -> None:
+    def _add_selection_operations_old(self) -> None:
         """Add feature selection operations."""
         
         operations = [
@@ -459,18 +574,23 @@ class FeatureSpace:
             
         except Exception as e:
             logger.error(f"Feature generation failed for node: {e}")
-            # Return base features as fallback
-            train_base = load_or_create_features(self.train_path, 'train', 'basic', self.data_manager)
-            test_base = load_or_create_features(self.test_path, 'test', 'basic', self.data_manager)
-            return pd.concat([train_base, test_base], ignore_index=True)
+            # Return minimal base features as fallback (avoid load_or_create_features for non-fertilizer data)
+            try:
+                train_base = self.data_manager.load_dataset(self.train_path, 'train')
+                test_base = self.data_manager.load_dataset(self.test_path, 'test') if self.test_path else pd.DataFrame()
+                return pd.concat([train_base, test_base], ignore_index=True)
+            except Exception as fallback_error:
+                logger.error(f"Fallback loading also failed: {fallback_error}")
+                # Return empty DataFrame as last resort
+                return pd.DataFrame()
     
     @timed("feature_space.real_data_generation")
     def _generate_real_features_for_node(self, node, generation_start: float) -> pd.DataFrame:
         """Generate features using real data with applied operations."""
         logger.debug("Using real data feature generation")
         
-        # Load base dataset
-        train_base = load_or_create_features(self.train_path, 'train', 'basic', self.data_manager)
+        # Load base dataset (avoid feature_engineering.py for non-fertilizer data)
+        train_base = self.data_manager.load_dataset(self.train_path, 'train')
         
         # Note: train_size sampling moved to AutoGluon evaluator level
         # Feature generation should work on full dataset for cache consistency
@@ -495,38 +615,73 @@ class FeatureSpace:
     
     def _apply_domain_operation(self, df: pd.DataFrame, operation_name: str) -> Dict[str, pd.Series]:
         """Apply domain-specific operation to generate new features."""
-        # Import domain modules
-        from .domains.generic import GenericFeatureOperations
-        from .domains.fertilizer_s5e6 import FertilizerS5E6Operations
-        
-        # Map operation names to domain methods
-        operation_map = {
-            'npk_basic_ratios': GenericFeatureOperations.get_npk_interactions,
-            'npk_advanced_interactions': GenericFeatureOperations.get_nutrient_balance_features,
-            'npk_dominance_patterns': FertilizerS5E6Operations.get_npk_dominance_patterns,
-            'nutrient_adequacy_ratios': FertilizerS5E6Operations.get_nutrient_adequacy_ratios,
-            'binning_categorical': GenericFeatureOperations.get_binning_categorical_features,
-            'complex_mathematical': GenericFeatureOperations.get_complex_mathematical_features,
-            'statistical_deviations': GenericFeatureOperations.get_statistical_deviations,
-            'environmental_stress': FertilizerS5E6Operations.get_environmental_stress,
-            'temp_humidity_interactions': FertilizerS5E6Operations.get_temperature_humidity_interactions,
-            'soil_crop_combinations': FertilizerS5E6Operations.get_soil_crop_combinations,
-        }
-        
-        if operation_name in operation_map:
-            return operation_map[operation_name](df)
-        else:
+        try:
+            # First try generic operations
+            from .domains.generic import GenericFeatureOperations
+            
+            if operation_name == 'statistical_aggregations':
+                return self._apply_generic_statistical_aggregations(df)
+            elif operation_name == 'polynomial_features':
+                degree = self.generic_params['polynomial_degree']
+                return GenericFeatureOperations.get_polynomial_features(df, self._get_numeric_columns(df), degree=degree)
+            elif operation_name == 'binning_features':
+                n_bins = self.generic_params['binning_bins']
+                return GenericFeatureOperations.get_binning_features(df, self._get_numeric_columns(df), n_bins=n_bins)
+            elif operation_name == 'ranking_features':
+                return GenericFeatureOperations.get_ranking_features(df, self._get_numeric_columns(df))
+            
+            # Try custom domain operations
+            if self.custom_domain_module:
+                import importlib
+                module = importlib.import_module(f'src.domains.{self.custom_domain_module.replace("domains.", "")}')
+                
+                if hasattr(module, 'CustomFeatureOperations'):
+                    custom_class = module.CustomFeatureOperations
+                    method_name = f'get_{operation_name}'
+                    
+                    if hasattr(custom_class, method_name):
+                        method = getattr(custom_class, method_name)
+                        return method(df)
+            
             logger.warning(f"Unknown operation: {operation_name}")
             return {}
+            
+        except Exception as e:
+            logger.error(f"Failed to apply operation {operation_name}: {e}")
+            return {}
+    
+    def _apply_generic_statistical_aggregations(self, df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Apply statistical aggregations to any dataset (configurable)."""
+        features = {}
+        
+        # Get columns from config or auto-detect
+        groupby_cols = self.generic_params.get('groupby_columns', [])
+        agg_cols = self.generic_params.get('aggregate_columns', [])
+        
+        # Auto-detect if not configured
+        if not groupby_cols:
+            groupby_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        if not agg_cols:
+            agg_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Use the GenericFeatureOperations class for consistency
+        from .domains.generic import GenericFeatureOperations
+        return GenericFeatureOperations.get_statistical_aggregations(df, groupby_cols, agg_cols)
+    
+    def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
+        """Get list of numeric columns from DataFrame."""
+        return df.select_dtypes(include=[np.number]).columns.tolist()
     
     def _get_node_features(self, node) -> Set[str]:
         """Get current feature set for a node (for dependency checking)."""
-        # This is a simplified implementation
-        # In practice, you'd want to track actual feature names more precisely
-        base_features = {
-            'Nitrogen', 'Phosphorous', 'Potassium', 'Temperature', 'Humidity', 'Moisture',
-            'Soil Type', 'Crop Type', 'soil_crop', 'low_Nitrogen', 'low_Phosphorous', 'low_Potassium'
-        }
+        # Get base features dynamically from the actual dataset
+        try:
+            # Load base dataset to get actual column names
+            train_base = self.data_manager.load_dataset(self.train_path, 'train')
+            base_features = set(train_base.columns)
+        except Exception as e:
+            logger.warning(f"Could not load base features dynamically, using empty set: {e}")
+            base_features = set()
         
         # Add features from applied operations
         for op_name in node.applied_operations:
@@ -553,8 +708,8 @@ class FeatureSpace:
         """Apply feature operations incrementally."""
         
         # Start with base features
-        train_df = load_or_create_features(self.train_path, 'train', base_feature_set, self.data_manager)
-        test_df = load_or_create_features(self.test_path, 'test', base_feature_set, self.data_manager)
+        train_df = self.data_manager.load_dataset(self.train_path, 'train')
+        test_df = self.data_manager.load_dataset(self.test_path, 'test') if self.test_path else pd.DataFrame()
         
         # Apply each operation in sequence
         for op_name in operations:
@@ -820,3 +975,187 @@ class FeatureSpace:
             'can_build_more': self.can_build_more_features(),
             'can_build_more_this_iteration': self.can_build_more_features_this_iteration()
         }
+    
+    def get_operation_info(self, operation_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific operation for database logging."""
+        if operation_name not in self.operations:
+            return None
+            
+        operation = self.operations[operation_name]
+        return {
+            'category': operation.category,
+            'description': operation.description,
+            'cost': operation.computational_cost,
+            'code': f"# {operation.description}\n# Category: {operation.category}\n# Cost: {operation.computational_cost}"
+        }
+    
+    def generate_all_features(self, df: pd.DataFrame, dataset_name: str = None) -> pd.DataFrame:
+        """
+        Generate ALL possible features for a dataset (used during registration).
+        
+        This method generates all available features without checking config settings.
+        It's used during dataset registration to pre-compute all possible features.
+        
+        Args:
+            df: Input DataFrame with original data
+            dataset_name: Name of the dataset (for custom domain operations)
+            
+        Returns:
+            DataFrame with all original columns plus all generated features
+        """
+        logger.info(f"Generating all features for dataset: {dataset_name}")
+        start_time = time.time()
+        
+        # Start with a copy of original data
+        result_df = df.copy()
+        feature_count = 0
+        
+        # Import generic operations module
+        from .domains.generic import GenericFeatureOperations
+        
+        # 1. Generate all generic features
+        logger.info("Generating generic features...")
+        
+        # Get numeric and categorical columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Statistical aggregations
+        if len(categorical_cols) > 0 and len(numeric_cols) > 0:
+            try:
+                stat_features = GenericFeatureOperations.get_statistical_aggregations(
+                    df, categorical_cols[:5], numeric_cols[:10]  # Limit to prevent explosion
+                )
+                for feature_name, feature_data in stat_features.items():
+                    result_df[feature_name] = feature_data
+                    feature_count += 1
+                logger.info(f"Added {len(stat_features)} statistical aggregation features")
+            except Exception as e:
+                logger.warning(f"Failed to generate statistical aggregations: {e}")
+        
+        # Polynomial features
+        if len(numeric_cols) > 0:
+            try:
+                poly_features = GenericFeatureOperations.get_polynomial_features(
+                    df, numeric_cols, degree=2
+                )
+                for feature_name, feature_data in poly_features.items():
+                    result_df[feature_name] = feature_data
+                    feature_count += 1
+                logger.info(f"Added {len(poly_features)} polynomial features")
+            except Exception as e:
+                logger.warning(f"Failed to generate polynomial features: {e}")
+        
+        # Binning features
+        if len(numeric_cols) > 0:
+            try:
+                bin_features = GenericFeatureOperations.get_binning_features(
+                    df, numeric_cols, n_bins=5
+                )
+                for feature_name, feature_data in bin_features.items():
+                    result_df[feature_name] = feature_data
+                    feature_count += 1
+                logger.info(f"Added {len(bin_features)} binning features")
+            except Exception as e:
+                logger.warning(f"Failed to generate binning features: {e}")
+        
+        # Ranking features
+        if len(numeric_cols) > 0:
+            try:
+                rank_features = GenericFeatureOperations.get_ranking_features(df, numeric_cols)
+                for feature_name, feature_data in rank_features.items():
+                    result_df[feature_name] = feature_data
+                    feature_count += 1
+                logger.info(f"Added {len(rank_features)} ranking features")
+            except Exception as e:
+                logger.warning(f"Failed to generate ranking features: {e}")
+        
+        # 2. Generate custom domain features if available
+        if dataset_name and self.custom_domain_module:
+            logger.info(f"Generating custom domain features for: {dataset_name}")
+            try:
+                # Import custom domain module
+                import importlib
+                module_name = self.custom_domain_module.replace("domains.", "")
+                module = importlib.import_module(f'src.domains.{module_name}')
+                
+                if hasattr(module, 'CustomFeatureOperations'):
+                    custom_class = module.CustomFeatureOperations
+                    
+                    # Get all get_* methods
+                    method_names = [name for name in dir(custom_class) 
+                                  if name.startswith('get_') and callable(getattr(custom_class, name))]
+                    
+                    for method_name in method_names:
+                        try:
+                            method = getattr(custom_class, method_name)
+                            # Call method with DataFrame
+                            custom_features = method(df)
+                            
+                            if isinstance(custom_features, dict):
+                                for feature_name, feature_data in custom_features.items():
+                                    result_df[feature_name] = feature_data
+                                    feature_count += 1
+                                logger.info(f"Added {len(custom_features)} features from {method_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to generate {method_name}: {e}")
+                            
+            except Exception as e:
+                logger.warning(f"Failed to load custom domain module: {e}")
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"Generated {feature_count} features in {elapsed_time:.2f}s")
+        logger.info(f"Total columns: {len(result_df.columns)} (original: {len(df.columns)})")
+        
+        return result_df
+    
+    def get_all_possible_feature_names(self, dataset_name: str = None) -> List[str]:
+        """
+        Get list of all possible feature names that could be generated.
+        
+        Args:
+            dataset_name: Name of the dataset (for custom domain operations)
+            
+        Returns:
+            List of all possible feature names
+        """
+        feature_names = []
+        
+        # Get sample data to determine possible features
+        # This is a simplified version - in production you might want to
+        # actually analyze the dataset structure
+        
+        # Generic feature patterns
+        generic_patterns = [
+            "{col}_squared",
+            "{col}_cubed",
+            "{col}_log",
+            "{col}_sqrt",
+            "{col1}_x_{col2}",
+            "{col}_mean_by_{group}",
+            "{col}_std_by_{group}",
+            "{col}_dev_from_{group}_mean",
+            "{col}_bin_5",
+            "{col}_rank",
+            "{col}_rank_pct"
+        ]
+        
+        # Add patterns (this is simplified - real implementation would need actual column names)
+        feature_names.extend(generic_patterns)
+        
+        # Add custom domain features if available
+        if dataset_name and self.custom_domain_module:
+            try:
+                import importlib
+                module_name = self.custom_domain_module.replace("domains.", "")
+                module = importlib.import_module(f'src.domains.{module_name}')
+                
+                if hasattr(module, 'CustomFeatureOperations'):
+                    custom_class = module.CustomFeatureOperations
+                    method_names = [name[4:] for name in dir(custom_class) 
+                                  if name.startswith('get_') and callable(getattr(custom_class, name))]
+                    feature_names.extend(method_names)
+            except Exception:
+                pass
+        
+        return feature_names

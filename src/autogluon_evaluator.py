@@ -41,16 +41,23 @@ class AutoGluonEvaluator:
         self.session_config = config['session']
         self.resource_config = config['resources']
         
-        # Paths and data
-        self.train_path = self.autogluon_config['train_path']
-        self.test_path = self.autogluon_config['test_path']
+        # Dataset configuration - support both old and new systems
         self.target_metric = self.autogluon_config['target_metric']
+        
+        # Resolve dataset information
+        dataset_info = self._resolve_dataset_configuration()
+        self.train_path = dataset_info['train_path']
+        self.test_path = dataset_info['test_path']
+        self.target_column = dataset_info['target_column']
+        self.id_column = dataset_info['id_column']
+        self.ignore_columns = self.autogluon_config.get('ignore_columns', [])
+        self.use_duckdb_cache = dataset_info.get('use_duckdb_cache', False)
+        self.dataset_name = dataset_info.get('dataset_name')
         
         # Load base data once
         self.base_train_data = None
         self.base_test_data = None
         self.validation_data = None
-        self.target_column = 'Fertilizer Name'
         
         # Note: Multi-phase evaluation system removed per user request
         
@@ -71,35 +78,139 @@ class AutoGluonEvaluator:
         
         logger.info(f"Initialized AutoGluonEvaluator for {self.target_metric}")
     
-    def _load_base_data(self) -> None:
-        """Load and prepare base training/test data."""
+    def _resolve_dataset_configuration(self) -> Dict[str, str]:
+        """Resolve dataset configuration from registry or fallback to direct paths."""
         try:
-            logger.info("Loading base training and test data...")
+            # Try new dataset_name system first
+            dataset_name = self.autogluon_config.get('dataset_name')
+            if dataset_name:
+                from .discovery_db import FeatureDiscoveryDB
+                
+                # Create temporary DB instance to access dataset registry
+                temp_db = FeatureDiscoveryDB(self.config)
+                
+                # Use the new database service API
+                dataset_repo = temp_db.db_service.dataset_repo
+                result = dataset_repo.find_by_name(dataset_name)
+                
+                if result:
+                    dataset_id, name, target_col, id_col = result.dataset_id, result.dataset_name, result.target_column, result.id_column
+                    
+                    # Build cache paths
+                    cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
+                    cache_db_path = cache_dir / 'dataset.duckdb'
+                    
+                    if cache_db_path.exists():
+                        logger.info(f"Using cached dataset: {dataset_name} from {cache_db_path}")
+                        return {
+                            'train_path': str(cache_db_path),
+                            'test_path': str(cache_db_path),  # Same DuckDB file contains both
+                            'target_column': target_col,
+                            'id_column': id_col or 'id',
+                            'dataset_name': dataset_name,
+                            'use_duckdb_cache': True
+                        }
+                    else:
+                        logger.warning(f"Cache not found for dataset {dataset_name}, falling back to direct paths")
             
-            # Load raw data using DataManager for intelligent loading
-            from .data_utils import DataManager
-            data_manager = DataManager(self.config)
+            # Fallback to legacy direct path system
+            train_path = self.autogluon_config.get('train_path')
+            test_path = self.autogluon_config.get('test_path')
             
-            logger.info(f"Loading training data from: {self.train_path}")
-            self.base_train_data = data_manager.load_dataset(self.train_path, 'train')
-            logger.info(f"Loading test data from: {self.test_path}")
-            self.base_test_data = data_manager.load_dataset(self.test_path, 'test')
+            if not train_path:
+                raise ValueError("Either 'dataset_name' or 'train_path' must be specified in autogluon configuration")
             
-            # DataManager already handles sampling based on configuration
+            return {
+                'train_path': train_path,
+                'test_path': test_path,
+                'target_column': self.autogluon_config.get('target_column', 'target'),
+                'id_column': self.autogluon_config.get('id_column', 'id'),
+                'use_duckdb_cache': False
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to resolve dataset configuration: {e}")
+            # Last resort fallback
+            return {
+                'train_path': self.autogluon_config.get('train_path', ''),
+                'test_path': self.autogluon_config.get('test_path', ''),
+                'target_column': self.autogluon_config.get('target_column', 'target'),
+                'id_column': self.autogluon_config.get('id_column', 'id'),
+                'use_duckdb_cache': False
+            }
+    
+    def _load_base_data(self) -> None:
+        """Load and prepare base training/test data using configured backend."""
+        try:
+            # Check configured backend
+            data_config = self.config.get('data', {})
+            backend = data_config.get('backend', 'duckdb').lower()
+            
+            logger.info(f"Loading base training and test data using backend: {backend}")
+            
+            # Initialize DuckDB data manager for persistent storage
+            from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available
+            
+            # Use pandas backend if explicitly configured or if DuckDB not available
+            if backend == 'pandas' or not is_duckdb_available():
+                if backend == 'duckdb' and not is_duckdb_available():
+                    logger.error("DuckDB not available, falling back to DataManager")
+                else:
+                    logger.info(f"Using pandas backend as configured")
+                    
+                # Fallback to original DataManager approach
+                from .data_utils import DataManager
+                data_manager = DataManager(self.config)
+                
+                logger.info(f"Loading training data from: {self.train_path}")
+                self.base_train_data = data_manager.load_dataset(self.train_path, 'train')
+                logger.info(f"Loading test data from: {self.test_path}")
+                self.base_test_data = data_manager.load_dataset(self.test_path, 'test')
+                self.duckdb_manager = None
+            else:
+                # Use DuckDB for persistent data storage and loading
+                self.duckdb_manager = DuckDBDataManager(self.config)
+                
+                logger.info(f"Loading training data from DuckDB database")
+                self.base_train_data = self.duckdb_manager.load_full_dataset(self.train_path)
+                
+                if self.test_path:
+                    logger.info(f"Loading test data from DuckDB database")
+                    self.base_test_data = self.duckdb_manager.load_full_dataset(self.test_path)
+                else:
+                    self.base_test_data = None
             
             # Create validation split for faster evaluation
-            train_data, val_data = train_test_split(
-                self.base_train_data,
-                test_size=0.2,
-                stratify=self.base_train_data[self.target_column],
-                random_state=42
-            )
+            try:
+                # Try stratified split if target column exists and has valid values
+                if self.target_column and self.target_column in self.base_train_data.columns:
+                    train_data, val_data = train_test_split(
+                        self.base_train_data,
+                        test_size=0.2,
+                        stratify=self.base_train_data[self.target_column],
+                        random_state=42
+                    )
+                else:
+                    # Fallback to random split
+                    logger.warning(f"Target column '{self.target_column}' not found, using random split")
+                    train_data, val_data = train_test_split(
+                        self.base_train_data,
+                        test_size=0.2,
+                        random_state=42
+                    )
+            except Exception as e:
+                logger.warning(f"Stratified split failed: {e}, using random split")
+                train_data, val_data = train_test_split(
+                    self.base_train_data,
+                    test_size=0.2,
+                    random_state=42
+                )
             
             self.base_train_data = train_data.reset_index(drop=True)
             self.validation_data = val_data.reset_index(drop=True)
             
             logger.info(f"Data loaded: train={len(self.base_train_data)}, "
-                       f"val={len(self.validation_data)}, test={len(self.base_test_data)}")
+                       f"val={len(self.validation_data)}, test={len(self.base_test_data) if self.base_test_data is not None else 0}")
             
         except Exception as e:
             logger.error(f"Failed to load base data: {e}")
@@ -178,10 +289,10 @@ class AutoGluonEvaluator:
             
             if score > self.best_score:
                 self.best_score = score
-                logger.info(f"New best evaluation score: {score:.5f}")
+                logger.info(f"New best evaluation score: {score:.5f} ({self.target_metric})")
             
             logger.debug(f"Evaluation completed: score={score:.5f}, time={eval_time:.2f}s, "
-                        f"features={len(features_df.columns)}, phase={self.current_phase}")
+                        f"features={len(features_df.columns)}")
             
             return score
             
@@ -194,51 +305,69 @@ class AutoGluonEvaluator:
             self._cleanup_temp_dirs()
     
     def _prepare_autogluon_data(self, features_df: pd.DataFrame, eval_config: Dict[str, Any] = None) -> Tuple[TabularDataset, TabularDataset]:
-        """Prepare training and validation data for AutoGluon."""
+        """Prepare training and validation data for AutoGluon with DuckDB sampling support."""
         
         # Get current configuration if not provided
         if eval_config is None:
             eval_config = self.get_current_config()
         
         # Apply train_size sampling if configured
-        train_data = self.base_train_data.copy()
         train_size = eval_config.get('train_size')
         
         if train_size is not None:
-            from .data_utils import prepare_training_data
-            original_size = len(train_data)
-            train_data = prepare_training_data(train_data, train_size)
-            logger.info(f"📊 Training data sampling: {original_size} -> {len(train_data)} rows (train_size={train_size})")
+            # Use DuckDB for efficient sampling if available
+            if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+                try:
+                    logger.info(f"🚀 Using DuckDB efficient sampling: train_size={train_size}")
+                    train_data = self.duckdb_manager.sample_dataset(
+                        file_path=self.train_path,
+                        train_size=train_size,
+                        stratify_column=self.target_column
+                    )
+                    logger.info(f"✅ DuckDB sampled: {len(train_data)} rows")
+                except Exception as e:
+                    logger.warning(f"DuckDB sampling failed, falling back to in-memory: {e}")
+                    # Fallback to in-memory sampling
+                    from .data_utils import prepare_training_data
+                    train_data = self.base_train_data.copy()
+                    original_size = len(train_data)
+                    train_data = prepare_training_data(train_data, train_size)
+                    logger.info(f"📊 Fallback sampling: {original_size} -> {len(train_data)} rows")
+            else:
+                # Standard in-memory sampling
+                from .data_utils import prepare_training_data
+                train_data = self.base_train_data.copy()
+                original_size = len(train_data)
+                train_data = prepare_training_data(train_data, train_size)
+                logger.info(f"📊 In-memory sampling: {original_size} -> {len(train_data)} rows")
+        else:
+            # No sampling needed
+            train_data = self.base_train_data.copy()
         
-        # Merge features with base data
-        train_ids = train_data['id'].values
-        val_ids = self.validation_data['id'].values
+        # Merge features with base data using index-based approach
+        # Reset indexes to ensure proper alignment
+        train_data_indexed = train_data.reset_index(drop=True)
+        val_data_indexed = self.validation_data.reset_index(drop=True)
+        features_indexed = features_df.reset_index(drop=True)
         
-        # Get feature columns (exclude 'id' and target)
-        feature_cols = [col for col in features_df.columns 
-                       if col not in ['id', self.target_column]]
+        # Ensure same number of rows for concatenation
+        if len(features_indexed) != len(train_data_indexed) + len(val_data_indexed):
+            # Features were generated on full dataset, split appropriately
+            train_size = len(train_data_indexed)
+            train_features = features_indexed.iloc[:train_size].reset_index(drop=True)
+            val_features = features_indexed.iloc[train_size:train_size + len(val_data_indexed)].reset_index(drop=True)
+        else:
+            # Features match exact split, use directly
+            train_features = features_indexed.iloc[:len(train_data_indexed)].reset_index(drop=True)
+            val_features = features_indexed.iloc[len(train_data_indexed):].reset_index(drop=True)
         
-        # Merge training data
-        train_features = features_df[features_df['id'].isin(train_ids)].copy()
-        train_merged = pd.merge(
-            train_data[['id', self.target_column]], 
-            train_features[['id'] + feature_cols],
-            on='id',
-            how='inner'
-        )
+        # Concatenate features with base data (index-based alignment)
+        train_final = pd.concat([train_data_indexed, train_features], axis=1)
+        val_final = pd.concat([val_data_indexed, val_features], axis=1)
         
-        # Merge validation data  
-        val_features = features_df[features_df['id'].isin(val_ids)].copy()
-        val_merged = pd.merge(
-            self.validation_data[['id', self.target_column]],
-            val_features[['id'] + feature_cols], 
-            on='id',
-            how='inner'
-        )
-        
-        # Remove 'id' column for AutoGluon
-        train_final = train_merged.drop('id', axis=1)
-        val_final = val_merged.drop('id', axis=1)
+        # Remove duplicate columns (keep first occurrence)
+        train_final = train_final.loc[:, ~train_final.columns.duplicated()]
+        val_final = val_final.loc[:, ~val_final.columns.duplicated()]
         
         # Convert to TabularDataset
         train_dataset = TabularDataset(train_final)
@@ -256,12 +385,19 @@ class AutoGluonEvaluator:
         """Train AutoGluon model and evaluate on validation set."""
         
         try:
-            # Create predictor
+            # Prepare ignored columns (ID column + user-defined ignore columns)
+            ignored_columns = [self.id_column] + self.ignore_columns
+            
+            # Create predictor with ignored columns
+            # Use the configured metric, or None to let AutoGluon choose
+            eval_metric = self.target_metric if self.target_metric.lower() not in ['map@3', 'map_at_3', 'map3'] else None
+            
             predictor = TabularPredictor(
                 label=self.target_column,
                 path=model_dir,
-                eval_metric='log_loss',  # Close to MAP@3 for ranking
-                verbosity=eval_config.get('verbosity', 0)
+                eval_metric=eval_metric,
+                verbosity=eval_config.get('verbosity', 0),
+                learner_kwargs={'ignored_columns': ignored_columns}
             )
             
             # Prepare fit parameters
@@ -308,14 +444,23 @@ class AutoGluonEvaluator:
             
             logger.debug(f"Predictions shape: {val_predictions.shape}, True labels: {len(val_true)}")
             
-            # Calculate MAP@3 score
-            logger.info(f"Val predictions columns: {val_predictions.columns.tolist()}")
-            logger.info(f"Val true labels sample: {val_true[:5]}")
-            logger.info(f"Val predictions sample: {val_predictions.values[:3]}")
-            map3_score = self._calculate_map3(val_true, val_predictions)  # Pass DataFrame with columns
-            logger.info(f"Calculated MAP@3 score: {map3_score:.5f}")
+            # Use AutoGluon's built-in evaluation for all metrics
+            logger.info(f"Evaluating with metric: {self.target_metric}")
             
-            return map3_score
+            # Special handling for MAP@3 which isn't built-in to AutoGluon
+            if self.target_metric.lower() in ['map@3', 'map_at_3', 'map3']:
+                logger.info(f"Val predictions columns: {val_predictions.columns.tolist()}")
+                logger.info(f"Val true labels sample: {val_true[:5]}")
+                logger.info(f"Val predictions sample: {val_predictions.values[:3]}")
+                score = self._calculate_map3(val_true, val_predictions)
+                logger.info(f"Calculated MAP@3 score: {score:.5f}")
+            else:
+                # Use AutoGluon's evaluate method for all other metrics
+                eval_result = predictor.evaluate(val_data, silent=True)
+                score = eval_result[self.target_metric]
+                logger.info(f"Calculated {self.target_metric} score: {score:.5f}")
+            
+            return score
             
         except Exception as e:
             logger.error(f"AutoGluon training/evaluation failed: {e}")
@@ -514,9 +659,9 @@ class AutoGluonEvaluator:
             'total_eval_time': self.total_eval_time,
             'avg_eval_time': avg_eval_time,
             'best_score': self.best_score,
-            'current_phase': self.current_phase,
             'cache_size': len(self.evaluation_cache),
-            'cache_hit_rate': 0.0  # Would need to track cache hits vs misses
+            'cache_hit_rate': 0.0,  # Would need to track cache hits vs misses
+            'duckdb_available': hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None
         }
     
     def cleanup(self) -> None:
@@ -533,6 +678,14 @@ class AutoGluonEvaluator:
         
         # Clear cache
         self.evaluation_cache.clear()
+        
+        # Close DuckDB connection if available
+        if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+            try:
+                self.duckdb_manager.close()
+                logger.info("Closed DuckDB connection")
+            except Exception as e:
+                logger.warning(f"Failed to close DuckDB connection: {e}")
         
         # Remove base temp directory if configured
         if self.resource_config.get('cleanup_temp_on_exit', True):

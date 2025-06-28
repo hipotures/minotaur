@@ -31,6 +31,8 @@ from .analytics import AnalyticsGenerator, generate_quick_report
 from .data_utils import DataManager, prepare_training_data
 from .feature_cache import FeatureCacheManager
 from .domains import GenericFeatureOperations, FertilizerS5E6Operations
+from .logging_utils import setup_session_logging, set_session_context, clear_session_context
+from .dataset_manager import DatasetManager
 
 __all__ = [
     'FeatureDiscoveryDB',
@@ -52,5 +54,9 @@ __all__ = [
     'FeatureCacheManager',
     'GenericFeatureOperations',
     'FertilizerS5E6Operations',
+    'setup_session_logging',
+    'set_session_context',
+    'clear_session_context',
+    'DatasetManager',
     'AUTOGLUON_AVAILABLE'
 ]

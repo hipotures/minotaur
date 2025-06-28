@@ -32,10 +32,18 @@ mcts:
 
 # AutoGluon Evaluation Settings
 autogluon:
-  # Base data paths (override in domain-specific configs)
+  # Dataset configuration (new centralized system)
+  dataset_name: null                   # Name of registered dataset (preferred method)
+  
+  # Legacy data paths (for backward compatibility - will be deprecated)
   train_path: null
   test_path: null
-  target_metric: null
+  target_metric: null          # classification: [‘accuracy’, ‘balanced_accuracy’, ‘f1’, ‘f1_macro’, ‘f1_micro’, ‘f1_weighted’, 
+                               # ‘roc_auc’, ‘roc_auc_ovo’, ‘roc_auc_ovr’, ‘average_precision’, ‘precision’, 
+                               # ‘precision_macro’, ‘precision_micro’, ‘precision_weighted’, ‘recall’, ‘recall_macro’, 
+                               # ‘recall_micro’, ‘recall_weighted’, ‘log_loss’, ‘pac_score’, ‘quadratic_kappa’]
+                               # regression: [‘root_mean_squared_error’, ‘mean_squared_error’, ‘mean_absolute_error’, ‘median_absolute_error’, ‘r2’]
+                               # quantile regression: [‘pinball_loss’]
   
   # Production AutoGluon Configuration
   included_model_types: ['XGB', 'GBM', 'CAT']  # XGBoost, LightGBM, CatBoost
@@ -74,6 +82,20 @@ feature_space:
     - 'statistical_aggregations'
     - 'feature_transformations'
     - 'feature_selection'
+  
+  # Generic operations from src/domains/generic.py (can be disabled individually)
+  generic_operations:
+    statistical_aggregations: true   # Group-based aggregations (mean, std, deviation)
+    polynomial_features: true       # Polynomial transformations of numeric features
+    binning_features: true          # Quantile-based binning and discretization  
+    ranking_features: true          # Rank-based transformations
+  
+  # Generic operation parameters
+  generic_params:
+    polynomial_degree: 2            # Degree for polynomial features
+    binning_bins: 5                # Number of bins for discretization
+    groupby_columns: []             # Auto-detect categorical columns if empty
+    aggregate_columns: []           # Auto-detect numeric columns if empty
     
   # Operation weights (higher = more likely to be selected)
   category_weights:
@@ -92,11 +114,14 @@ feature_space:
 
 # Database Configuration
 database:
-  path: '../data/feature_discovery.db'
-  backup_path: '../data/backups/'
-  backup_interval: 50           # Backup every N iterations
-  max_history_size: 50000      # Max records in exploration_history
-  max_backup_files: 10         # Keep last N backup files
+  path: 'data/minotaur.duckdb'   # Unified DuckDB database
+  type: 'duckdb'                 # Database type: 'duckdb' or 'sqlite'
+  schema: 'main'                 # Default schema name
+  backup_path: 'data/backups/'   # Backup directory
+  backup_interval: 50            # Backup every N iterations
+  backup_prefix: 'minotaur_backup_'  # Backup file prefix
+  max_history_size: 50000        # Max records in exploration_history
+  max_backup_files: 10           # Keep last N backup files
   
   # Transaction settings
   batch_size: 10               # Batch DB operations
@@ -111,7 +136,7 @@ database:
 # Logging and Monitoring  
 logging:
   level: 'INFO'                # DEBUG, INFO, WARNING, ERROR
-  log_file: 'logs/mcts_discovery.log'
+  log_file: 'logs/minotaur.log'
   max_log_size_mb: 100
   backup_count: 5
   
@@ -124,6 +149,9 @@ logging:
   # Progress reporting
   progress_interval: 10        # Report progress every N iterations
   save_intermediate_results: true
+  
+  # Timing data export
+  timing_output_dir: 'logs/timing'  # Directory for timing JSON files
   
 # Performance and Resource Management
 resources:
@@ -141,6 +169,42 @@ resources:
   max_disk_usage_gb: 50       # Maximum disk usage for caches/logs
   temp_dir: '/tmp/mcts_features'
   cleanup_temp_on_exit: true
+
+# Data Loading and Backend Configuration
+data:
+  # Backend selection: 'auto', 'pandas', 'duckdb'
+  backend: 'auto'                    # auto = use DuckDB when available and beneficial
+  prefer_parquet: true               # Convert CSV to Parquet for faster loading
+  auto_convert_csv: true             # Automatically save CSV as Parquet
+  dtype_optimization: true           # Optimize DataFrame dtypes for memory
+  
+  # Memory limits
+  memory_limit_mb: 500               # Memory limit for datasets
+  use_small_dataset: false           # Force small dataset mode
+  small_dataset_size: 5000           # Size for small dataset testing
+  
+  # DuckDB Backend Configuration
+  duckdb:
+    enable_sampling: true            # Enable DuckDB efficient sampling
+    max_memory_gb: 4                 # DuckDB memory limit
+    temp_directory: '/tmp/duckdb_temp'
+    use_memory_limit: true           # Enforce memory limits
+    
+    # Persistent Database Settings
+    persistent_storage: true         # Use persistent database storage
+    database_name: 'features.duckdb' # Database filename
+    auto_load_data: true             # Load CSV data to database on first run
+    
+    # Feature Caching Settings
+    enable_feature_cache: true       # Enable feature caching in database
+    max_cached_features: 1000        # Maximum number of cached features
+    cache_cleanup_threshold: 0.8     # Cleanup when cache is 80% full
+    cache_min_score: 0.1             # Minimum score to keep in cache
+    
+    # Performance tuning
+    enable_object_cache: true        # DuckDB object cache
+    force_compression: 'zstd'        # Compression algorithm
+    enable_progress_bar: false       # Disable progress bars in logs
 
 # LLM Integration (Optional)
 llm:
@@ -226,3 +290,5 @@ advanced:
   auto_recovery: true         # Auto-recover from crashes
   max_recovery_attempts: 3
   recovery_checkpoint_interval: 10
+  
+  # Self-check settings (removed sleep - subprocess.run already waits for completion)

@@ -18,10 +18,18 @@ import numpy as np
 from .timing import timed, timing_context, record_timing
 from .feature_cache import FeatureCacheManager
 
+# Import DuckDB manager
+try:
+    from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
+    DUCKDB_INTEGRATION_AVAILABLE = True
+except ImportError:
+    DUCKDB_INTEGRATION_AVAILABLE = False
+    DuckDBDataManager = None
+
 logger = logging.getLogger(__name__)
 
 class DataManager:
-    """Optimized data manager with parquet support and caching."""
+    """Optimized data manager with parquet support, caching, and DuckDB backend."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize data manager."""
@@ -34,11 +42,75 @@ class DataManager:
         self.max_cache_size_mb = config.get('feature_space', {}).get('max_cache_size_mb', 2048)
         self.prefer_parquet = config.get('data', {}).get('prefer_parquet', True)
         
+        # Backend configuration
+        data_config = config.get('data', {})
+        self.backend = data_config.get('backend', 'auto')  # 'auto', 'pandas', 'duckdb'
+        self.enable_duckdb_sampling = data_config.get('duckdb', {}).get('enable_sampling', True)
+        
+        # Initialize DuckDB backend if available and configured
+        self.duckdb_manager = None
+        if self._should_use_duckdb():
+            try:
+                self.duckdb_manager = DuckDBDataManager(config)
+                logger.info(f"✅ DuckDB backend initialized (v{get_duckdb_version()})")
+            except Exception as e:
+                logger.warning(f"DuckDB initialization failed, falling back to pandas: {e}")
+                self.backend = 'pandas'
+        
         # Memory tracking
         self.cache_registry: Dict[str, Dict[str, Any]] = {}
         self.current_cache_size_mb = 0.0
         
-        logger.info(f"Initialized DataManager with cache at: {self.cache_dir}")
+        logger.info(f"Initialized DataManager with backend='{self.backend}', cache at: {self.cache_dir}")
+    
+    def _should_use_duckdb(self) -> bool:
+        """Determine if DuckDB backend should be used."""
+        if not DUCKDB_INTEGRATION_AVAILABLE:
+            return False
+        
+        if self.backend == 'pandas':
+            return False
+        elif self.backend == 'duckdb':
+            return True
+        elif self.backend == 'auto':
+            # Auto-detect based on availability and configuration
+            return is_duckdb_available() and self.enable_duckdb_sampling
+        
+        return False
+    
+    @timed("data.sample_dataset", include_memory=True)
+    def sample_dataset(self, 
+                      file_path: str, 
+                      train_size: Union[int, float],
+                      stratify_column: Optional[str] = None,
+                      data_type: str = 'auto') -> pd.DataFrame:
+        """
+        Efficiently sample dataset using DuckDB backend when available.
+        
+        Args:
+            file_path: Path to data file
+            train_size: Number of samples (int) or percentage (float 0-1)
+            stratify_column: Column for stratified sampling
+            data_type: Type hint for logging
+            
+        Returns:
+            Sampled DataFrame
+        """
+        if self.duckdb_manager and self.enable_duckdb_sampling:
+            # Use DuckDB for efficient sampling
+            try:
+                return self.duckdb_manager.sample_dataset(
+                    file_path=file_path,
+                    train_size=train_size,
+                    stratify_column=stratify_column
+                )
+            except Exception as e:
+                logger.warning(f"DuckDB sampling failed, falling back to pandas: {e}")
+        
+        # Fallback to pandas sampling (less efficient for large files)
+        logger.info(f"Using pandas backend for sampling (less efficient for large datasets)")
+        full_dataset = self.load_dataset(file_path, data_type, use_cache=True)
+        return prepare_training_data(full_dataset, train_size)
     
     @timed("data.load_dataset", include_memory=True)
     def load_dataset(self, file_path: str, data_type: str = 'auto', use_cache: bool = True) -> pd.DataFrame:
@@ -80,26 +152,31 @@ class DataManager:
                 logger.debug(f"Loaded {data_type} data from cache: {file_path.name}")
                 return cached_data
         
-        # Determine optimal loading strategy
-        parquet_path = file_path.with_suffix('.parquet')
-        
-        if self.prefer_parquet and parquet_path.exists():
-            # Load from parquet (faster)
-            logger.debug(f"Loading from parquet: {parquet_path}")
-            df = self._load_parquet(parquet_path)
-        elif file_path.suffix.lower() == '.parquet':
-            # Direct parquet file
-            df = self._load_parquet(file_path)
-        elif file_path.suffix.lower() == '.csv':
-            # Load CSV and optionally convert to parquet
-            logger.debug(f"Loading from CSV: {file_path}")
-            df = self._load_csv(file_path)
-            
-            # Save as parquet for faster future loading
-            if self.prefer_parquet and data_config.get('auto_convert_csv', True):
-                self._save_parquet(df, parquet_path)
+        # Check if this is a cached DuckDB dataset
+        if file_path.suffix.lower() == '.duckdb':
+            logger.debug(f"Loading from cached DuckDB dataset: {file_path}")
+            df = self._load_from_duckdb_cache(file_path, data_type)
         else:
-            raise ValueError(f"Unsupported file format: {file_path.suffix}")
+            # Determine optimal loading strategy for regular files
+            parquet_path = file_path.with_suffix('.parquet')
+            
+            if self.prefer_parquet and parquet_path.exists():
+                # Load from parquet (faster)
+                logger.debug(f"Loading from parquet: {parquet_path}")
+                df = self._load_parquet(parquet_path)
+            elif file_path.suffix.lower() == '.parquet':
+                # Direct parquet file
+                df = self._load_parquet(file_path)
+            elif file_path.suffix.lower() == '.csv':
+                # Load CSV and optionally convert to parquet
+                logger.debug(f"Loading from CSV: {file_path}")
+                df = self._load_csv(file_path)
+                
+                # Save as parquet for faster future loading
+                if self.prefer_parquet and data_config.get('auto_convert_csv', True):
+                    self._save_parquet(df, parquet_path)
+            else:
+                raise ValueError(f"Unsupported file format: {file_path.suffix}")
         
         # NOTE: Smart sampling moved to evaluation level to preserve full cache
         # Cache should always contain full dataset for consistency
@@ -233,6 +310,36 @@ class DataManager:
                 pass
             return None
     
+    def _load_from_duckdb_cache(self, duckdb_path: Path, data_type: str) -> pd.DataFrame:
+        """Load data from cached DuckDB dataset file."""
+        try:
+            import duckdb
+            
+            # Connect to the DuckDB file
+            conn = duckdb.connect(str(duckdb_path))
+            
+            # Determine table name based on data_type
+            if data_type == 'train':
+                table_name = 'train'
+            elif data_type == 'test':
+                table_name = 'test'
+            else:
+                # Default to train for 'auto'
+                table_name = 'train'
+            
+            # Load data from the appropriate table
+            query = f"SELECT * FROM {table_name}"
+            df = conn.execute(query).df()
+            conn.close()
+            
+            logger.info(f"Loaded {len(df)} rows from cached DuckDB table '{table_name}'")
+            return df
+            
+        except Exception as e:
+            logger.error(f"Failed to load from cached DuckDB {duckdb_path}: {e}")
+            # Fallback to empty DataFrame
+            return pd.DataFrame()
+    
     def _save_to_cache(self, cache_key: str, df: pd.DataFrame, source_path: str) -> None:
         """Save DataFrame to cache."""
         if not self.enable_cache:
@@ -347,6 +454,31 @@ class DataManager:
         
         logger.info(f"Preloaded {len(datasets)} datasets successfully")
         return datasets
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from all backends."""
+        stats = {
+            'backend': self.backend,
+            'cache_stats': self.get_cache_stats(),
+            'duckdb_available': DUCKDB_INTEGRATION_AVAILABLE,
+            'duckdb_enabled': self.duckdb_manager is not None
+        }
+        
+        if self.duckdb_manager:
+            stats['duckdb_stats'] = self.duckdb_manager.get_performance_stats()
+        
+        return stats
+    
+    def close(self) -> None:
+        """Close all backend connections."""
+        if self.duckdb_manager:
+            self.duckdb_manager.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 # Utility functions
 

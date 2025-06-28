@@ -27,19 +27,21 @@ from src import (
     MCTSEngine, 
     FeatureSpace,
     AutoGluonEvaluator,
+    DatasetManager,
     initialize_timing,
     get_timing_collector,
     performance_monitor,
     AnalyticsGenerator,
     AUTOGLUON_AVAILABLE
 )
+from src.logging_utils import setup_session_logging, set_session_context, clear_session_context
 
 # Setup logging
 def setup_logging(config: Dict[str, Any]) -> None:
     """Setup logging configuration."""
     log_config = config['logging']
     
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    log_format = '%(asctime)s - [%(session_name)s] - %(name)s - %(levelname)s - %(message)s'
     
     # Configure root logger
     from logging.handlers import RotatingFileHandler
@@ -67,6 +69,9 @@ def setup_logging(config: Dict[str, Any]) -> None:
     logging.getLogger('autogluon').setLevel(logging.INFO)  # Show AutoGluon logs
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     
+    # Setup session-aware logging filters
+    setup_session_logging()
+    
     logger = logging.getLogger(__name__)
     logger.info("Logging configuration initialized")
 
@@ -90,6 +95,7 @@ class FeatureDiscoveryRunner:
         self.mcts_engine: Optional[MCTSEngine] = None
         self.feature_space: Optional[FeatureSpace] = None
         self.evaluator: Optional[AutoGluonEvaluator] = None
+        self.dataset_manager: Optional[DatasetManager] = None
         self.timing_collector = None
         
         # Runtime tracking
@@ -131,9 +137,21 @@ class FeatureDiscoveryRunner:
             logger.info("Initializing timing system...")
             self.timing_collector = initialize_timing(self.config)
             
+            # Initialize dataset manager
+            logger.info("Initializing dataset manager...")
+            self.dataset_manager = DatasetManager(self.config)
+            
+            # Validate dataset registration
+            self._validate_dataset_configuration()
+            
             # Initialize database
             logger.info("Initializing database...")
             self.db = FeatureDiscoveryDB(self.config)
+            
+            # Set session context for logging after DB initialization
+            if self.db.session_name:
+                set_session_context(self.db.session_name)
+                logger.info(f"Session context set to: {self.db.session_name}")
             
             # Initialize feature space
             logger.info("Initializing feature space...")
@@ -165,6 +183,68 @@ class FeatureDiscoveryRunner:
             
         except Exception as e:
             logger.error(f"Component initialization failed: {e}")
+            raise
+    
+    def _validate_dataset_configuration(self) -> None:
+        """Validate dataset configuration and registration."""
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Get dataset info from config
+            dataset_info = self.dataset_manager.get_dataset_from_config()
+            dataset_name = dataset_info['dataset_name']
+            
+            logger.info(f"🔍 Validating dataset: {dataset_name}")
+            
+            # Check if using registered dataset
+            if dataset_info['is_registered']:
+                # Validate registered dataset
+                if not self.dataset_manager.validate_dataset_registration(dataset_name):
+                    logger.error(f"❌ Dataset '{dataset_name}' validation failed")
+                    logger.error("💡 Try re-registering: scripts/duckdb_manager.py datasets --register --help")
+                    raise ValueError(f"Dataset '{dataset_name}' is not properly registered")
+                
+                # Update usage timestamp
+                self.dataset_manager.update_dataset_usage(dataset_name)
+                
+                logger.info(f"✅ Using registered dataset: {dataset_name}")
+                logger.info(f"   📊 Target column: {dataset_info['target_column']}")
+                if dataset_info.get('train_records'):
+                    logger.info(f"   📈 Train records: {dataset_info['train_records']:,}")
+                if dataset_info.get('test_records'):
+                    logger.info(f"   🧪 Test records: {dataset_info['test_records']:,}")
+            else:
+                # Legacy path-based system
+                logger.warning("⚠️ Using legacy path-based dataset access")
+                logger.warning("💡 Consider registering this dataset for better management:")
+                logger.warning("   scripts/duckdb_manager.py datasets --register --dataset-name YOUR_DATASET --auto --dataset-path /path/to/data")
+                
+                # Basic validation for legacy system
+                train_path = dataset_info.get('train_path')
+                if not train_path or not Path(train_path).exists():
+                    raise FileNotFoundError(f"Train file not found: {train_path}")
+                
+                logger.info(f"📊 Train file: {train_path}")
+                if dataset_info.get('test_path'):
+                    logger.info(f"🧪 Test file: {dataset_info['test_path']}")
+            
+        except Exception as e:
+            logger.error(f"❌ Dataset validation failed: {e}")
+            
+            # Show available datasets if validation fails
+            try:
+                available_datasets = self.dataset_manager.list_available_datasets()
+                if available_datasets:
+                    logger.info("📋 Available registered datasets:")
+                    for name, info in available_datasets.items():
+                        status = "Active" if info['is_active'] else "Inactive"
+                        logger.info(f"   • {name} ({status}) - Target: {info['target_column']}")
+                else:
+                    logger.info("📋 No datasets registered yet")
+                    logger.info("💡 Register a dataset: scripts/duckdb_manager.py datasets --register --help")
+            except:
+                pass
+            
             raise
     
     def _get_initial_features(self) -> set:
@@ -229,7 +309,16 @@ class FeatureDiscoveryRunner:
                 timing_export = self.timing_collector.export_timings()
                 
                 # Save timing data
-                timing_file = f"timing_data_{self.db.session_id[:8]}.json"
+                if hasattr(self.db, 'output_manager') and self.db.output_manager:
+                    # Use session-based log directory
+                    log_paths = self.db.output_manager.get_log_paths()
+                    timing_file = log_paths['timing_data']
+                else:
+                    # Fallback to config-based directory
+                    timing_dir = self.config.get('logging', {}).get('timing_output_dir', 'logs/timing')
+                    os.makedirs(timing_dir, exist_ok=True)
+                    timing_file = os.path.join(timing_dir, f"timing_data_{self.db.session_id[:8]}.json")
+                
                 with open(timing_file, 'w') as f:
                     f.write(timing_export)
                 logger.info(f"Exported timing data to: {timing_file}")
@@ -252,6 +341,11 @@ class FeatureDiscoveryRunner:
             
             # Generate analytics report
             self._generate_analytics_report(timing_file if timing_stats else None)
+            
+            # Create session summary
+            if hasattr(self.db, 'output_manager') and self.db.output_manager:
+                summary_file = self.db.output_manager.create_session_summary(results)
+                logger.info(f"📄 Session summary created: {summary_file}")
             
             logger.info(f"Feature discovery completed successfully in {results['total_runtime']:.2f}s")
             logger.info(f"Best score achieved: {search_results['best_score']:.5f}")
@@ -279,40 +373,91 @@ class FeatureDiscoveryRunner:
         try:
             # Export best features code
             if 'python' in export_config['formats']:
-                output_file = export_config['python_output']
-                self.db.export_best_features_code(output_file)
-                logger.info(f"Exported best features code to: {output_file}")
+                try:
+                    # Try session-based export first
+                    if hasattr(self.db, 'output_manager') and self.db.output_manager:
+                        output_file = self.db.export_best_features_to_session()
+                        logger.info(f"Exported best features code to session: {output_file}")
+                    else:
+                        # Fallback to config-based export
+                        output_file = export_config['python_output']
+                        self.db.export_best_features_code(output_file)
+                        logger.info(f"Exported best features code to: {output_file}")
+                except Exception as e:
+                    logger.error(f"Failed to export best features code: {e}", exc_info=True)
             
             # Export session data
             if 'json' in export_config['formats']:
-                import json
-                session_file = f"discovery_session_{self.db.session_id[:8]}.json"
-                with open(session_file, 'w') as f:
-                    # Convert numpy types to native Python types for JSON serialization
-                    json_results = self._serialize_for_json(results)
-                    json.dump(json_results, f, indent=2)
-                logger.info(f"Exported session data to: {session_file}")
+                try:
+                    import json
+                    # Try session-based export first
+                    if hasattr(self.db, 'output_manager') and self.db.output_manager:
+                        export_paths = self.db.output_manager.get_export_paths()
+                        session_file = export_paths['discovery_results']
+                    else:
+                        # Fallback to current directory
+                        session_file = f"discovery_session_{self.db.session_id[:8]}.json"
+                    
+                    with open(session_file, 'w') as f:
+                        # Convert numpy types to native Python types for JSON serialization
+                        json_results = self._serialize_for_json(results)
+                        json.dump(json_results, f, indent=2)
+                    logger.info(f"Exported session data to: {session_file}")
+                except Exception as e:
+                    logger.error(f"Failed to export session data: {e}", exc_info=True)
             
             # Generate HTML report if configured
             if 'html' in export_config['formats'] and export_config.get('include_plots', False):
-                self._generate_html_report(results)
+                try:
+                    self._generate_html_report(results)
+                except Exception as e:
+                    logger.error(f"Failed to generate HTML report: {e}", exc_info=True)
                 
         except Exception as e:
-            logger.error(f"Failed to export results: {e}")
+            logger.error(f"Failed to export results: {e}", exc_info=True)
     
     def _serialize_for_json(self, obj):
         """Convert objects to JSON-serializable format."""
         import numpy as np
         import pandas as pd
+        from dataclasses import is_dataclass, asdict
         
         if isinstance(obj, dict):
             return {key: self._serialize_for_json(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
+        elif isinstance(obj, (list, tuple)):
             return [self._serialize_for_json(item) for item in obj]
+        elif isinstance(obj, set):
+            try:
+                return [self._serialize_for_json(item) for item in sorted(obj)]
+            except TypeError:
+                # If items can't be sorted (e.g., mixed types), just convert to list
+                return [self._serialize_for_json(item) for item in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
         elif isinstance(obj, (np.integer, np.floating)):
             return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
         elif isinstance(obj, pd.DataFrame):
             return obj.to_dict('records')
+        elif isinstance(obj, pd.Series):
+            return obj.to_dict()
+        elif is_dataclass(obj):
+            # Handle dataclass objects like FeatureNode
+            # Special handling for FeatureNode to avoid circular references
+            if hasattr(obj, 'parent') and hasattr(obj, 'children'):
+                # This is likely a FeatureNode - serialize without parent/children to avoid circular refs
+                result = {}
+                for field_name in obj.__dataclass_fields__:
+                    if field_name not in ['parent', 'children']:
+                        value = getattr(obj, field_name)
+                        result[field_name] = self._serialize_for_json(value)
+                # Add children count and parent info without circular reference
+                result['children_count'] = len(obj.children) if obj.children else 0
+                result['has_parent'] = obj.parent is not None
+                return result
+            else:
+                return self._serialize_for_json(asdict(obj))
         elif hasattr(obj, '__dict__'):
             return str(obj)
         else:
@@ -384,11 +529,12 @@ class FeatureDiscoveryRunner:
             
             logger.info("Generating comprehensive analytics report...")
             
-            # Initialize analytics generator
-            analytics = AnalyticsGenerator(self.config)
+            # Initialize analytics generator with session output manager
+            output_manager = self.db.output_manager if hasattr(self.db, 'output_manager') else None
+            analytics = AnalyticsGenerator(self.config, output_manager=output_manager)
             
-            # Generate report
-            db_path = self.config['database']['path']
+            # Generate report using actual database path (may be different for test mode)
+            db_path = self.db.db_path if self.db else self.config['database']['path']
             session_id = self.db.session_id if self.db else None
             
             report_files = analytics.generate_comprehensive_report(
@@ -451,6 +597,9 @@ class FeatureDiscoveryRunner:
             # Cleanup feature space cache
             if self.feature_space:
                 self.feature_space.cleanup()
+            
+            # Clear session context from logging
+            clear_session_context()
                 
             logger.info("Cleanup completed")
             
@@ -463,27 +612,39 @@ class FeatureDiscoveryRunner:
         logger.info("🏗️ Pre-building features on 100% dataset...")
         
         try:
-            # Import feature cache manager 
+            # Check if using DuckDB backend - skip feature cache pre-building
+            data_config = self.config.get('data', {})
+            backend = data_config.get('backend', 'duckdb').lower()
+            
+            if backend == 'duckdb':
+                logger.info("✅ Using DuckDB backend - skipping feature cache pre-building")
+                logger.info("📊 Features will be generated on-demand and cached in DuckDB")
+                return
+            
+            # Fallback to feature cache manager for pandas backend
             from src.feature_cache import FeatureCacheManager
             from src.data_utils import prepare_training_data
             
-            # Get dataset paths
-            train_path = self.config['autogluon']['train_path']
-            test_path = self.config['autogluon']['test_path']
+            # Get dataset info via dataset manager
+            dataset_info = self.dataset_manager.get_dataset_from_config()
+            dataset_name = dataset_info['dataset_name']
+            train_path = dataset_info['train_path']
+            test_path = dataset_info.get('test_path')
             
-            if not train_path or not test_path:
-                logger.warning("⚠️ No dataset paths configured - skipping feature pre-building")
+            if not train_path:
+                logger.warning("⚠️ No train path available - skipping feature pre-building")
                 return
                 
             # Initialize cache manager
             cache_manager = FeatureCacheManager(train_path)
             
             # Ensure base datasets are cached
-            cache_manager.ensure_base_datasets(train_path, test_path)
+            if test_path:
+                cache_manager.ensure_base_datasets(train_path, test_path)
             
-            # Load 100% of data (ignore train_size for pre-building)
-            train_full_df = pd.read_csv(train_path)
-            test_full_df = pd.read_csv(test_path)
+            # Load data via dataset manager (100% for pre-building)
+            logger.info(f"📂 Loading full dataset: {dataset_name}")
+            train_full_df, test_full_df = self.dataset_manager.load_dataset_files(dataset_name)
             
             logger.info(f"📊 Loaded full datasets: train={len(train_full_df)}, test={len(test_full_df)}")
             
@@ -854,6 +1015,25 @@ def main():
                 logger.info(f"Best Feature Path: {' -> '.join(results['best_features_path'])}")
         
         logger.info("="*80)
+        
+        # Output results as JSON for subprocess capture
+        if runner.db and runner.db.session_id:
+            import json
+            output_data = {
+                "session_id": runner.db.session_id,
+                "session_name": getattr(runner.db, 'session_name', None),
+                "iterations": 0,
+                "score": None
+            }
+            
+            # Get actual values from results
+            if 'search_results' in results:
+                search_results = results['search_results']
+                output_data['iterations'] = search_results.get('total_iterations', 0)
+                output_data['score'] = search_results.get('best_score', None)
+            
+            # Output JSON on a single line with clear marker
+            print(f"MCTS_RESULT_JSON:{json.dumps(output_data)}")
         
         return 0
         

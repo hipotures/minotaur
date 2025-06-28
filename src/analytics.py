@@ -14,6 +14,14 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
+# DuckDB support
+try:
+    import duckdb
+    DUCKDB_AVAILABLE = True
+except ImportError:
+    DUCKDB_AVAILABLE = False
+    duckdb = None
+
 logger = logging.getLogger(__name__)
 
 # Optional visualization imports
@@ -35,11 +43,20 @@ except ImportError:
 class AnalyticsGenerator:
     """Generate analytics reports and visualizations."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], output_manager=None):
         """Initialize analytics generator."""
         self.config = config
-        self.output_dir = Path(config.get('export', {}).get('output_dir', 'reports'))
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_manager = output_manager
+        
+        if output_manager:
+            # Use session-based output directory
+            self.output_dir = output_manager.get_reports_dir()
+            logger.info(f"📊 Analytics using session directory: {self.output_dir}")
+        else:
+            # Fallback to config-based directory
+            self.output_dir = Path(config.get('export', {}).get('output_dir', 'reports'))
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"📊 Analytics using config directory: {self.output_dir}")
         
         # Plot configuration
         self.plot_config = config.get('analytics', {})
@@ -92,11 +109,26 @@ class AnalyticsGenerator:
         return report_files
     
     def _load_session_data(self, db_path: str, session_id: str = None) -> Dict[str, pd.DataFrame]:
-        """Load session data from SQLite database."""
+        """Load session data from database (SQLite or DuckDB)."""
         logger.debug(f"Loading session data from: {db_path}")
         
         try:
-            conn = sqlite3.connect(db_path)
+            # Detect database type and connect accordingly
+            # Check if it's a DuckDB file (by extension or by actual file content)
+            is_duckdb = False
+            if DUCKDB_AVAILABLE:
+                if db_path.endswith('.duckdb'):
+                    is_duckdb = True
+                elif 'feature_discovery' in db_path or 'minotaur' in db_path:
+                    # These are typically DuckDB files in our system
+                    is_duckdb = True
+            
+            if is_duckdb:
+                conn = duckdb.connect(db_path)
+                db_type = 'duckdb'
+            else:
+                conn = sqlite3.connect(db_path)
+                db_type = 'sqlite'
             
             # Get session info
             sessions_query = "SELECT * FROM sessions"
@@ -275,7 +307,7 @@ class AnalyticsGenerator:
             </div>
             <div class="metric-card">
                 <div class="metric-value">{summary_stats.get('best_score', 0):.4f}</div>
-                <div class="metric-label">Best Score Achieved</div>
+                <div class="metric-label">Best Score ({summary_stats.get('target_metric', 'unknown')})</div>
             </div>
             <div class="metric-card">
                 <div class="metric-value">{summary_stats.get('total_runtime_minutes', 0):.1f}</div>
@@ -364,6 +396,12 @@ class AnalyticsGenerator:
             stats['score_std'] = scores.std()
             stats['total_evaluations'] = len(history_df)
             
+            # Get target metric from most recent entry
+            if 'target_metric' in history_df.columns:
+                stats['target_metric'] = history_df['target_metric'].iloc[-1]
+            else:
+                stats['target_metric'] = 'unknown'
+            
             # Operations per minute
             if stats['total_runtime_minutes'] > 0:
                 stats['operations_per_minute'] = stats['total_evaluations'] / stats['total_runtime_minutes']
@@ -391,7 +429,7 @@ class AnalyticsGenerator:
         else:
             stats['overall_assessment'] = "System functioning, consider optimization"
         
-        stats['key_insight'] = f"Best feature operations achieved {stats['best_score']:.4f} MAP@3 score"
+        stats['key_insight'] = f"Best feature operations achieved {stats['best_score']:.4f} {stats.get('target_metric', 'score')}"
         
         return stats
     
@@ -401,7 +439,7 @@ class AnalyticsGenerator:
             return "<p>No session data available.</p>"
         
         table_html = '<table class="data-table"><thead><tr>'
-        table_html += '<th>Session ID</th><th>Start Time</th><th>Iterations</th><th>Best Score</th><th>Status</th>'
+        table_html += '<th>Session ID</th><th>Start Time</th><th>Iterations</th><th>Best Score</th><th>Metric</th><th>Status</th>'
         table_html += '</tr></thead><tbody>'
         
         for _, row in sessions_df.iterrows():
@@ -409,10 +447,21 @@ class AnalyticsGenerator:
             start_time = str(row.get('start_time', ''))[:19]  # Remove microseconds
             iterations = row.get('total_iterations', 0)
             best_score = f"{row.get('best_score', 0):.4f}"
+            
+            # Get metric from session config if available
+            metric = 'unknown'
+            if 'config_snapshot' in row and row['config_snapshot']:
+                try:
+                    import json
+                    config = json.loads(row['config_snapshot']) if isinstance(row['config_snapshot'], str) else row['config_snapshot']
+                    metric = config.get('autogluon', {}).get('target_metric', 'unknown')
+                except:
+                    pass
+            
             status = row.get('status', 'unknown')
             
             table_html += f'<tr><td>{session_id_short}</td><td>{start_time}</td>'
-            table_html += f'<td>{iterations}</td><td>{best_score}</td><td>{status}</td></tr>'
+            table_html += f'<td>{iterations}</td><td>{best_score}</td><td>{metric}</td><td>{status}</td></tr>'
         
         table_html += '</tbody></table>'
         return table_html
@@ -480,18 +529,19 @@ class AnalyticsGenerator:
         recent_history = history_df.tail(20)
         
         table_html = '<table class="data-table"><thead><tr>'
-        table_html += '<th>Iteration</th><th>Operation</th><th>Score</th><th>Eval Time (s)</th><th>Best So Far</th>'
+        table_html += '<th>Iteration</th><th>Operation</th><th>Score</th><th>Metric</th><th>Eval Time (s)</th><th>Best So Far</th>'
         table_html += '</tr></thead><tbody>'
         
         for _, row in recent_history.iterrows():
             iteration = row.get('iteration', 0)
             operation = str(row.get('operation_applied', ''))[:30] + ('...' if len(str(row.get('operation_applied', ''))) > 30 else '')
             score = f"{row.get('evaluation_score', 0):.4f}"
+            metric = row.get('target_metric', 'unknown')
             eval_time = f"{row.get('evaluation_time', 0):.3f}"
             is_best = "✅" if row.get('is_best_so_far', False) else ""
             
             table_html += f'<tr><td>{iteration}</td><td>{operation}</td>'
-            table_html += f'<td>{score}</td><td>{eval_time}</td><td>{is_best}</td></tr>'
+            table_html += f'<td>{score}</td><td>{metric}</td><td>{eval_time}</td><td>{is_best}</td></tr>'
         
         table_html += '</tbody></table>'
         return table_html

@@ -317,7 +317,8 @@ class MCTSEngine:
             if score > self.best_score:
                 self.best_score = score
                 self.best_node = node
-                logger.info(f"\033[91m🎯 New best score: {score:.5f} at iteration {self.current_iteration}\033[0m")
+                target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
+                logger.info(f"\033[91m🎯 New best score: {score:.5f} ({target_metric}) at iteration {self.current_iteration}\033[0m")
             
             logger.debug(f"Evaluated node: score={score:.5f}, time={evaluation_time:.2f}s")
             
@@ -408,6 +409,30 @@ class MCTSEngine:
                             context_features=list(node.parent.current_features)
                         )
                         logger.debug(f"🔍 Logged feature impact: {node.operation_that_created_this} ({score:.5f} vs {node.parent.evaluation_score:.5f})")
+                        
+                        # Register feature in catalog if it's new
+                        operation_info = feature_space.get_operation_info(node.operation_that_created_this)
+                        if operation_info:
+                            db.register_feature(
+                                name=node.operation_that_created_this,
+                                category=operation_info.get('category', 'unknown'),
+                                python_code=operation_info.get('code', '# Code not available'),
+                                description=operation_info.get('description', ''),
+                                computational_cost=operation_info.get('cost', 1.0)
+                            )
+                            logger.debug(f"📝 Registered feature in catalog: {node.operation_that_created_this}")
+                        
+                        # Update operation performance statistics
+                        improvement = score - node.parent.evaluation_score
+                        success = improvement > 0
+                        db.update_operation_performance(
+                            operation_name=node.operation_that_created_this,
+                            category=operation_info.get('category', 'unknown') if operation_info else 'unknown',
+                            improvement=improvement,
+                            execution_time=eval_time,
+                            success=success
+                        )
+                        logger.debug(f"📊 Updated operation performance: {node.operation_that_created_this} (improvement: {improvement:+.5f})")
                     
                 except Exception as e:
                     logger.error(f"Failed to log to database: {e}")
@@ -453,7 +478,8 @@ class MCTSEngine:
         self.root.evaluation_score = root_score
         self.root.update_reward(root_score, root_time)
         
-        logger.info(f"Root evaluation: {root_score:.5f}")
+        target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
+        logger.info(f"Root evaluation: {root_score:.5f} ({target_metric})")
         
         # Main MCTS loop
         for iteration in range(1, self.max_iterations + 1):
@@ -490,8 +516,11 @@ class MCTSEngine:
             'final_memory_usage': self._get_memory_usage()
         }
         
+        # Get target metric from config
+        target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
+        
         logger.info(f"MCTS search completed: {results['total_iterations']} iterations, "
-                   f"best score: {results['best_score']:.5f}")
+                   f"metric: {target_metric}, best score: {results['best_score']:.5f}")
         
         return results
     

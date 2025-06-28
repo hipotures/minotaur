@@ -1,0 +1,122 @@
+# MCTS Configuration for Titanic Dataset - Self-Check Test
+# Fast test configuration for Titanic dataset validation and system testing
+#
+# PERFORMANCE TARGET: Complete 3 iterations in 30-60 seconds
+# RESOURCE LIMITS: train_size=100 samples, pandas backend, XGBoost only
+
+# Session Management - Ultra-short runs
+session:
+  max_iterations: 10              # Ultra-short for testing
+  max_runtime_hours: 0.25        # 15 minutes max
+  checkpoint_interval: 1         # Save every iteration
+
+# MCTS - Minimal exploration
+mcts:
+  max_tree_depth: 4             # Very shallow
+  expansion_threshold: 1        # Expand immediately
+  min_visits_for_best: 2        # Minimal visits
+  max_children_per_node: 2      # Very few children
+  expansion_budget: 5           # Tiny budget
+  max_nodes_in_memory: 1000     # Minimal memory
+
+# AutoGluon - Ultra-fast evaluation with Titanic dataset
+autogluon:
+  # Titanic Dataset (registered in database)
+  dataset_name: 'titanic'
+  target_metric: 'accuracy'
+  
+  # Dataset-specific column configuration
+  ignore_columns: ["Name", "Ticket"]          # Columns to ignore during feature generation
+  
+  # Core configuration - extreme speed focus
+  included_model_types: ['XGB']           # Only XGBoost
+  enable_gpu: true                        # GPU for speed
+  train_size: 1.0                         # Fixed 100 samples for ultra-fast testing
+  
+  # Model training settings
+  time_limit: 8                           # Extremely short evaluation
+  presets: 'medium_quality'               # Fast preset
+  skip_final_evaluation: true             # Skip expensive final evaluation
+  holdout_frac: 0.2                       # Large holdout for speed
+  verbosity: 2                            # Show AutoGluon output
+  
+  # Ray GPU configuration - disable Ray completely
+  ag_args_fit:
+    num_cpus: 1
+    num_gpus: 1
+  ag_args_ensemble:
+    fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
+    enable_ray: false  # Force disable Ray
+
+# Feature Space - Custom domain for Titanic with simplified system
+feature_space:
+  # KEY: Specify custom domain module for Titanic
+  custom_domain_module: 'domains.titanic'  # Load CustomFeatureOperations from titanic.py
+  
+  max_features_per_node: 50               # Very few features
+  feature_timeout: 30                     # Short timeout
+  max_cache_size_mb: 256                  # Tiny cache
+  
+  # NEW: Feature building limits for ultra-fast testing
+  max_features_to_build: 10               # Only build 10 features total
+  max_features_per_iteration: 3           # Max 3 features per MCTS iteration
+  feature_build_timeout: 60               # 1 minute timeout per feature
+  cache_miss_limit: 10                    # Max 10 cache misses
+  
+  # Note: enabled_categories not needed with simplified domain system
+  # All methods in CustomFeatureOperations are automatically enabled
+
+# Performance - Minimal resources
+resources:
+  max_memory_gb: 1                        # Very low memory
+  memory_check_interval: 1                
+  force_gc_interval: 5                    # Very frequent GC
+  max_cpu_cores: 2                        # Limit CPU cores
+  max_disk_usage_gb: 5                    # Minimal disk
+
+# Data - Use DuckDB backend for proper cache generation
+data:
+  backend: 'duckdb'                       # Use DuckDB for proper cache files
+  prefer_parquet: false                   # Stick to CSV for simplicity
+  auto_convert_csv: false                 # Don't auto-convert
+  memory_limit_mb: 256                    # Low memory limit
+  dtype_optimization: true                
+  
+  # DuckDB handles mixed data types properly and provides persistent cache
+
+# Database - Minimal settings
+database:
+  path: 'data/feature_discovery_titanic_test.duckdb'  # Separate test DB
+  max_history_size: 1000                  # Tiny history
+  backup_interval: 10                     # Frequent backups
+  retention_days: 1                       # Very short retention
+
+# Logging - Minimal for speed
+logging:
+  log_level: 'INFO'                       # Show progress
+  max_log_size_mb: 10                     # Small logs
+  progress_interval: 1                    # Report every iteration
+  log_autogluon_details: false           # Skip details
+
+# Export - Minimal output
+export:
+  formats: ['python']                     # Only Python code
+  python_output: 'outputs/titanic_best_features_test.py'
+  include_documentation: false            
+  output_dir: 'outputs/reports_titanic_test'
+  export_on_improvement: false            # Skip intermediate
+  export_on_completion: true              # Only final export
+
+# Analytics - Skip for speed
+analytics:
+  generate_charts: false                  # No charts for speed
+  include_timing_analysis: false          # Skip timing analysis
+
+# Validation - Skip for speed
+validation:
+  validate_generated_features: false      # Skip validation
+
+# Testing - Mark as test mode
+testing:
+  fast_test_mode: true                    # Mark as test session
+  use_small_dataset: true                 # Use test dataset

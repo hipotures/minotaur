@@ -60,22 +60,42 @@ class FeatureCacheManager:
         return self.features_dir / data_type / f"{feature_name}.parquet"
         
     def is_feature_cached(self, feature_name: str, data_type: str) -> bool:
-        """Check if feature is already cached."""
-        return self.get_feature_path(feature_name, data_type).exists()
+        """Check if feature is already cached (parquet or CSV)."""
+        path = self.get_feature_path(feature_name, data_type)
+        csv_path = path.with_suffix('.csv')
+        return path.exists() or csv_path.exists()
         
     def load_feature(self, feature_name: str, data_type: str) -> pd.Series:
-        """Load cached feature."""
+        """Load cached feature with fallback support."""
         path = self.get_feature_path(feature_name, data_type)
-        logger.debug(f"📂 Loading cached feature: {feature_name} ({data_type})")
-        return pd.read_parquet(path).iloc[:, 0]
+        csv_path = path.with_suffix('.csv')
+        
+        # Try parquet first, then CSV fallback
+        if path.exists():
+            logger.debug(f"📂 Loading cached feature: {feature_name} ({data_type}) from parquet")
+            return pd.read_parquet(path).iloc[:, 0]
+        elif csv_path.exists():
+            logger.debug(f"📂 Loading cached feature: {feature_name} ({data_type}) from CSV")
+            return pd.read_csv(csv_path).iloc[:, 0]
+        else:
+            raise FileNotFoundError(f"Neither parquet nor CSV cache found for {feature_name}")
         
     def save_feature(self, feature_name: str, data_type: str, feature_data: pd.Series):
-        """Save feature to cache."""
+        """Save feature to cache with type handling."""
         path = self.get_feature_path(feature_name, data_type)
         path.parent.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame({feature_name: feature_data})
-        df.to_parquet(path, index=False)
-        logger.info(f"💾 Cached new feature: {feature_name} ({data_type})")
+        
+        try:
+            # Try to save as parquet first
+            df.to_parquet(path, index=False)
+            logger.info(f"💾 Cached new feature: {feature_name} ({data_type}) as parquet")
+        except Exception as e:
+            # Fallback to CSV for problematic data types
+            csv_path = path.with_suffix('.csv')
+            df.to_csv(csv_path, index=False)
+            logger.warning(f"⚠️ Saved as CSV due to type issue: {feature_name} ({data_type}) - {str(e)[:100]}")
+            logger.info(f"💾 Cached new feature: {feature_name} ({data_type}) as CSV fallback")
         
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""

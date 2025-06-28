@@ -22,9 +22,8 @@ mcts:
 
 # AutoGluon - Ultra-fast evaluation
 autogluon:
-  # S5E6 Dataset paths
-  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
-  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  # S5E6 Dataset (registered in database)
+  dataset_name: 'playground-series-s5e6-2025'
   target_metric: 'MAP@3'
   
   # Core configuration - extreme speed focus
@@ -78,12 +77,33 @@ resources:
   max_cpu_cores: 2                        # Limit CPU cores
   max_disk_usage_gb: 5                    # Minimal disk
 
-# Data - Fast loading only (train_size controls sampling)
+# Data - DuckDB for ultra-efficient sampling (train_size=100 samples)
 data:
+  backend: 'duckdb'                       # Force DuckDB for efficient sampling
   prefer_parquet: true                    # Fast loading
   auto_convert_csv: true                  
   memory_limit_mb: 50                     # Very low memory limit
   dtype_optimization: true                
+  
+  # DuckDB - Optimized for 100-sample testing with persistent storage
+  duckdb:
+    enable_sampling: true                 # Critical for train_size=100
+    max_memory_gb: 1                      # Low memory for testing
+    temp_directory: '/tmp/duckdb_test'
+    
+    # Persistent Database Settings - Critical for performance
+    persistent_storage: true              # Use persistent database storage
+    database_name: 'features_test.duckdb' # Separate test database
+    auto_load_data: true                  # Load CSV data on first run
+    
+    # Feature Caching Settings - Minimal for testing
+    enable_feature_cache: true            # Enable feature caching 
+    max_cached_features: 50               # Small cache for testing
+    cache_cleanup_threshold: 0.9          # Aggressive cleanup
+    cache_min_score: 0.0                  # Keep all features for testing
+    
+    enable_object_cache: true             # Cache for speed
+    force_compression: 'zstd'                
 
 # Database - Minimal settings
 database:

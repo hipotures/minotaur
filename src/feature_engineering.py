@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Shared feature engineering module for fertilizer prediction models.
 

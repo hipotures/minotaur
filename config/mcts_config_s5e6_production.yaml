@@ -8,8 +8,7 @@ session:
 
 # Production AutoGluon configuration
 autogluon:
-  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
-  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  dataset_name: 'playground-series-s5e6-2025'
   target_metric: 'MAP@3'
   
   # Full model ensemble for production
@@ -33,6 +32,20 @@ feature_space:
   # Higher limits for production
   max_features_per_node: 500
   min_improvement_threshold: 0.0001
+  
+  # Generic operations - all enabled for production exploration
+  generic_operations:
+    statistical_aggregations: true     # Enable all aggregations
+    polynomial_features: true         # Enable polynomial features
+    binning_features: true            # Enable binning
+    ranking_features: true            # Enable ranking features
+  
+  # Generic operation parameters - production settings
+  generic_params:
+    polynomial_degree: 3              # Higher degree for more features
+    binning_bins: 10                  # More bins for finer discretization
+    groupby_columns: []               # Auto-detect all categorical columns
+    aggregate_columns: []             # Auto-detect all numeric columns
 
 # Logging configuration for production
 logging:

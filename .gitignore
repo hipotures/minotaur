@@ -72,6 +72,9 @@ venv.bak/
 # VS Code
 .vscode/
 
+# Misc bin files
+bin/
+
 # IDE
 .idea/
 *.swp
@@ -95,6 +98,14 @@ autogluon_models/
 # Large log files
 *.log
 timing_data_*.json
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# MCTS cache
+cache/
 
 # Reports and analytics (regenerable)
 reports/
@@ -120,3 +131,9 @@ catboost_info/
 \!scripts/
 \!mcts_feature_discovery/
 \!docs/
+
+# Large cache files
+cache/**/*.duckdb
+cache/**/*.parquet
+*.duckdb
+

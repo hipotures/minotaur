@@ -2,9 +2,9 @@
 Generic Feature Operations
 
 Universal feature operations that work across domains:
-- NPK ratios and interactions
 - Statistical aggregations
 - Polynomial transformations
+- Binning and ranking features
 - Feature selection operations
 """
 
@@ -18,32 +18,6 @@ logger = logging.getLogger(__name__)
 class GenericFeatureOperations:
     """Generic feature operations applicable across domains."""
     
-    @staticmethod
-    def get_npk_interactions(df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """NPK ratio and interaction features."""
-        features = {}
-        
-        if all(col in df.columns for col in ['Nitrogen', 'Phosphorous', 'Potassium']):
-            # Basic ratios
-            features['NP_ratio'] = df['Nitrogen'] / (df['Phosphorous'] + 1e-6)
-            features['NK_ratio'] = df['Nitrogen'] / (df['Potassium'] + 1e-6)
-            features['PK_ratio'] = df['Phosphorous'] / (df['Potassium'] + 1e-6)
-            
-            # NPK balance
-            npk_sum = df['Nitrogen'] + df['Phosphorous'] + df['Potassium']
-            features['N_pct'] = df['Nitrogen'] / (npk_sum + 1e-6)
-            features['P_pct'] = df['Phosphorous'] / (npk_sum + 1e-6)
-            features['K_pct'] = df['Potassium'] / (npk_sum + 1e-6)
-            
-            # NPK harmony (how balanced the nutrients are)
-            features['npk_harmony'] = 1 / (np.std([features['N_pct'], features['P_pct'], features['K_pct']], axis=0) + 1e-6)
-            
-            # Dominant nutrient
-            features['dominant_nutrient'] = pd.concat([
-                df['Nitrogen'], df['Phosphorous'], df['Potassium']
-            ], axis=1).idxmax(axis=1).astype('category')
-            
-        return features
     
     @staticmethod
     def get_statistical_aggregations(df: pd.DataFrame, groupby_cols: List[str], agg_cols: List[str]) -> Dict[str, pd.Series]:
@@ -106,13 +80,25 @@ class GenericFeatureOperations:
         
         for col in numeric_cols:
             if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-                # Quantile-based binning
+                # Quantile-based binning with type conversion for compatibility
                 try:
-                    binned = pd.cut(df[col], bins=n_bins, labels=False, duplicates='drop')
+                    # Convert float16 to float32 for pandas compatibility
+                    col_data = df[col]
+                    if col_data.dtype == np.float16:
+                        col_data = col_data.astype(np.float32)
+                    
+                    binned = pd.cut(col_data, bins=n_bins, labels=False, duplicates='drop')
                     features[f'{col}_bin_{n_bins}'] = binned.fillna(-1).astype('category')
-                except Exception:
-                    # Fallback for edge cases
-                    features[f'{col}_bin_{n_bins}'] = pd.cut(df[col], bins=n_bins, labels=False, duplicates='drop').fillna(-1)
+                except Exception as e:
+                    logger.warning(f"Binning failed for column {col}: {e}")
+                    # Fallback: create simple quartile bins
+                    try:
+                        col_data = df[col].astype(np.float32)
+                        features[f'{col}_bin_{n_bins}'] = pd.qcut(col_data, q=n_bins, labels=False, duplicates='drop').fillna(-1)
+                    except Exception:
+                        # Ultimate fallback: skip this column
+                        logger.warning(f"Skipping binning for problematic column: {col}")
+                        continue
         
         return features
     
@@ -131,74 +117,6 @@ class GenericFeatureOperations:
                 
         return features
     
-    @staticmethod
-    def get_nutrient_balance_features(df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Nutrient balance and harmony features (from synthetic_data)."""
-        features = {}
-        
-        if all(col in df.columns for col in ['Nitrogen', 'Phosphorous', 'Potassium']):
-            # Total NPK sum
-            features['npk_sum'] = df['Nitrogen'] + df['Phosphorous'] + df['Potassium']
-            
-            # NPK harmony (harmonic mean approach)
-            features['npk_harmony'] = 3 / (1/df['Nitrogen'] + 1/(df['Phosphorous']+1e-6) + 1/(df['Potassium']+1e-6))
-            
-        return features
     
-    @staticmethod
-    def get_binning_categorical_features(df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Categorical binning features (from synthetic_data)."""
-        features = {}
-        
-        if 'Nitrogen' in df.columns:
-            features['nitrogen_bin'] = pd.cut(
-                df['Nitrogen'], 
-                bins=5, 
-                labels=['very_low', 'low', 'medium', 'high', 'very_high']
-            ).astype(str).astype('category')
-            
-        if 'Temperature' in df.columns:
-            features['temperature_bin'] = pd.cut(
-                df['Temperature'], 
-                bins=3, 
-                labels=['cool', 'moderate', 'hot']
-            ).astype(str).astype('category')
-            
-        return features
     
-    @staticmethod
-    def get_complex_mathematical_features(df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Complex mathematical transformations (from synthetic_data)."""
-        features = {}
-        
-        # Complex feature 1: log-sum interaction with temperature
-        if all(col in df.columns for col in ['Nitrogen', 'Phosphorous', 'Potassium', 'Temperature']):
-            npk_sum = df['Nitrogen'] + df['Phosphorous'] + df['Potassium'] 
-            features['complex_feature_1'] = np.log1p(npk_sum) * df['Temperature']
-            
-        # Complex feature 2: nitrogen sqrt interaction with moisture
-        if all(col in df.columns for col in ['Nitrogen', 'Moisture']):
-            features['complex_feature_2'] = df['Nitrogen'] ** 0.5 * df['Moisture']
-            
-        # Complex feature 3: humidity sine interaction with potassium
-        if all(col in df.columns for col in ['Humidity', 'Potassium']):
-            features['complex_feature_3'] = np.sin(df['Humidity'] / 100 * np.pi) * df['Potassium']
-            
-        return features
     
-    @staticmethod 
-    def get_statistical_deviations(df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Statistical deviations from group means (from synthetic_data)."""
-        features = {}
-        
-        # Nitrogen deviation by soil type
-        if all(col in df.columns for col in ['Nitrogen', 'Soil Type']):
-            soil_nitrogen_mean = df.groupby('Soil Type')['Nitrogen'].transform('mean')
-            features['nitrogen_soil_deviation'] = df['Nitrogen'] - soil_nitrogen_mean
-            
-        # Phosphorous deviation by crop type  
-        if all(col in df.columns for col in ['Phosphorous', 'Crop Type']):
-            crop_phosphorous_mean = df.groupby('Crop Type')['Phosphorous'].transform('mean')
-            features['phosphorous_crop_deviation'] = df['Phosphorous'] - crop_phosphorous_mean
-            
-        return features
