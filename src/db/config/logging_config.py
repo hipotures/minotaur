@@ -19,6 +19,15 @@ class SafeFormatter(logging.Formatter):
             record.database_context = 'db'
         if not hasattr(record, 'dataset_name'):
             record.dataset_name = 'dataset'
+        # Provide default values for query-related fields
+        if not hasattr(record, 'query'):
+            record.query = ''
+        if not hasattr(record, 'params'):
+            record.params = ''
+        if not hasattr(record, 'duration'):
+            record.duration = ''
+        if not hasattr(record, 'separator'):
+            record.separator = ''
         
         return super().format(record)
 
@@ -55,7 +64,7 @@ def setup_db_logging(main_config: Dict[str, Any]) -> logging.Logger:
     if log_level == 'DEBUG':
         # DEBUG level: Detailed database operation logging
         debug_handler = logging.FileHandler('logs/db_debug.log')
-        debug_formatter = logging.Formatter(
+        debug_formatter = SafeFormatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d\n'
             'Message: %(message)s\n'
             '%(query)s%(params)s%(duration)s%(separator)s',
