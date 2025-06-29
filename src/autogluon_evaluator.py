@@ -50,7 +50,7 @@ class AutoGluonEvaluator:
         self.test_path = dataset_info['test_path']
         self.target_column = dataset_info['target_column']
         self.id_column = dataset_info['id_column']
-        self.ignore_columns = self.autogluon_config.get('ignore_columns', [])
+        self.ignore_columns = self.autogluon_config.get('ignore_columns', []) or []
         self.use_duckdb_cache = dataset_info.get('use_duckdb_cache', False)
         self.dataset_name = dataset_info.get('dataset_name')
         
@@ -275,6 +275,12 @@ class AutoGluonEvaluator:
             model_dir = self._create_temp_model_dir()
             logger.debug(f"Created model directory: {model_dir}")
             
+            # Show first 5 rows of training data before AutoGluon
+            logger.info("📊 First 5 rows of AutoGluon training data:")
+            logger.info(f"Columns: {list(train_data.columns)}")
+            for i, (_, row) in enumerate(train_data.head(5).iterrows(), 1):
+                logger.info(f"Row {i}: {list(row.values)}")
+            
             # Train and evaluate
             logger.info("Starting AutoGluon training and evaluation...")
             score = self._train_and_evaluate(train_data, val_data, eval_config, model_dir)
@@ -386,18 +392,33 @@ class AutoGluonEvaluator:
         
         try:
             # Prepare ignored columns (ID column + user-defined ignore columns)
-            ignored_columns = [self.id_column] + self.ignore_columns
+            ignored_columns = []
+            if self.id_column:
+                ignored_columns.append(self.id_column)
+            if self.ignore_columns:
+                ignored_columns.extend(self.ignore_columns)
+            
+            # PART 3: Log configuration for data leakage prevention
+            logger.info(f"AutoGluon configuration:")
+            logger.info(f"  Target column: {self.target_column}")
+            logger.info(f"  ID column: {self.id_column}")
+            logger.info(f"  Ignored columns: {self.ignore_columns}")
+            logger.info(f"  Total ignored for AutoGluon: {ignored_columns}")
             
             # Create predictor with ignored columns
             # Use the configured metric, or None to let AutoGluon choose
             eval_metric = self.target_metric if self.target_metric.lower() not in ['map@3', 'map_at_3', 'map3'] else None
+            
+            learner_kwargs = {}
+            if ignored_columns:
+                learner_kwargs['ignored_columns'] = ignored_columns
             
             predictor = TabularPredictor(
                 label=self.target_column,
                 path=model_dir,
                 eval_metric=eval_metric,
                 verbosity=eval_config.get('verbosity', 0),
-                learner_kwargs={'ignored_columns': ignored_columns}
+                learner_kwargs=learner_kwargs
             )
             
             # Prepare fit parameters

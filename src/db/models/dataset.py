@@ -70,9 +70,12 @@ class Dataset(BaseModel):
     @field_validator('dataset_id')
     @classmethod
     def validate_dataset_id(cls, v):
-        """Validate dataset ID format (MD5 hash)."""
-        if not v or len(v) != 32:
-            raise ValueError('Dataset ID must be a 32-character MD5 hash')
+        """Validate dataset ID format (MD5 hash or shortened version)."""
+        if not v:
+            raise ValueError('Dataset ID cannot be empty')
+        # Accept both full MD5 hash (32 chars) and shortened versions (8+ chars)
+        if len(v) < 8 or len(v) > 32:
+            raise ValueError('Dataset ID must be 8-32 characters long')
         if not all(c in '0123456789abcdef' for c in v.lower()):
             raise ValueError('Dataset ID must be a valid hexadecimal hash')
         return v.lower()

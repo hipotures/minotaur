@@ -236,12 +236,11 @@ class MCTSEngine:
         """Current iteration count."""
         return self.current_iteration
     
-    def expansion(self, node: FeatureNode, available_operations: List[str] = None) -> 'FeatureNode':
+    def expansion(self, node: FeatureNode, available_operations: List[str] = None) -> List['FeatureNode']:
         """Backward-compatible expansion method for both tests and production."""
         # Production mode - use original expansion logic
         if available_operations is not None:
-            expanded_children = self.expansion_original(node, available_operations)
-            return expanded_children[0] if expanded_children else node
+            return self.expansion_original(node, available_operations)
         
         # Test mode - use mock expansion
         if hasattr(self, 'feature_space') and self.feature_space:
@@ -250,8 +249,8 @@ class MCTSEngine:
         available_ops = ["test_op1", "test_op2", "test_op3"]  # Mock operations
         if not node.children and available_ops:
             child = node.add_child("test_op1")
-            return child
-        return node.children[0] if node.children else node
+            return [child]
+        return node.children if node.children else []
     
     def simulation(self, node: FeatureNode, evaluator=None, feature_space=None):
         """Backward-compatible simulation method for both tests and production."""
@@ -607,7 +606,9 @@ class MCTSEngine:
                 logger.info("Search interrupted by user")
                 break
             except Exception as e:
+                import traceback
                 logger.error(f"Error in iteration {iteration}: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 continue
         
         # Final results
@@ -629,7 +630,7 @@ class MCTSEngine:
         
         return results
     
-    def get_best_path(self) -> List[FeatureNode]:
+    def get_best_path(self) -> List[str]:
         """Get the path to the best discovered feature combination."""
         if self.best_node:
             return self.best_node.get_path_from_root()

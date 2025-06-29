@@ -361,11 +361,15 @@ class DatasetImporter:
         # Override dataset name in autogluon config
         config['autogluon']['dataset_name'] = dataset_name
         
+        # Add target and ID column information for feature filtering
+        config['autogluon']['target_column'] = target_column
+        config['autogluon']['id_column'] = id_column
+        
         # Determine custom domain module based on dataset name
         domain_mapping = {
-            's5e6': 'domains.fertilizer',
-            'fertilizer': 'domains.fertilizer',
-            'titanic': 'domains.titanic',
+            's5e6': 'kaggle_s5e6',
+            'fertilizer': 'kaggle_s5e6',
+            'titanic': 'titanic',
         }
         
         for key, domain in domain_mapping.items():
@@ -390,32 +394,32 @@ class DatasetImporter:
             generic_df = feature_space.generate_generic_features(train_df)
             dataset_logger.info(f"Generated {len(generic_df.columns)} generic columns")
             
-            # Save generic table
-            conn.execute("DROP TABLE IF EXISTS generic")
+            # Save train_generic table
+            conn.execute("DROP TABLE IF EXISTS train_generic")
             conn.register('generic_df', generic_df)
-            conn.execute("CREATE TABLE generic AS SELECT * FROM generic_df")
+            conn.execute("CREATE TABLE train_generic AS SELECT * FROM generic_df")
             conn.unregister('generic_df')
-            dataset_logger.info(f"✅ Created 'generic' table with {len(generic_df.columns)} columns")
+            dataset_logger.info(f"✅ Created 'train_generic' table with {len(generic_df.columns)} columns")
             
             # 2. Generate CUSTOM features only
             dataset_logger.info("🎯 Generating CUSTOM domain features...")
             custom_df = feature_space.generate_custom_features(train_df, dataset_name)
             dataset_logger.info(f"Generated {len(custom_df.columns)} custom columns")
             
-            # Save custom table
-            conn.execute("DROP TABLE IF EXISTS custom")
+            # Save train_custom table
+            conn.execute("DROP TABLE IF EXISTS train_custom")
             conn.register('custom_df', custom_df)
-            conn.execute("CREATE TABLE custom AS SELECT * FROM custom_df")
+            conn.execute("CREATE TABLE train_custom AS SELECT * FROM custom_df")
             conn.unregister('custom_df')
-            dataset_logger.info(f"✅ Created 'custom' table with {len(custom_df.columns)} columns")
+            dataset_logger.info(f"✅ Created 'train_custom' table with {len(custom_df.columns)} columns")
             
             # 3. Create train_features by column concatenation in DuckDB
-            dataset_logger.info("🔗 Creating train_features (train + generic + custom)...")
+            dataset_logger.info("🔗 Creating train_features (train + train_generic + train_custom)...")
             conn.execute("""
                 DROP TABLE IF EXISTS train_features;
                 CREATE TABLE train_features AS 
                 SELECT t.*, g.*, c.*
-                FROM train t, generic g, custom c 
+                FROM train t, train_generic g, train_custom c 
                 WHERE t.rowid = g.rowid AND g.rowid = c.rowid
             """)
             
@@ -470,6 +474,50 @@ class DatasetImporter:
             
             result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('test_features')").fetchone()
             dataset_logger.info(f"✅ Created 'test_features' table with {result[0]} columns")
+        
+        # PART 5: Validate train/test feature column synchronization
+        if (conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train_features'").fetchone() and
+            conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test_features'").fetchone()):
+            self._validate_feature_columns(conn, target_column, dataset_logger)
+    
+    def _validate_feature_columns(self, conn, target_column: str, dataset_logger):
+        """Validate that train and test feature columns are synchronized."""
+        try:
+            # Get column names from both tables
+            train_columns_result = conn.execute("SELECT name FROM pragma_table_info('train_features')").fetchall()
+            test_columns_result = conn.execute("SELECT name FROM pragma_table_info('test_features')").fetchall()
+            
+            train_columns = {col[0] for col in train_columns_result}
+            test_columns = {col[0] for col in test_columns_result}
+            
+            # Remove target column from train columns for comparison
+            train_columns_no_target = train_columns - {target_column}
+            
+            # Check if columns are synchronized
+            if train_columns_no_target == test_columns:
+                dataset_logger.info(f"✅ Feature columns synchronized: {len(test_columns)} columns in both train (without target) and test")
+                return
+            
+            # Calculate differences
+            missing_in_test = train_columns_no_target - test_columns
+            extra_in_test = test_columns - train_columns_no_target
+            
+            # Log detailed error information
+            dataset_logger.error(f"❌ Feature column mismatch detected!")
+            dataset_logger.error(f"  Train columns (without target): {len(train_columns_no_target)}")
+            dataset_logger.error(f"  Test columns: {len(test_columns)}")
+            
+            if missing_in_test:
+                dataset_logger.error(f"  Missing in test ({len(missing_in_test)}): {sorted(list(missing_in_test))[:10]}{'...' if len(missing_in_test) > 10 else ''}")
+            
+            if extra_in_test:
+                dataset_logger.error(f"  Extra in test ({len(extra_in_test)}): {sorted(list(extra_in_test))[:10]}{'...' if len(extra_in_test) > 10 else ''}")
+            
+            raise ValueError(f"Feature columns must be identical between train and test! Train: {len(train_columns_no_target)}, Test: {len(test_columns)}")
+            
+        except Exception as e:
+            dataset_logger.error(f"Failed to validate feature columns: {e}")
+            raise ValueError(f"Feature column validation failed: {e}")
     
     def generate_dataset_id(self, file_mappings: Dict[str, str]) -> str:
         """Generate unique dataset ID based on file contents.

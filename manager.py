@@ -27,8 +27,10 @@ sys.path.insert(0, str(project_root))
 from src.manager.core import Config, DatabaseConnection, DatabasePool, ModuleInterface
 from src.manager.repositories import (
     SessionRepository, FeatureRepository, 
-    DatasetRepository, MetricsRepository
+    MetricsRepository
 )
+from src.db.repositories.dataset_repository import DatasetRepository
+from src.db.core.connection import DuckDBConnectionManager
 from src.manager.services import (
     SessionService, FeatureService,
     DatasetService, AnalyticsService, BackupService
@@ -99,11 +101,19 @@ class ModularDuckDBManager:
     
     def _init_repositories(self) -> None:
         """Initialize repository instances."""
+        # Create connection manager for new repository system
+        main_config = {
+            'database': {
+                'path': str(self.config.database_path)
+            }
+        }
+        self.conn_manager = DuckDBConnectionManager(main_config)
+        
         # Repositories will get connections from the pool as needed
         self.repositories = {
             'session': SessionRepository(self.db_pool),
             'feature': FeatureRepository(self.db_pool),
-            'dataset': DatasetRepository(self.db_pool),
+            'dataset': DatasetRepository(self.conn_manager),
             'metrics': MetricsRepository(self.db_pool)
         }
     

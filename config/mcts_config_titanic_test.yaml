@@ -29,7 +29,7 @@ autogluon:
   target_metric: 'accuracy'
   
   # Dataset-specific column configuration
-  ignore_columns: ["Name", "Ticket"]          # Columns to ignore during feature generation
+  ignore_columns: null                        # No columns to ignore
   
   # Core configuration - extreme speed focus
   included_model_types: ['XGB']           # Only XGBoost

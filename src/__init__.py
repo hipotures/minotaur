@@ -30,7 +30,36 @@ from .timing import TimingCollector, initialize_timing, get_timing_collector, ti
 from .analytics import AnalyticsGenerator, generate_quick_report
 from .data_utils import DataManager, prepare_training_data
 from .feature_cache import FeatureCacheManager
-from .domains import GenericFeatureOperations, FertilizerS5E6Operations
+# Import from new feature system
+from .features.custom.kaggle_s5e6 import CustomFeatureOperations as FertilizerS5E6Operations
+
+# Create backward compatibility wrapper for GenericFeatureOperations
+class GenericFeatureOperations:
+    """Backward compatibility wrapper for generic feature operations."""
+    
+    @staticmethod
+    def get_statistical_aggregations(df, groupby_cols, agg_cols):
+        """Statistical aggregations by categorical features."""
+        from .features.generic.statistical import get_statistical_aggregations
+        return get_statistical_aggregations(df, groupby_cols, agg_cols)
+    
+    @staticmethod
+    def get_polynomial_features(df, numeric_cols, degree=2):
+        """Polynomial features for numeric columns."""
+        from .features.generic.polynomial import get_polynomial_features
+        return get_polynomial_features(df, numeric_cols, degree)
+    
+    @staticmethod
+    def get_binning_features(df, numeric_cols, n_bins=5):
+        """Binning features for numeric columns."""
+        from .features.generic.binning import get_binning_features
+        return get_binning_features(df, numeric_cols, n_bins)
+    
+    @staticmethod
+    def get_ranking_features(df, numeric_cols):
+        """Ranking features for numeric columns."""
+        from .features.generic.ranking import get_ranking_features
+        return get_ranking_features(df, numeric_cols)
 from .logging_utils import setup_session_logging, set_session_context, clear_session_context
 from .dataset_manager import DatasetManager
 

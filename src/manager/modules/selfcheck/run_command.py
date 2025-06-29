@@ -265,7 +265,7 @@ class RunCommand(BaseSelfCheckCommand):
                 }
             },
             'feature_space': {
-                'domain_module': 'domains.generic',
+                'domain_module': 'generic',
                 'max_features_per_node': 20,
                 'feature_timeout': 30,
                 'max_cache_size_mb': 256,

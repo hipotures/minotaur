@@ -7,18 +7,36 @@ analysis of MCTS performance.
 
 import argparse
 from typing import Dict
-from manager.core.module_base import ModuleInterface
-from manager.core.database import DatabaseConnection
-from manager.repositories import SessionRepository, FeatureRepository, MetricsRepository
-from manager.services import AnalyticsService
+try:
+    from manager.core.module_base import ModuleInterface
+    from manager.core.database import DatabaseConnection
+    from manager.repositories import SessionRepository, FeatureRepository, MetricsRepository
+    from manager.services import AnalyticsService
+except ImportError:
+    # Skip if dependencies not available
+    ModuleInterface = object
+    DatabaseConnection = None
+    SessionRepository = None
+    FeatureRepository = None
+    MetricsRepository = None
+    AnalyticsService = None
 
 # Import command handlers
-from .summary import SummaryCommand
-from .trends import TrendsCommand
-from .operations import OperationsCommand
-from .convergence import ConvergenceCommand
-from .report import ReportCommand
-from .compare import CompareCommand
+try:
+    from .summary import SummaryCommand
+    from .trends import TrendsCommand
+    from .operations import OperationsCommand
+    from .convergence import ConvergenceCommand
+    from .report import ReportCommand
+    from .compare import CompareCommand
+except ImportError:
+    # Fallback for when relative imports fail
+    SummaryCommand = None
+    TrendsCommand = None
+    OperationsCommand = None
+    ConvergenceCommand = None
+    ReportCommand = None
+    CompareCommand = None
 
 
 class AnalyticsModule(ModuleInterface):
@@ -88,22 +106,40 @@ class AnalyticsModule(ModuleInterface):
         
         # Execute appropriate command
         if args.summary:
-            command = SummaryCommand(context)
-            command.execute()
+            if SummaryCommand:
+                command = SummaryCommand(context)
+                command.execute()
+            else:
+                print("❌ Summary command not available")
         elif args.trends:
-            command = TrendsCommand(context)
-            command.execute()
+            if TrendsCommand:
+                command = TrendsCommand(context)
+                command.execute()
+            else:
+                print("❌ Trends command not available")
         elif args.operations:
-            command = OperationsCommand(context)
-            command.execute()
+            if OperationsCommand:
+                command = OperationsCommand(context)
+                command.execute()
+            else:
+                print("❌ Operations command not available")
         elif args.convergence:
-            command = ConvergenceCommand(context)
-            command.execute(args.convergence)
+            if ConvergenceCommand:
+                command = ConvergenceCommand(context)
+                command.execute(args.convergence)
+            else:
+                print("❌ Convergence command not available")
         elif args.report:
-            command = ReportCommand(context)
-            command.execute()
+            if ReportCommand:
+                command = ReportCommand(context)
+                command.execute()
+            else:
+                print("❌ Report command not available")
         elif args.compare:
-            command = CompareCommand(context)
-            command.execute(args.compare[0], args.compare[1])
+            if CompareCommand:
+                command = CompareCommand(context)
+                command.execute(args.compare[0], args.compare[1])
+            else:
+                print("❌ Compare command not available")
         else:
             print("❌ No analytics command specified. Use --help for options.")

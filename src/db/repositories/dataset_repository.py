@@ -557,11 +557,8 @@ class DatasetRepository(BaseRepository[Dataset]):
             fetch='none'
         )
         
-        # Get count of updated datasets
-        count_query = "SELECT changes()"
-        result = self.execute_custom_query(count_query, fetch='one')
-        
-        cleanup_count = result[0] if result else 0
+        # DuckDB doesn't have changes() function, return 0 for now
+        cleanup_count = 0
         if cleanup_count > 0:
             self.logger.info(f"Marked {cleanup_count} unused datasets as inactive")
         
@@ -570,6 +567,52 @@ class DatasetRepository(BaseRepository[Dataset]):
     def get_by_name(self, dataset_name: str) -> Optional[Dataset]:
         """Get dataset by name."""
         return self.find_by_name(dataset_name)
+    
+    def get_dataset_by_name(self, dataset_name: str) -> Optional[Dataset]:
+        """Get dataset by name (alias for backward compatibility)."""
+        return self.find_by_name(dataset_name)
+    
+    def get_dataset_by_id(self, dataset_id: str) -> Optional[Dataset]:
+        """Get dataset by ID (alias for backward compatibility)."""
+        return self.find_by_id(dataset_id, 'dataset_id')
+    
+    def create_dataset(self, dataset_data: Dict[str, Any]) -> str:
+        """Create dataset (alias for backward compatibility)."""
+        # Convert dict to DatasetCreate model
+        from ..models.dataset import DatasetCreate
+        dataset_create = DatasetCreate(**dataset_data)
+        dataset = self.register_dataset(dataset_create)
+        return dataset.dataset_id
+    
+    def get_all_datasets(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+        """Get all datasets (alias for backward compatibility)."""
+        datasets = self.list_all(active_only=not include_inactive)
+        # Convert Dataset models to dict format expected by service
+        result = []
+        for dataset in datasets:
+            result.append({
+                'dataset_id': dataset.dataset_id,
+                'name': dataset.dataset_name,
+                'dataset_name': dataset.dataset_name,
+                'train_path': dataset.train_path,
+                'test_path': dataset.test_path,
+                'submission_path': dataset.submission_path,
+                'validation_path': dataset.validation_path,
+                'target_column': dataset.target_column,
+                'id_column': dataset.id_column,
+                'competition_name': dataset.competition_name,
+                'description': dataset.description,
+                'train_records': dataset.train_records,
+                'train_columns': dataset.train_columns,
+                'test_records': dataset.test_records,
+                'test_columns': dataset.test_columns,
+                'created_at': dataset.created_at,
+                'last_used': dataset.last_used,
+                'is_active': dataset.is_active,
+                'session_count': 0,  # Would need separate query
+                'metadata': None  # Legacy field
+            })
+        return result
     
     def list_all(self, active_only: bool = True) -> List[Dataset]:
         """List all datasets."""

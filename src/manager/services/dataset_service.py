@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import logging
 import json
-from ..repositories.dataset_repository import DatasetRepository
+from ...db.repositories.dataset_repository import DatasetRepository
 from ..core.utils import format_number, format_bytes, format_datetime
 
 
@@ -255,7 +255,8 @@ class DatasetService:
                              target_column: Optional[str] = None,
                              id_column: Optional[str] = None,
                              competition_name: Optional[str] = None,
-                             description: Optional[str] = None) -> Dict[str, Any]:
+                             description: Optional[str] = None,
+                             force_update: bool = False) -> Dict[str, Any]:
         """Auto-register dataset by detecting files in directory.
         
         Args:
@@ -326,10 +327,16 @@ class DatasetService:
             # Check if dataset already exists
             existing_dataset = self.repository.get_dataset_by_name(name)
             if existing_dataset:
-                return {
-                    'success': False,
-                    'error': f'Dataset with name "{name}" already exists'
-                }
+                if not force_update:
+                    return {
+                        'success': False,
+                        'error': f'Dataset with name "{name}" already exists'
+                    }
+                else:
+                    # Force update: remove existing dataset
+                    self.repository.delete(existing_dataset.dataset_id, 'dataset_id')
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Force update: removed existing dataset '{name}' (ID: {existing_dataset.dataset_id[:8]})")
             
             # Check if dataset ID already exists (same data, different name)
             existing_by_id = self.repository.get_dataset_by_id(dataset_id)

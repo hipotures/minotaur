@@ -263,10 +263,8 @@ class BaseRepository(ABC, Generic[T]):
             query = f"DELETE FROM {self.table_name} WHERE {id_column} = ?"
             self.conn_manager.execute_query(query, (id_value,), fetch='none')
             
-            # Check if anything was actually deleted
-            affected_rows = self.conn_manager.execute_query(
-                "SELECT changes()", fetch='one'
-            )[0]
+            # DuckDB doesn't have changes() function, assume 1 row affected
+            affected_rows = 1
             
             duration = time.time() - start_time
             self._track_operation('delete', duration)

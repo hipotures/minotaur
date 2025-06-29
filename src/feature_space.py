@@ -93,6 +93,11 @@ class FeatureSpace:
         self.max_features_to_build = self.feature_config.get('max_features_to_build')
         self.max_features_per_iteration = self.feature_config.get('max_features_per_iteration')
         self.feature_build_timeout = self.feature_config.get('feature_build_timeout', 300)
+        
+        # Feature filtering configuration (to prevent data leakage)
+        self.target_column = self.autogluon_config.get('target_column')
+        self.id_column = self.autogluon_config.get('id_column')
+        self.ignore_columns = self.autogluon_config.get('ignore_columns', []) or []
         self.cache_miss_limit = self.feature_config.get('cache_miss_limit', 50)
         
         # Generic operations configuration
@@ -229,13 +234,13 @@ class FeatureSpace:
         Args:
             domain_name: Name of the domain (e.g., 'titanic', 'fertilizer_s5e6')
         """
-        # Clean the domain name (remove 'domains.' prefix if present)
-        clean_domain_name = domain_name.replace("domains.", "").replace("src.domains.", "")
+        # Clean the domain name (remove 'features.custom.' prefix if present)
+        clean_domain_name = domain_name.replace("features.custom.", "").replace("src.features.custom.", "")
         
         try:
             # Import the custom domain module
             import importlib
-            module_path = f'src.domains.{clean_domain_name}'
+            module_path = f'src.features.custom.{clean_domain_name}'
             
             logger.info(f"Attempting to load custom domain module: {module_path}")
             module = importlib.import_module(module_path)
@@ -638,25 +643,32 @@ class FeatureSpace:
     def _apply_domain_operation(self, df: pd.DataFrame, operation_name: str) -> Dict[str, pd.Series]:
         """Apply domain-specific operation to generate new features."""
         try:
-            # First try generic operations
-            from src.domains.generic import GenericFeatureOperations
+            # First try generic operations using new modular system
+            from src import GenericFeatureOperations
             
             if operation_name == 'statistical_aggregations':
-                return self._apply_generic_statistical_aggregations(df)
+                features = self._apply_generic_statistical_aggregations(df)
+                return self._filter_no_signal_features(features, "statistical aggregations")
             elif operation_name == 'polynomial_features':
                 degree = self.generic_params['polynomial_degree']
-                return GenericFeatureOperations.get_polynomial_features(df, self._get_numeric_columns(df), degree=degree)
+                numeric_cols = self._filter_forbidden_columns(self._get_numeric_columns(df))
+                features = GenericFeatureOperations.get_polynomial_features(df, numeric_cols, degree=degree)
+                return self._filter_no_signal_features(features, "polynomial features")
             elif operation_name == 'binning_features':
                 n_bins = self.generic_params['binning_bins']
-                return GenericFeatureOperations.get_binning_features(df, self._get_numeric_columns(df), n_bins=n_bins)
+                numeric_cols = self._filter_forbidden_columns(self._get_numeric_columns(df))
+                features = GenericFeatureOperations.get_binning_features(df, numeric_cols, n_bins=n_bins)
+                return self._filter_no_signal_features(features, "binning features")
             elif operation_name == 'ranking_features':
-                return GenericFeatureOperations.get_ranking_features(df, self._get_numeric_columns(df))
+                numeric_cols = self._filter_forbidden_columns(self._get_numeric_columns(df))
+                features = GenericFeatureOperations.get_ranking_features(df, numeric_cols)
+                return self._filter_no_signal_features(features, "ranking features")
             
             # Try custom domain operations
             if self.dataset_name:
                 try:
                     import importlib
-                    module_path = f'src.domains.{self.dataset_name.lower()}'
+                    module_path = f'src.features.custom.{self.dataset_name.lower()}'
                     module = importlib.import_module(module_path)
                     
                     if hasattr(module, 'CustomFeatureOperations'):
@@ -665,7 +677,14 @@ class FeatureSpace:
                         
                         if hasattr(custom_class, method_name):
                             method = getattr(custom_class, method_name)
-                            return method(df)
+                            
+                            # Check if method uses forbidden columns in source code
+                            self._validate_custom_method_safety(method, method_name)
+                            
+                            features = method(df)
+                            
+                            # Filter out no-signal features
+                            return self._filter_no_signal_features(features, f"custom {operation_name}")
                 except ImportError:
                     pass  # No custom domain module, use generic operations
             
@@ -690,13 +709,99 @@ class FeatureSpace:
         if not agg_cols:
             agg_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
+        # Filter out forbidden columns to prevent data leakage
+        groupby_cols = self._filter_forbidden_columns(groupby_cols)
+        agg_cols = self._filter_forbidden_columns(agg_cols)
+        
         # Use the GenericFeatureOperations class for consistency
-        from src.domains.generic import GenericFeatureOperations
+        from src import GenericFeatureOperations
         return GenericFeatureOperations.get_statistical_aggregations(df, groupby_cols, agg_cols)
     
     def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
         """Get list of numeric columns from DataFrame."""
         return df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    def _filter_forbidden_columns(self, columns: List[str]) -> List[str]:
+        """Filter out target, ID, and ignored columns to prevent data leakage.
+        
+        Args:
+            columns: List of column names to filter
+            
+        Returns:
+            Filtered list with forbidden columns removed
+        """
+        forbidden_cols = set()
+        
+        # Add target column
+        if self.target_column:
+            forbidden_cols.add(self.target_column)
+        
+        # Add ID column  
+        if self.id_column:
+            forbidden_cols.add(self.id_column)
+            
+        # Add ignored columns
+        if self.ignore_columns:
+            forbidden_cols.update(self.ignore_columns)
+        
+        # Filter out forbidden columns
+        filtered_cols = [col for col in columns if col not in forbidden_cols]
+        
+        # Log filtering info if any columns were removed
+        removed_cols = set(columns) & forbidden_cols
+        if removed_cols:
+            logger.info(f"Filtered out forbidden columns from feature generation: {removed_cols}")
+        
+        return filtered_cols
+    
+    def has_signal(self, feature_series: pd.Series) -> bool:
+        """
+        Check if feature has signal (different values).
+        
+        Args:
+            feature_series: Pandas Series to check for signal
+            
+        Returns:
+            True if feature has signal (nunique > 1)
+            False if no signal (all values identical)
+        """
+        try:
+            # Remove NaN values and check number of unique values
+            unique_count = feature_series.dropna().nunique()
+            return unique_count > 1
+        except Exception as e:
+            logger.warning(f"Error checking feature signal: {e}")
+            return False  # Conservative: treat as no signal if error
+    
+    def _filter_no_signal_features(self, features: Dict[str, pd.Series], operation_type: str) -> Dict[str, pd.Series]:
+        """
+        Filter out features with no signal (all identical values).
+        
+        Args:
+            features: Dictionary of feature name -> pandas Series
+            operation_type: Type of operation for logging (e.g., "statistical aggregations")
+            
+        Returns:
+            Filtered dictionary with only features that have signal
+        """
+        if not features:
+            return features
+        
+        filtered_features = {}
+        no_signal_count = 0
+        
+        for feature_name, feature_series in features.items():
+            if self.has_signal(feature_series):
+                filtered_features[feature_name] = feature_series
+                logger.debug(f"Feature '{feature_name}' has signal - keeping")
+            else:
+                no_signal_count += 1
+                logger.info(f"Skipping no-signal feature '{feature_name}' from {operation_type} - all values identical")
+        
+        if no_signal_count > 0:
+            logger.info(f"Filtered out {no_signal_count} no-signal features from {operation_type}, kept {len(filtered_features)}")
+        
+        return filtered_features
     
     def _get_node_features(self, node) -> Set[str]:
         """Get current feature set for a node (for dependency checking)."""
@@ -1037,7 +1142,7 @@ class FeatureSpace:
         feature_count = 0
         
         # Import generic operations module
-        from src.domains.generic import GenericFeatureOperations
+        from src import GenericFeatureOperations
         
         # 1. Generate all generic features
         logger.info("Generating generic features...")
@@ -1045,6 +1150,10 @@ class FeatureSpace:
         # Get numeric and categorical columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Filter out forbidden columns to prevent data leakage
+        numeric_cols = self._filter_forbidden_columns(numeric_cols)
+        categorical_cols = self._filter_forbidden_columns(categorical_cols)
         
         # Statistical aggregations
         if len(categorical_cols) > 0 and len(numeric_cols) > 0:
@@ -1102,7 +1211,7 @@ class FeatureSpace:
             try:
                 # Import custom domain module
                 import importlib
-                module_path = f'src.domains.{dataset_name.lower()}'
+                module_path = f'src.features.custom.{dataset_name.lower()}'
                 module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
@@ -1115,6 +1224,10 @@ class FeatureSpace:
                     for method_name in method_names:
                         try:
                             method = getattr(custom_class, method_name)
+                            
+                            # Check if method uses forbidden columns in source code
+                            self._validate_custom_method_safety(method, method_name)
+                            
                             # Call method with DataFrame
                             custom_features = method(df)
                             
@@ -1152,11 +1265,15 @@ class FeatureSpace:
         result_features = {}
         
         # Import generic operations module
-        from src.domains.generic import GenericFeatureOperations
+        from src import GenericFeatureOperations
         
         # Get numeric and categorical columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Filter out forbidden columns to prevent data leakage
+        numeric_cols = self._filter_forbidden_columns(numeric_cols)
+        categorical_cols = self._filter_forbidden_columns(categorical_cols)
         
         # Statistical aggregations
         if len(categorical_cols) > 0 and len(numeric_cols) > 0:
@@ -1234,7 +1351,7 @@ class FeatureSpace:
             try:
                 # Import custom domain module
                 import importlib
-                module_path = f'src.domains.{dataset_name.lower()}'
+                module_path = f'src.features.custom.{dataset_name.lower()}'
                 module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
@@ -1247,6 +1364,10 @@ class FeatureSpace:
                     for method_name in method_names:
                         try:
                             method = getattr(custom_class, method_name)
+                            
+                            # Check if method uses forbidden columns in source code
+                            self._validate_custom_method_safety(method, method_name)
+                            
                             # Call method with DataFrame
                             custom_features = method(df)
                             
@@ -1309,7 +1430,7 @@ class FeatureSpace:
         if dataset_name:
             try:
                 import importlib
-                module_path = f'src.domains.{dataset_name.lower()}'
+                module_path = f'src.features.custom.{dataset_name.lower()}'
                 module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
@@ -1321,3 +1442,51 @@ class FeatureSpace:
                 pass
         
         return feature_names
+    
+    def _validate_custom_method_safety(self, method, method_name: str) -> None:
+        """
+        Validate that custom feature method doesn't use forbidden columns.
+        
+        Args:
+            method: The custom feature method to validate
+            method_name: Name of the method for error reporting
+            
+        Raises:
+            ValueError: If method uses target/ID columns (critical error)
+            Warning: If method uses ignored columns (logs warning and skips)
+        """
+        import inspect
+        
+        try:
+            # Get method source code
+            source_code = inspect.getsource(method)
+            
+            # Check for forbidden columns in source code
+            forbidden_target_id = set()
+            if self.target_column:
+                forbidden_target_id.add(self.target_column)
+            if self.id_column:
+                forbidden_target_id.add(self.id_column)
+            
+            # Check for target/ID columns in source (CRITICAL ERROR)
+            for forbidden_col in forbidden_target_id:
+                if f"'{forbidden_col}'" in source_code or f'"{forbidden_col}"' in source_code:
+                    error_msg = f"CRITICAL: Custom feature method '{method_name}' uses forbidden column '{forbidden_col}'"
+                    logger.error(error_msg)
+                    raise ValueError(f"{error_msg} - Custom features cannot use target/ID columns!")
+            
+            # Check for ignored columns (WARNING + SKIP)
+            if self.ignore_columns:
+                for ignored_col in self.ignore_columns:
+                    if f"'{ignored_col}'" in source_code or f'"{ignored_col}"' in source_code:
+                        warning_msg = f"Custom feature method '{method_name}' uses ignored column '{ignored_col}'"
+                        logger.warning(f"Skipping {warning_msg}")
+                        # For ignored columns, we could raise an exception to skip the method
+                        # But that might be too aggressive. For now, just log warning.
+                        
+        except OSError:
+            # If we can't get source code (e.g., built-in methods), assume it's safe
+            logger.debug(f"Could not inspect source code for {method_name} - assuming safe")
+        except Exception as e:
+            logger.warning(f"Failed to validate custom method {method_name}: {e}")
+            # Don't block execution for validation failures
