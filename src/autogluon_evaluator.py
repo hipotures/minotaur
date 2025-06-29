@@ -10,6 +10,8 @@ import time
 import tempfile
 import shutil
 import logging
+import random
+import string
 from typing import Dict, List, Set, Any, Optional, Tuple
 from pathlib import Path
 import pandas as pd
@@ -67,10 +69,13 @@ class AutoGluonEvaluator:
         self.best_score = 0.0
         self.evaluation_cache = {}  # Cache results for identical feature sets
         
-        # Temporary directories management
-        self.temp_base_dir = self.resource_config.get('temp_dir', '/tmp/mcts_features')
+        # Temporary directories management - generate unique suffix for each instance
+        base_temp_dir = self.resource_config.get('temp_dir', '/tmp/mcts_features')
+        random_suffix = self._generate_random_suffix()
+        self.temp_base_dir = os.path.join(base_temp_dir, random_suffix)
         Path(self.temp_base_dir).mkdir(parents=True, exist_ok=True)
         self.model_dirs = []  # Track created model directories for cleanup
+        logger.debug(f"Created unique temp directory: {self.temp_base_dir}")
         
         # Initialize data
         self._load_base_data()
@@ -713,6 +718,12 @@ class AutoGluonEvaluator:
                     logger.info(f"Cleaned up temp directory: {self.temp_base_dir}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup temp base dir: {e}")
+    
+    def _generate_random_suffix(self) -> str:
+        """Generate random suffix for unique temp directory per MCTS iteration."""
+        timestamp = str(int(time.time()))[-6:]  # Last 6 digits of timestamp
+        random_chars = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        return f"mcts_{timestamp}_{random_chars}"
     
     def __enter__(self):
         return self
