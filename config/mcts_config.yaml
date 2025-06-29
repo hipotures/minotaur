@@ -51,7 +51,7 @@ autogluon:
   train_size: 0.8                             # 80% of training data
   
   # Model training settings
-  time_limit: 120                             # Seconds per evaluation
+  time_limit: 60                              # Wallclock time in seconds per AutoGluon evaluation
   presets: 'medium_quality'    # good_quality, medium_quality_faster_train, best_quality
   num_bag_folds: 3                            # Cross-validation folds
   num_bag_sets: 1                             # Number of bagging sets

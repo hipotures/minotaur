@@ -35,7 +35,7 @@ autogluon:
   train_size: 100                         # Fixed 100 samples for ultra-fast testing
   
   # Model training settings
-  time_limit: 8                           # Extremely short evaluation
+  time_limit: 60                          # Wallclock time in seconds per AutoGluon evaluation
   presets: 'medium_quality'               # Fast preset
   skip_final_evaluation: true             # Skip expensive final evaluation
   holdout_frac: 0.4                       # Large holdout for speed

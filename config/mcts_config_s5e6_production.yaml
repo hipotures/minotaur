@@ -17,7 +17,7 @@ autogluon:
   # Full model ensemble for production
   included_model_types: ['XGB', 'GBM', 'CAT', 'NN_TORCH']
   train_size: 0.8
-  time_limit: 300
+  time_limit: 60                          # Wallclock time in seconds per AutoGluon evaluation
   presets: 'best_quality'
   num_bag_folds: 5
   num_bag_sets: 2
