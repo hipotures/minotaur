@@ -17,7 +17,7 @@ Architecture:
 """
 
 from typing import Dict, Any
-from src.manager.core.module_base import ModuleInterface
+from manager.core.module_base import ModuleInterface
 from .list_command import ListCommand
 from .top_command import TopCommand
 from .impact_command import ImpactCommand

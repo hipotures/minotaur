@@ -17,7 +17,7 @@ Architecture:
 """
 
 from typing import Dict, Any
-from src.manager.core.module_base import ModuleInterface
+from manager.core.module_base import ModuleInterface
 from .run_command import RunCommand
 from .list_datasets_command import ListDatasetsCommand
 

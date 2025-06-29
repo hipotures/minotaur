@@ -66,7 +66,7 @@ class RestoreCommand(BaseBackupCommand):
         """Confirm restoration operation with user."""
         db_path = self.get_database_path()
         
-        print(f"\\nThis will replace the current database:")
+        print(f"\nThis will replace the current database:")
         print(f"  Current: {db_path}")
         print(f"  Backup:  {backup_path}")
         
@@ -94,7 +94,7 @@ class RestoreCommand(BaseBackupCommand):
         print("✅ Would extract backup file")
         print(f"✅ Would restore {backup_info['size']} of data")
         print("✅ Would verify restored database")
-        print("\\n🧪 DRY-RUN MODE: Restoration simulation completed successfully")
+        print("\n🧪 DRY-RUN MODE: Restoration simulation completed successfully")
     
     def _perform_restoration(self, backup_path: Path) -> None:
         """Perform the actual database restoration."""
@@ -219,7 +219,7 @@ class RestoreCommand(BaseBackupCommand):
         backup_files = self.find_backup_files()
         
         if backup_files:
-            print("\\n💡 Available backup files:")
+            print("\n💡 Available backup files:")
             for backup_file in backup_files[:5]:  # Show first 5
                 info = self.format_backup_info(backup_file)
                 print(f"   • {backup_file.name} ({info['size']}, {info['created']})")
@@ -227,6 +227,6 @@ class RestoreCommand(BaseBackupCommand):
             if len(backup_files) > 5:
                 print(f"   ... and {len(backup_files) - 5} more")
             
-            print("\\n💡 Usage: python manager.py backup --restore <filename>")
+            print("\n💡 Usage: python manager.py backup --restore <filename>")
         else:
-            print("\\n💡 No backup files found. Create one with: python manager.py backup --create")
+            print("\n💡 No backup files found. Create one with: python manager.py backup --create")

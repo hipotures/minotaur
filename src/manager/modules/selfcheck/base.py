@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 import argparse
-from src.manager.core.command_base import BaseCommand
+from manager.core.command_base import BaseCommand
 
 
 class BaseSelfCheckCommand(BaseCommand, ABC):

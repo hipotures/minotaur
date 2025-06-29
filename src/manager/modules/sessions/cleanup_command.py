@@ -165,7 +165,7 @@ class CleanupCommand(BaseSessionsCommand):
             response = input("Delete these sessions? (yes/no): ").strip().lower()
             return response == 'yes'
         except (EOFError, KeyboardInterrupt):
-            print("\\nOperation cancelled by user")
+            print("\nOperation cancelled by user")
             return False
     
     def _perform_cleanup(self, candidates: List[Dict[str, Any]]) -> int:

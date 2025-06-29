@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
 from pathlib import Path
-from src.manager.core.command_base import BaseCommand
+from manager.core.command_base import BaseCommand
 
 
 class BaseVerificationCommand(BaseCommand, ABC):

@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pathlib import Path
 import shutil
-from src.manager.core.command_base import BaseCommand
+from manager.core.command_base import BaseCommand
 
 
 class BaseBackupCommand(BaseCommand, ABC):
@@ -216,5 +216,5 @@ class BaseBackupCommand(BaseCommand, ABC):
             response = input(f"{message} (yes/no): ").strip().lower()
             return response == 'yes'
         except (EOFError, KeyboardInterrupt):
-            print("\\nOperation cancelled by user")
+            print("\nOperation cancelled by user")
             return False

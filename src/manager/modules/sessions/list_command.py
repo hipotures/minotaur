@@ -193,9 +193,9 @@ class ListCommand(BaseSessionsCommand):
             print(f"📄 Showing latest {len(sessions)} sessions (limit: {limit})")
         
         # Quick actions
-        print(f"\\n💡 Quick Actions:")
-        print(f"   Show details: python manager.py sessions --show <SESSION_ID>")
-        print(f"   Compare sessions: python manager.py sessions --compare <ID1> <ID2>")
+        print("\n💡 Quick Actions:")
+        print("   Show details: python manager.py sessions --show <SESSION_ID>")
+        print("   Compare sessions: python manager.py sessions --compare <ID1> <ID2>")
         if sessions:
             example_id = sessions[0]['session_id'][:8]
             print(f"   Example: python manager.py sessions --show {example_id}")

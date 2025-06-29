@@ -103,7 +103,7 @@ class ListCommand(BaseBackupCommand):
         
         regular_count = total_count - compressed_count
         
-        print(f"\\nTotal backups: {total_count}")
+        print(f"\nTotal backups: {total_count}")
         print(f"Regular backups: {regular_count}")
         print(f"Compressed backups: {compressed_count}")
         print(f"Total size: {total_size_mb:.1f} MB")
@@ -115,7 +115,7 @@ class ListCommand(BaseBackupCommand):
         # Quick actions
         if backup_files:
             latest_backup = backup_files[0].name  # Already sorted by newest first
-            print(f"\\n💡 Quick Actions:")
+            print(f"\n💡 Quick Actions:")
             print(f"   Verify latest: python manager.py backup --verify {latest_backup}")
             print(f"   Create new: python manager.py backup --create")
             print(f"   Cleanup old: python manager.py backup --cleanup --keep 5")

@@ -17,7 +17,7 @@ Architecture:
 """
 
 from typing import Dict, Any
-from src.manager.core.module_base import ModuleInterface
+from manager.core.module_base import ModuleInterface
 from .verify_session_command import VerifySessionCommand
 from .verify_all_command import VerifyAllCommand
 from .verify_latest_command import VerifyLatestCommand

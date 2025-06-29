@@ -96,7 +96,7 @@ class ListDatasetsCommand(BaseSelfCheckCommand):
     
     def _show_usage_info(self) -> None:
         """Show usage information."""
-        print(f"\\n💡 Usage: --run <dataset_name> --config <config_file>")
+        print(f"\n💡 Usage: --run <dataset_name> --config <config_file>")
         print(f"   Example: python manager.py selfcheck --run titanic")
         print(f"   Example: python manager.py selfcheck --run titanic --quick")
         print(f"   Example: python manager.py selfcheck --run titanic --config custom_config.yaml")

@@ -122,64 +122,64 @@ class ReportCommand(VerifySessionCommand):
         overall_status = verification_results.get('overall_status', 'UNKNOWN')
         verification_time = verification_results.get('verification_time', 'Unknown')
         
-        output.write("=" * 80 + "\\n")
-        output.write("MCTS SESSION VERIFICATION REPORT\\n")
-        output.write("=" * 80 + "\\n")
-        output.write(f"Session ID: {session_id}\\n")
-        output.write(f"Session Name: {session_name}\\n")
-        output.write(f"Overall Status: {overall_status}\\n")
-        output.write(f"Verification Time: {verification_time}\\n")
-        output.write(f"Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\n")
-        output.write("\\n")
+        output.write("=" * 80 + "\n")
+        output.write("MCTS SESSION VERIFICATION REPORT\n")
+        output.write("=" * 80 + "\n")
+        output.write(f"Session ID: {session_id}\n")
+        output.write(f"Session Name: {session_name}\n")
+        output.write(f"Overall Status: {overall_status}\n")
+        output.write(f"Verification Time: {verification_time}\n")
+        output.write(f"Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        output.write("\n")
         
         # Session information
         session_info = verification_results.get('session_info', {})
         if session_info:
-            output.write("SESSION INFORMATION:\\n")
-            output.write("-" * 40 + "\\n")
-            output.write(f"Start Time: {session_info.get('start_time', 'Unknown')}\\n")
-            output.write(f"End Time: {session_info.get('end_time', 'Not completed')}\\n")
-            output.write(f"Total Iterations: {session_info.get('total_iterations', 0)}\\n")
-            output.write(f"Best Score: {session_info.get('best_score', 'No score')}\\n")
-            output.write(f"Status: {session_info.get('status', 'Unknown')}\\n")
-            output.write(f"Strategy: {session_info.get('strategy', 'Unknown')}\\n")
-            output.write(f"Test Mode: {'Yes' if session_info.get('is_test_mode') else 'No'}\\n")
-            output.write("\\n")
+            output.write("SESSION INFORMATION:\n")
+            output.write("-" * 40 + "\n")
+            output.write(f"Start Time: {session_info.get('start_time', 'Unknown')}\n")
+            output.write(f"End Time: {session_info.get('end_time', 'Not completed')}\n")
+            output.write(f"Total Iterations: {session_info.get('total_iterations', 0)}\n")
+            output.write(f"Best Score: {session_info.get('best_score', 'No score')}\n")
+            output.write(f"Status: {session_info.get('status', 'Unknown')}\n")
+            output.write(f"Strategy: {session_info.get('strategy', 'Unknown')}\n")
+            output.write(f"Test Mode: {'Yes' if session_info.get('is_test_mode') else 'No'}\n")
+            output.write("\n")
         
         # Verification results by category
         categories = verification_results.get('categories', {})
         for category_name, category_results in categories.items():
-            output.write(f"{category_name.upper()} VERIFICATION:\\n")
-            output.write("-" * 40 + "\\n")
-            output.write(f"Status: {category_results.get('status', 'UNKNOWN')}\\n")
-            output.write("\\n")
+            output.write(f"{category_name.upper()} VERIFICATION:\n")
+            output.write("-" * 40 + "\n")
+            output.write(f"Status: {category_results.get('status', 'UNKNOWN')}\n")
+            output.write("\n")
             
             # Individual checks
             checks = category_results.get('checks', {})
             if checks:
-                output.write("Checks:\\n")
+                output.write("Checks:\n")
                 for check_name, check_status in checks.items():
                     check_display = check_name.replace('_', ' ').title()
-                    output.write(f"  - {check_display}: {check_status}\\n")
-                output.write("\\n")
+                    output.write(f"  - {check_display}: {check_status}\n")
+                output.write("\n")
             
             # Errors
             errors = category_results.get('errors', [])
             if errors:
-                output.write("Errors:\\n")
+                output.write("Errors:\n")
                 for error in errors:
-                    output.write(f"  ❌ {error}\\n")
-                output.write("\\n")
+                    output.write(f"  ❌ {error}\n")
+                output.write("\n")
             
             # Warnings
             warnings = category_results.get('warnings', [])
             if warnings:
-                output.write("Warnings:\\n")
+                output.write("Warnings:\n")
                 for warning in warnings:
-                    output.write(f"  ⚠️  {warning}\\n")
-                output.write("\\n")
+                    output.write(f"  ⚠️  {warning}\n")
+                output.write("\n")
             
-            output.write("\\n")
+            output.write("\n")
         
         # Summary statistics
         all_checks = {}
@@ -187,16 +187,16 @@ class ReportCommand(VerifySessionCommand):
             for check_name, check_status in category_results.get('checks', {}).items():
                 all_checks[check_status] = all_checks.get(check_status, 0) + 1
         
-        output.write("SUMMARY STATISTICS:\\n")
-        output.write("-" * 40 + "\\n")
+        output.write("SUMMARY STATISTICS:\n")
+        output.write("-" * 40 + "\n")
         for status in ['PASS', 'WARN', 'FAIL', 'ERROR', 'SKIP']:
             count = all_checks.get(status, 0)
             if count > 0:
-                output.write(f"{status}: {count}\\n")
+                output.write(f"{status}: {count}\n")
         
-        output.write("\\n")
-        output.write("=" * 80 + "\\n")
-        output.write(f"Report completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\n")
+        output.write("\n")
+        output.write("=" * 80 + "\n")
+        output.write(f"Report completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         
         # Get the report content
         report_content = output.getvalue()
