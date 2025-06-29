@@ -415,16 +415,52 @@ class DatasetImporter:
             
             # 3. Create train_features by column concatenation in DuckDB
             dataset_logger.info("🔗 Creating train_features (train + train_generic + train_custom)...")
-            conn.execute("""
+            
+            # Get column names from each table to handle duplicates
+            train_cols = conn.execute("SELECT name FROM pragma_table_info('train')").fetchall()
+            generic_cols = conn.execute("SELECT name FROM pragma_table_info('train_generic')").fetchall()
+            custom_cols = conn.execute("SELECT name FROM pragma_table_info('train_custom')").fetchall()
+            
+            # Build deduplicated column list
+            seen_columns = set()
+            select_parts = []
+            
+            # Add all columns from train table
+            for col in train_cols:
+                col_name = col[0]
+                select_parts.append(f't."{col_name}"')
+                seen_columns.add(col_name)
+            
+            # Add non-duplicate columns from generic table
+            for col in generic_cols:
+                col_name = col[0]
+                if col_name not in seen_columns:
+                    select_parts.append(f'g."{col_name}"')
+                    seen_columns.add(col_name)
+            
+            # Add non-duplicate columns from custom table
+            for col in custom_cols:
+                col_name = col[0]
+                if col_name not in seen_columns:
+                    select_parts.append(f'c."{col_name}"')
+                    seen_columns.add(col_name)
+            
+            # Build the SELECT statement
+            select_clause = ", ".join(select_parts)
+            
+            conn.execute(f"""
                 DROP TABLE IF EXISTS train_features;
                 CREATE TABLE train_features AS 
-                SELECT t.*, g.*, c.*
+                SELECT {select_clause}
                 FROM train t, train_generic g, train_custom c 
                 WHERE t.rowid = g.rowid AND g.rowid = c.rowid
             """)
             
             result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('train_features')").fetchone()
             dataset_logger.info(f"✅ Created 'train_features' table with {result[0]} columns")
+            
+            # Filter out no-signal columns from train_features and get valid column list
+            valid_train_columns = self._filter_no_signal_columns(conn, 'train_features', target_column, dataset_logger)
         
         # Process test data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").fetchone():
@@ -438,9 +474,9 @@ class DatasetImporter:
             if target_column in test_df.columns:
                 test_df = test_df.drop(columns=[target_column])
             
-            # 1. Generate GENERIC features for test
+            # 1. Generate GENERIC features for test (without signal checking)
             dataset_logger.info("🔧 Generating GENERIC features for test...")
-            test_generic_df = feature_space.generate_generic_features(test_df)
+            test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False)
             dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
             
             # Save test_generic table
@@ -450,9 +486,9 @@ class DatasetImporter:
             conn.unregister('test_generic_df')
             dataset_logger.info(f"✅ Created 'test_generic' table with {len(test_generic_df.columns)} columns")
             
-            # 2. Generate CUSTOM features for test
+            # 2. Generate CUSTOM features for test (without signal checking)
             dataset_logger.info("🎯 Generating CUSTOM domain features for test...")
-            test_custom_df = feature_space.generate_custom_features(test_df, dataset_name)
+            test_custom_df = feature_space.generate_custom_features(test_df, dataset_name, check_signal=False)
             dataset_logger.info(f"Generated {len(test_custom_df.columns)} custom columns for test")
             
             # Save test_custom table
@@ -464,21 +500,181 @@ class DatasetImporter:
             
             # 3. Create test_features by column concatenation in DuckDB
             dataset_logger.info("🔗 Creating test_features (test + test_generic + test_custom)...")
-            conn.execute("""
+            
+            # Get column names from each table to handle duplicates
+            test_cols = conn.execute("SELECT name FROM pragma_table_info('test')").fetchall()
+            test_generic_cols = conn.execute("SELECT name FROM pragma_table_info('test_generic')").fetchall()
+            test_custom_cols = conn.execute("SELECT name FROM pragma_table_info('test_custom')").fetchall()
+            
+            # Build deduplicated column list
+            seen_columns = set()
+            select_parts = []
+            
+            # Add all columns from test table
+            for col in test_cols:
+                col_name = col[0]
+                select_parts.append(f't."{col_name}"')
+                seen_columns.add(col_name)
+            
+            # Add non-duplicate columns from generic table
+            for col in test_generic_cols:
+                col_name = col[0]
+                if col_name not in seen_columns:
+                    select_parts.append(f'g."{col_name}"')
+                    seen_columns.add(col_name)
+            
+            # Add non-duplicate columns from custom table
+            for col in test_custom_cols:
+                col_name = col[0]
+                if col_name not in seen_columns:
+                    select_parts.append(f'c."{col_name}"')
+                    seen_columns.add(col_name)
+            
+            # Build the SELECT statement
+            select_clause = ", ".join(select_parts)
+            
+            conn.execute(f"""
                 DROP TABLE IF EXISTS test_features;
                 CREATE TABLE test_features AS 
-                SELECT t.*, g.*, c.*
+                SELECT {select_clause}
                 FROM test t, test_generic g, test_custom c 
                 WHERE t.rowid = g.rowid AND g.rowid = c.rowid
             """)
             
             result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('test_features')").fetchone()
             dataset_logger.info(f"✅ Created 'test_features' table with {result[0]} columns")
+            
+            # Filter test_features to match valid train columns (don't remove based on test signal)
+            self._align_test_features_with_train(conn, 'test_features', valid_train_columns, target_column, dataset_logger)
         
         # PART 5: Validate train/test feature column synchronization
         if (conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train_features'").fetchone() and
             conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test_features'").fetchone()):
             self._validate_feature_columns(conn, target_column, dataset_logger)
+            
+            # Save debug dumps if DEBUG is enabled
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                self._save_debug_dumps(conn, dataset_name, dataset_logger)
+    
+    def _filter_no_signal_columns(self, conn, table_name: str, target_column: str, dataset_logger) -> list:
+        """Remove columns with no signal (constant values) from feature table. Returns list of remaining columns."""
+        try:
+            # Get all columns
+            columns_result = conn.execute(f"SELECT name FROM pragma_table_info('{table_name}')").fetchall()
+            all_columns = [col[0] for col in columns_result]
+            
+            # Find columns to remove (no signal)
+            columns_to_remove = []
+            
+            for col in all_columns:
+                # Skip target and ID columns
+                if col == target_column or col == 'PassengerId':
+                    continue
+                
+                # Check if column has signal (more than 1 unique value)
+                result = conn.execute(f'SELECT COUNT(DISTINCT "{col}") FROM {table_name}').fetchone()
+                unique_count = result[0] if result else 0
+                
+                if unique_count <= 1:
+                    columns_to_remove.append(col)
+            
+            remaining_columns = [col for col in all_columns if col not in columns_to_remove]
+            
+            if columns_to_remove:
+                dataset_logger.info(f"🧹 Removing {len(columns_to_remove)} no-signal columns from {table_name}")
+                
+                # Log first few removed columns
+                for i, col in enumerate(columns_to_remove[:10]):
+                    dataset_logger.debug(f"  Removing: {col}")
+                if len(columns_to_remove) > 10:
+                    dataset_logger.debug(f"  ... and {len(columns_to_remove) - 10} more")
+                
+                # Create new table without no-signal columns
+                column_list = ', '.join([f'"{col}"' for col in remaining_columns])
+                
+                conn.execute(f"""
+                    CREATE TABLE {table_name}_filtered AS
+                    SELECT {column_list} FROM {table_name}
+                """)
+                
+                # Replace original table
+                conn.execute(f"DROP TABLE {table_name}")
+                conn.execute(f"ALTER TABLE {table_name}_filtered RENAME TO {table_name}")
+                
+                final_count = len(remaining_columns)
+                dataset_logger.info(f"✅ Filtered {table_name}: {len(all_columns)} -> {final_count} columns (removed {len(columns_to_remove)})")
+            else:
+                dataset_logger.info(f"✅ No no-signal columns found in {table_name}")
+            
+            return remaining_columns
+                
+        except Exception as e:
+            dataset_logger.error(f"Failed to filter no-signal columns from {table_name}: {e}")
+            return []
+    
+    def _align_test_features_with_train(self, conn, table_name: str, valid_train_columns: list, target_column: str, dataset_logger) -> None:
+        """Filter test_features to only include columns that had signal in train (excluding target)."""
+        try:
+            # Get all test columns
+            test_columns_result = conn.execute(f"SELECT name FROM pragma_table_info('{table_name}')").fetchall()
+            all_test_columns = [col[0] for col in test_columns_result]
+            
+            # Remove target column from valid train columns for comparison
+            valid_train_columns_no_target = [col for col in valid_train_columns if col != target_column]
+            
+            # Keep only columns that exist in both test and valid train columns
+            columns_to_keep = [col for col in all_test_columns if col in valid_train_columns_no_target]
+            
+            # Log what we're keeping vs removing
+            columns_to_remove = [col for col in all_test_columns if col not in columns_to_keep]
+            
+            if columns_to_remove:
+                dataset_logger.info(f"🔄 Aligning test_features with train: keeping {len(columns_to_keep)}, removing {len(columns_to_remove)} columns")
+                
+                # Log first few removed columns
+                for i, col in enumerate(columns_to_remove[:10]):
+                    dataset_logger.debug(f"  Removing from test: {col}")
+                if len(columns_to_remove) > 10:
+                    dataset_logger.debug(f"  ... and {len(columns_to_remove) - 10} more")
+                
+                # Create new table with only valid columns
+                column_list = ', '.join([f'"{col}"' for col in columns_to_keep])
+                
+                conn.execute(f"""
+                    CREATE TABLE {table_name}_aligned AS
+                    SELECT {column_list} FROM {table_name}
+                """)
+                
+                # Replace original table
+                conn.execute(f"DROP TABLE {table_name}")
+                conn.execute(f"ALTER TABLE {table_name}_aligned RENAME TO {table_name}")
+                
+                dataset_logger.info(f"✅ Aligned {table_name}: {len(all_test_columns)} -> {len(columns_to_keep)} columns")
+            else:
+                dataset_logger.info(f"✅ Test features already aligned with train")
+                
+        except Exception as e:
+            dataset_logger.error(f"Failed to align test features with train: {e}")
+
+    def _save_debug_dumps(self, conn, dataset_name: str, dataset_logger) -> None:
+        """Save train_features and test_features to CSV files for debugging."""
+        try:
+            # Save train_features
+            train_path = f"/tmp/{dataset_name}-train-0000.csv"
+            train_df = conn.execute("SELECT * FROM train_features").df()
+            train_df.to_csv(train_path, index=False)
+            dataset_logger.info(f"📝 DEBUG: Saved train_features to {train_path} "
+                              f"({len(train_df)} rows, {len(train_df.columns)} columns)")
+            
+            # Save test_features  
+            test_path = f"/tmp/{dataset_name}-test-0000.csv"
+            test_df = conn.execute("SELECT * FROM test_features").df()
+            test_df.to_csv(test_path, index=False)
+            dataset_logger.info(f"📝 DEBUG: Saved test_features to {test_path} "
+                             f"({len(test_df)} rows, {len(test_df.columns)} columns)")
+                             
+        except Exception as e:
+            dataset_logger.error(f"Failed to save debug dumps: {e}")
     
     def _validate_feature_columns(self, conn, target_column: str, dataset_logger):
         """Validate that train and test feature columns are synchronized."""

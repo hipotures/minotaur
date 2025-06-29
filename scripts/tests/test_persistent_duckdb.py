@@ -38,8 +38,8 @@ def test_database_path_generation():
         # Test configuration
         config = {
             'autogluon': {
-                'train_path': '/mnt/ml/competitions/2025/playground-series-s5e6/train.csv',
-                'test_path': '/mnt/ml/competitions/2025/playground-series-s5e6/test.csv'
+                'train_path': 'datasets/playground-series-s5e6/train.csv',
+                'test_path': 'datasets/playground-series-s5e6/test.csv'
             },
             'data': {
                 'duckdb': {

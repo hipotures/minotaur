@@ -38,28 +38,28 @@ class GenericFeatureOperations:
     """Backward compatibility wrapper for generic feature operations."""
     
     @staticmethod
-    def get_statistical_aggregations(df, groupby_cols, agg_cols):
+    def get_statistical_aggregations(df, groupby_cols, agg_cols, check_signal=True):
         """Statistical aggregations by categorical features."""
         from .features.generic.statistical import get_statistical_aggregations
-        return get_statistical_aggregations(df, groupby_cols, agg_cols)
+        return get_statistical_aggregations(df, groupby_cols, agg_cols, check_signal=check_signal)
     
     @staticmethod
-    def get_polynomial_features(df, numeric_cols, degree=2):
+    def get_polynomial_features(df, numeric_cols, degree=2, check_signal=True):
         """Polynomial features for numeric columns."""
         from .features.generic.polynomial import get_polynomial_features
-        return get_polynomial_features(df, numeric_cols, degree)
+        return get_polynomial_features(df, numeric_cols, degree, check_signal=check_signal)
     
     @staticmethod
-    def get_binning_features(df, numeric_cols, n_bins=5):
+    def get_binning_features(df, numeric_cols, n_bins=5, check_signal=True):
         """Binning features for numeric columns."""
         from .features.generic.binning import get_binning_features
-        return get_binning_features(df, numeric_cols, n_bins)
+        return get_binning_features(df, numeric_cols, n_bins, check_signal=check_signal)
     
     @staticmethod
-    def get_ranking_features(df, numeric_cols):
+    def get_ranking_features(df, numeric_cols, check_signal=True):
         """Ranking features for numeric columns."""
         from .features.generic.ranking import get_ranking_features
-        return get_ranking_features(df, numeric_cols)
+        return get_ranking_features(df, numeric_cols, check_signal=check_signal)
 from .logging_utils import setup_session_logging, set_session_context, clear_session_context
 from .dataset_manager import DatasetManager
 

@@ -573,6 +573,90 @@ class FeatureSpace:
         return available_ops
     
     @timed("feature_space.generate_features", include_memory=True)
+    def get_feature_columns_for_node(self, node) -> List[str]:
+        """
+        Get list of feature column names for a given MCTS node.
+        This uses the actual columns available in train_features table.
+        
+        Args:
+            node: MCTS node
+            
+        Returns:
+            List[str]: List of feature column names available in train_features
+        """
+        # Get all available columns from train_features table
+        if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+            try:
+                # Get all column names from train_features
+                result = self.duckdb_manager.connection.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'train_features'
+                """).fetchall()
+                all_columns = [col[0] for col in result]
+            except:
+                # Fallback to getting columns from pragma_table_info
+                result = self.duckdb_manager.connection.execute("""
+                    SELECT name FROM pragma_table_info('train_features')
+                """).fetchall()
+                all_columns = [col[0] for col in result]
+        else:
+            # If no DuckDB connection, return base features only
+            return list(node.base_features) if node.base_features else []
+        
+        # Start with base features
+        base_features = list(node.base_features) if node.base_features else []
+        selected_columns = base_features.copy()
+        
+        # For each applied operation, add columns that match expected patterns
+        for operation_name in node.applied_operations:
+            if operation_name == 'statistical_aggregations':
+                # Add columns matching statistical patterns
+                stat_patterns = ['_mean_by_', '_std_by_', '_dev_from_', '_count_by_', 
+                               '_min_by_', '_max_by_', '_norm_by_']
+                for col in all_columns:
+                    if any(pattern in col for pattern in stat_patterns):
+                        selected_columns.append(col)
+                        
+            elif operation_name == 'polynomial_features':
+                # Add polynomial features
+                poly_suffixes = ['_squared', '_cubed', '_sqrt', '_log']
+                for col in all_columns:
+                    if any(col.endswith(suffix) for suffix in poly_suffixes):
+                        selected_columns.append(col)
+                        
+            elif operation_name == 'binning_features':
+                # Add binning features
+                for col in all_columns:
+                    if '_binned' in col or col.endswith('_bin'):
+                        selected_columns.append(col)
+                        
+            elif operation_name == 'ranking_features':
+                # Add ranking features
+                rank_patterns = ['_dense_rank', '_rank_pct', '_quartile', 
+                               '_is_top10pct', '_is_bottom10pct', '_above_median']
+                for col in all_columns:
+                    if any(pattern in col for pattern in rank_patterns):
+                        selected_columns.append(col)
+                        
+            elif operation_name.startswith('custom_'):
+                # For custom operations, include all non-base columns that aren't from other operations
+                # This is a heuristic - custom features don't follow standard patterns
+                known_patterns = ['_mean_by_', '_std_by_', '_squared', '_binned', '_rank_']
+                for col in all_columns:
+                    if col not in base_features and not any(p in col for p in known_patterns):
+                        # Likely a custom feature
+                        selected_columns.append(col)
+        
+        # Remove duplicates and ensure we don't include forbidden columns
+        selected_columns = list(set(selected_columns))
+        
+        # Remove forbidden columns (ID, target, etc.) - they will be added back by evaluator
+        forbidden = [self.id_column, self.target_column] + self.ignore_columns
+        selected_columns = [col for col in selected_columns if col not in forbidden]
+        
+        return selected_columns
+    
     def generate_features_for_node(self, node) -> pd.DataFrame:
         """
         Generate features for a specific MCTS node using lazy loading.
@@ -1241,12 +1325,13 @@ class FeatureSpace:
         
         return result_df
     
-    def generate_generic_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def generate_generic_features(self, df: pd.DataFrame, check_signal: bool = True) -> pd.DataFrame:
         """
         Generate ONLY generic features (statistical, polynomial, binning, ranking).
         
         Args:
             df: Input DataFrame with original data
+            check_signal: Whether to check for signal and discard no-signal features
             
         Returns:
             DataFrame with ONLY the generated generic features (no original columns)
@@ -1272,7 +1357,7 @@ class FeatureSpace:
         if len(categorical_cols) > 0 and len(numeric_cols) > 0:
             try:
                 stat_features = GenericFeatureOperations.get_statistical_aggregations(
-                    df, categorical_cols[:5], numeric_cols[:10]  # Limit to prevent explosion
+                    df, categorical_cols[:5], numeric_cols[:10], check_signal=check_signal  # Limit to prevent explosion
                 )
                 result_features.update(stat_features)
                 logger.info(f"Added {len(stat_features)} statistical aggregation features")
@@ -1283,7 +1368,7 @@ class FeatureSpace:
         if len(numeric_cols) > 0:
             try:
                 poly_features = GenericFeatureOperations.get_polynomial_features(
-                    df, numeric_cols, degree=2
+                    df, numeric_cols, degree=2, check_signal=check_signal
                 )
                 result_features.update(poly_features)
                 logger.info(f"Added {len(poly_features)} polynomial features")
@@ -1294,7 +1379,7 @@ class FeatureSpace:
         if len(numeric_cols) > 0:
             try:
                 bin_features = GenericFeatureOperations.get_binning_features(
-                    df, numeric_cols, n_bins=5
+                    df, numeric_cols, n_bins=5, check_signal=check_signal
                 )
                 result_features.update(bin_features)
                 logger.info(f"Added {len(bin_features)} binning features")
@@ -1304,7 +1389,7 @@ class FeatureSpace:
         # Ranking features
         if len(numeric_cols) > 0:
             try:
-                rank_features = GenericFeatureOperations.get_ranking_features(df, numeric_cols)
+                rank_features = GenericFeatureOperations.get_ranking_features(df, numeric_cols, check_signal=check_signal)
                 result_features.update(rank_features)
                 logger.info(f"Added {len(rank_features)} ranking features")
             except Exception as e:
@@ -1322,13 +1407,14 @@ class FeatureSpace:
         
         return result_df
     
-    def generate_custom_features(self, df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
+    def generate_custom_features(self, df: pd.DataFrame, dataset_name: str, check_signal: bool = True) -> pd.DataFrame:
         """
         Generate ONLY custom domain-specific features.
         
         Args:
             df: Input DataFrame with original data
             dataset_name: Name of the dataset (for custom domain operations)
+            check_signal: Whether to check for signal and discard no-signal features
             
         Returns:
             DataFrame with ONLY the generated custom features (no original columns)
@@ -1352,6 +1438,7 @@ class FeatureSpace:
                     
                     # Create instance of the custom features class
                     custom_instance = custom_class()
+                    custom_instance._check_signal = check_signal
                     
                     # Use the new architecture to generate all features with timing
                     custom_features = custom_instance.generate_all_features(df)

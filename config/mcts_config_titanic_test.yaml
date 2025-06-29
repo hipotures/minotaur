@@ -5,7 +5,7 @@
 # RESOURCE LIMITS: train_size=100 samples, pandas backend, XGBoost only
 
 # Test Mode Configuration  
-test_mode: true  # true = test session (for cleanup), false = production session
+test_mode: false  # true = test session (for cleanup), false = production session
 
 # Session Management - Ultra-short runs
 session:

@@ -225,6 +225,8 @@ class MCTSEngine:
         self.start_time = time.time()
         self.best_score = 0.0
         self.best_node: Optional[FeatureNode] = None
+        self.best_feature_columns: Optional[List[str]] = None
+        self.best_iteration: int = 0
         self.total_evaluations = 0
         
         # Memory management
@@ -408,19 +410,26 @@ class MCTSEngine:
         start_time = time.time()
         
         try:
-            # Generate features for this node (lazy loading)
-            features = feature_space.generate_features_for_node(node)
+            # Get feature columns for this node
+            feature_columns = feature_space.get_feature_columns_for_node(node)
             
-            # Evaluate using AutoGluon
-            score = evaluator.evaluate_features(features, node.depth, self.current_iteration)
+            # Evaluate using AutoGluon with column-based loading
+            if hasattr(evaluator, 'evaluate_features_from_columns'):
+                score = evaluator.evaluate_features_from_columns(feature_columns, node.depth, self.current_iteration)
+            else:
+                # Fallback to old method if new method not available
+                features = feature_space.generate_features_for_node(node)
+                score = evaluator.evaluate_features(features, node.depth, self.current_iteration)
             
             evaluation_time = time.time() - start_time
             self.total_evaluations += 1
             
-            # Track best score
+            # Track best score and features
             if score > self.best_score:
                 self.best_score = score
                 self.best_node = node
+                self.best_feature_columns = feature_columns
+                self.best_iteration = self.current_iteration
                 target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
                 logger.info(f"\033[91m🎯 New best score: {score:.5f} ({target_metric}) at iteration {self.current_iteration}\033[0m")
             
@@ -628,7 +637,42 @@ class MCTSEngine:
         logger.info(f"MCTS search completed: {results['total_iterations']} iterations, "
                    f"metric: {target_metric}, best score: {results['best_score']:.5f}")
         
+        # Save best test features if DEBUG is enabled
+        if logging.getLogger().getEffectiveLevel() <= logging.DEBUG and self.best_feature_columns:
+            self._save_best_test_features(evaluator, feature_space)
+        
         return results
+    
+    def _save_best_test_features(self, evaluator, feature_space) -> None:
+        """Save test features for the best iteration to CSV file."""
+        try:
+            dataset_name = self.config.get('autogluon', {}).get('dataset_name', 'unknown')
+            
+            # Ensure we have DuckDB connection
+            if not hasattr(evaluator, 'duckdb_manager') or evaluator.duckdb_manager is None:
+                logger.warning("Cannot save test features - no DuckDB connection")
+                return
+            
+            # Always include ID column (but not target since it's test data)
+            required_columns = [evaluator.id_column]
+            all_columns = list(set(required_columns + self.best_feature_columns))
+            
+            # Create column list for SQL
+            column_list = ', '.join([f'"{col}"' for col in all_columns])
+            
+            # Load test data with best features
+            test_query = f"SELECT {column_list} FROM test_features"
+            test_df = evaluator.duckdb_manager.connection.execute(test_query).df()
+            
+            # Save to file
+            test_path = f"/tmp/{dataset_name}-test-{self.best_iteration:04d}.csv"
+            test_df.to_csv(test_path, index=False)
+            
+            logger.info(f"📝 Saved best test features to {test_path} "
+                       f"({len(test_df)} rows, {len(test_df.columns)} columns)")
+            
+        except Exception as e:
+            logger.error(f"Failed to save best test features: {e}")
     
     def get_best_path(self) -> List[str]:
         """Get the path to the best discovered feature combination."""

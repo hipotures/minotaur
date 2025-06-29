@@ -257,8 +257,8 @@ def main():
         print(f"Primary device: {device}")
         
         # Feature engineering using shared module
-        train_path = '/mnt/ml/competitions/2025/playground-series-s5e6/train.csv'
-        test_path = '/mnt/ml/competitions/2025/playground-series-s5e6/test.csv'
+        train_path = 'datasets/playground-series-s5e6/train.csv'
+        test_path = 'datasets/playground-series-s5e6/test.csv'
         
         train = load_or_create_features(train_path, 'train', 'basic')
         test = load_or_create_features(test_path, 'test', 'basic')

@@ -350,8 +350,8 @@ def main():
         np.random.seed(RANDOM_STATE)
         
         # Load data
-        train_path = '/mnt/ml/competitions/2025/playground-series-s5e6/train.csv'
-        test_path = '/mnt/ml/competitions/2025/playground-series-s5e6/test.csv'
+        train_path = 'datasets/playground-series-s5e6/train.csv'
+        test_path = 'datasets/playground-series-s5e6/test.csv'
         
         print("Loading data...")
         train = pd.read_csv(train_path)
