@@ -21,14 +21,15 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 # Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-from manager.core import Config, DatabaseConnection, DatabasePool, ModuleInterface
-from manager.repositories import (
+from src.manager.core import Config, DatabaseConnection, DatabasePool, ModuleInterface
+from src.manager.repositories import (
     SessionRepository, FeatureRepository, 
     DatasetRepository, MetricsRepository
 )
-from manager.services import (
+from src.manager.services import (
     SessionService, FeatureService,
     DatasetService, AnalyticsService, BackupService
 )
@@ -164,10 +165,26 @@ class ModularDuckDBManager:
     
     def run(self, argv: List[str]) -> int:
         """Run the manager with command line arguments."""
+        # Check if we should show module-specific help BEFORE any parsing
+        if len(argv) >= 2 and '--help' in argv:
+            potential_module = argv[1] if not argv[1].startswith('-') else None
+            if potential_module and potential_module in self.modules:
+                # This is module-specific help, handle it directly
+                module = self.get_module(potential_module)
+                if module:
+                    module_parser = argparse.ArgumentParser(
+                        prog=f"manager.py {module.name}",
+                        description=module.description
+                    )
+                    module.add_arguments(module_parser)
+                    module_parser.print_help()
+                    return 0
+        
         parser = argparse.ArgumentParser(
             description="Modular DuckDB Manager - Database management and analytics",
             formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog=self._get_epilog()
+            epilog=self._get_epilog(),
+            add_help=False  # Disable automatic help to handle it manually
         )
         
         # Global arguments
@@ -175,6 +192,8 @@ class ModularDuckDBManager:
                           help='Enable debug logging')
         parser.add_argument('--version', action='version',
                           version='%(prog)s 2.0.0')
+        parser.add_argument('--help', '-h', action='store_true',
+                          help='show this help message and exit')
         
         # Add module as positional argument
         parser.add_argument('module', nargs='?',
@@ -182,6 +201,11 @@ class ModularDuckDBManager:
         
         # Parse initial args to get module
         args, remaining = parser.parse_known_args(argv)
+        
+        # Handle main help
+        if args.help and not args.module:
+            parser.print_help()
+            return 0
         
         # Enable debug if requested
         if args.debug:
@@ -225,35 +249,35 @@ class ModularDuckDBManager:
     
     def _show_modules(self) -> None:
         """Display available modules."""
-        print("\n🔧 MODULAR DUCKDB MANAGER")
-        print("=" * 50)
-        print("\nAvailable modules:\n")
+        print("\n\033[96m🔧 MODULAR DUCKDB MANAGER\033[0m")
+        print("\033[96m" + "=" * 50 + "\033[0m")
+        print("\n\033[94mAvailable modules:\033[0m\n")
         
         for module in self.modules.values():
-            print(f"  {module.name:<15} - {module.description}")
+            print(f"  \033[93m{module.name:<15}\033[0m - \033[97m{module.description}\033[0m")
         
-        print("\nUsage:")
-        print("  ./manager.py <module> [options]")
-        print("  ./manager.py <module> --help")
-        print("\nExamples:")
-        print("  # Dataset management")
-        print("  ./manager.py datasets --list")
-        print("  ./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto")
-        print("  ./manager.py datasets --details titanic")
+        print("\n\033[92mUsage:\033[0m")
+        print("  \033[90m./manager.py <module> [options]\033[0m")
+        print("  \033[90m./manager.py <module> --help\033[0m")
+        print("\n\033[92mExamples:\033[0m")
+        print("  \033[95m# Dataset management\033[0m")
+        print("  \033[90m./manager.py datasets --list\033[0m")
+        print("  \033[90m./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto\033[0m")
+        print("  \033[90m./manager.py datasets --details titanic\033[0m")
         print("")
-        print("  # Session analysis")
-        print("  ./manager.py sessions --list")
-        print("  ./manager.py sessions --details [session_id]")
-        print("  ./manager.py sessions --best 5")
+        print("  \033[95m# Session analysis\033[0m")
+        print("  \033[90m./manager.py sessions --list\033[0m")
+        print("  \033[90m./manager.py sessions --details [session_id]\033[0m")
+        print("  \033[90m./manager.py sessions --best 5\033[0m")
         print("")
-        print("  # Feature analysis")
-        print("  ./manager.py features --top 10")
-        print("  ./manager.py features --session [session_id]")
+        print("  \033[95m# Feature analysis\033[0m")
+        print("  \033[90m./manager.py features --top 10\033[0m")
+        print("  \033[90m./manager.py features --session [session_id]\033[0m")
         print("")
-        print("  # System maintenance")
-        print("  ./manager.py analytics --summary --days 7")
-        print("  ./manager.py backup --create")
-        print("  ./manager.py selfcheck --validate")
+        print("  \033[95m# System maintenance\033[0m")
+        print("  \033[90m./manager.py analytics --summary --days 7\033[0m")
+        print("  \033[90m./manager.py backup --create\033[0m")
+        print("  \033[90m./manager.py selfcheck --validate\033[0m")
     
     def _get_epilog(self) -> str:
         """Get epilog text for help."""
