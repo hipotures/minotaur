@@ -70,12 +70,25 @@ class SessionsCommand(BaseDatasetsCommand):
             print(f"📊 Average Score: {avg_score:.5f}")
             print(f"🏆 Best Score: {best_score:.5f}")
         
-        # Show sessions table
-        print(f"\n📋 SESSION DETAILS")
-        print("-" * 80)
+        # Show sessions table using rich
+        from rich.console import Console
+        from rich.table import Table
+        from ...core.colors import (
+            TABLE_TITLE, HEADERS, PRIMARY, SECONDARY, NUMBERS, DATES, 
+            TERTIARY, format_status
+        )
         
-        headers = ['Session ID', 'Status', 'Start Time', 'Duration', 'Iterations', 'Best Score']
-        rows = []
+        console = Console()
+        
+        console.print(f"\n[{TABLE_TITLE}]📋 SESSION DETAILS[/{TABLE_TITLE}]")
+        
+        table = Table(show_header=True, header_style=HEADERS)
+        table.add_column("Session ID", style=PRIMARY, width=10)
+        table.add_column("Status", style="bold", width=15)
+        table.add_column("Start Time", style=DATES, width=16)
+        table.add_column("Duration", style=TERTIARY, width=12)
+        table.add_column("Iterations", style=NUMBERS, justify="right", width=10)
+        table.add_column("Best Score", style=NUMBERS, justify="right", width=12)
         
         for session in sorted_sessions:
             # Format duration
@@ -90,25 +103,20 @@ class SessionsCommand(BaseDatasetsCommand):
             best_score = session.get('best_score')
             score_str = f"{best_score:.5f}" if best_score else "N/A"
             
-            # Status icon
+            # Status with semantic colors
             status = session.get('status', 'unknown')
-            status_icon = {
-                'completed': '✅ Completed',
-                'failed': '❌ Failed', 
-                'running': '⏳ Running',
-                'interrupted': '⚠️  Interrupted'
-            }.get(status, f"❔ {status.title()}")
+            status_formatted = format_status(status.title())
             
-            rows.append([
+            table.add_row(
                 session.get('session_id', '')[:8],
-                status_icon,
+                status_formatted,
                 start_time_str,
                 duration_str,
                 str(session.get('total_iterations', 0)),
                 score_str
-            ])
+            )
         
-        self.print_table(headers, rows)
+        console.print(table)
         
         # Show recent activity
         recent_sessions = [s for s in sorted_sessions[:5]]

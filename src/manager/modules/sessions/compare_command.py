@@ -106,20 +106,34 @@ class CompareCommand(BaseSessionsCommand):
             return {}
     
     def _output_comparison_table(self, comparison_data: List[Dict[str, Any]]) -> None:
-        """Output session comparison in formatted table view."""
-        print(f"📊 COMPARING {len(comparison_data)} SESSIONS")
-        print("=" * 80)
+        """Output session comparison in formatted table view using rich."""
+        from rich.console import Console
+        from rich.table import Table
+        from ...core.colors import (
+            TABLE_TITLE, HEADERS, PRIMARY, SECONDARY, NUMBERS, DATES,
+            TERTIARY, format_status, format_number
+        )
         
-        # Basic comparison table
-        print("📋 BASIC COMPARISON:")
-        headers = ['Session', 'Name', 'Strategy', 'Iterations', 'Best Score', 'Status', 'Duration']
-        rows = []
+        console = Console()
+        
+        console.print(f"\n[{TABLE_TITLE}]📊 COMPARING {len(comparison_data)} SESSIONS[/{TABLE_TITLE}]")
+        console.print(f"[{SECONDARY}]" + "=" * 80 + f"[/{SECONDARY}]")
+        
+        # Basic comparison table with rich
+        table = Table(title=f"[{TABLE_TITLE}]📋 BASIC COMPARISON[/{TABLE_TITLE}]", show_header=True, header_style=HEADERS)
+        table.add_column("Session", style=PRIMARY, width=10)
+        table.add_column("Name", style=SECONDARY, width=12)
+        table.add_column("Strategy", style=TERTIARY, width=10)
+        table.add_column("Iterations", style=NUMBERS, justify="right", width=10)
+        table.add_column("Best Score", style=NUMBERS, justify="right", width=15)
+        table.add_column("Status", style="bold", width=10)
+        table.add_column("Duration", style=DATES, width=12)
         
         for data in comparison_data:
             session_short = data['session_id'][:8]
             name_short = (data['session_name'] or "Unnamed")[:12]
             strategy_short = data['strategy'][:10]
-            iterations = data['total_iterations']
+            iterations = str(data['total_iterations'])
             
             # Format score with metric
             metric = self.extract_target_metric(data['config_snapshot'])
@@ -129,26 +143,30 @@ class CompareCommand(BaseSessionsCommand):
                 metric_short = metric[:3] if len(metric) > 3 else metric
                 score_display += f" ({metric_short})"
             
-            status = data['status']
+            status = format_status(data['status'])
             duration = self.format_duration(data['start_time'], data['end_time']) if data['end_time'] else "Running"
             
-            rows.append([
+            table.add_row(
                 session_short,
                 name_short,
                 strategy_short,
-                str(iterations),
+                iterations,
                 score_display,
                 status,
                 duration
-            ])
+            )
         
-        self.print_table(headers, rows)
+        console.print(table)
         print()
         
-        # Performance comparison
-        print("📈 PERFORMANCE COMPARISON:")
-        headers = ['Session', 'Explorations', 'Avg Score', 'Total Time', 'Unique Ops', 'Score/Hour']
-        rows = []
+        # Performance comparison using rich
+        performance_table = Table(title=f"[{TABLE_TITLE}]📈 PERFORMANCE COMPARISON[/{TABLE_TITLE}]", show_header=True, header_style=HEADERS)
+        performance_table.add_column("Session", style=PRIMARY, width=10)
+        performance_table.add_column("Explorations", style=NUMBERS, justify="right", width=12)
+        performance_table.add_column("Avg Score", style=NUMBERS, justify="right", width=10)
+        performance_table.add_column("Total Time", style=TERTIARY, justify="right", width=10)
+        performance_table.add_column("Unique Ops", style=NUMBERS, justify="right", width=10)
+        performance_table.add_column("Score/Hour", style=NUMBERS, justify="right", width=10)
         
         for data in comparison_data:
             session_short = data['session_id'][:8]
@@ -166,16 +184,16 @@ class CompareCommand(BaseSessionsCommand):
                 hours = total_time / 3600
                 score_per_hour = f"{avg_score / hours:.3f}" if hours > 0 else "N/A"
             
-            rows.append([
+            performance_table.add_row(
                 session_short,
                 str(explorations),
                 f"{avg_score:.5f}" if avg_score else "N/A",
                 f"{total_time:.1f}s" if total_time else "N/A",
                 str(unique_ops),
                 score_per_hour
-            ])
+            )
         
-        self.print_table(headers, rows)
+        console.print(performance_table)
         print()
         
         # Strategy analysis

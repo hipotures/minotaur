@@ -247,15 +247,19 @@ class DuckDBDataManager:
                     train_count = self.connection.execute("SELECT COUNT(*) FROM train_features").fetchone()[0]
                     logger.info(f"Found train_features table with {train_count} rows")
                     self.data_loaded = True
+                elif 'train' in table_names:
+                    # train table exists but train_features doesn't - normal during feature generation
+                    train_count = self.connection.execute("SELECT COUNT(*) FROM train").fetchone()[0]
+                    logger.info(f"Using train table with {train_count} rows (features not generated yet)")
+                    self.data_loaded = True
+                elif len(table_names) == 0:
+                    # No tables at all - normal during initial dataset creation
+                    logger.debug("No tables found in database - dataset creation in progress")
+                    self.data_loaded = False
                 else:
-                    logger.warning("train_features table not found in cached dataset")
-                    # Fall back to original train table if features not generated yet
-                    if 'train' in table_names:
-                        train_count = self.connection.execute("SELECT COUNT(*) FROM train").fetchone()[0]
-                        logger.info(f"Using train table with {train_count} rows (features not generated yet)")
-                        self.data_loaded = True
-                    else:
-                        raise ValueError("Neither train_features nor train table found in cached dataset")
+                    # Some tables exist but neither train nor train_features
+                    logger.warning(f"Dataset contains tables {table_names} but no train/train_features table")
+                    raise ValueError("Neither train_features nor train table found in cached dataset")
                         
                 if 'test_features' in table_names:
                     test_count = self.connection.execute("SELECT COUNT(*) FROM test_features").fetchone()[0]

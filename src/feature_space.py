@@ -675,8 +675,11 @@ class FeatureSpace:
                         custom_class = module.CustomFeatureOperations
                         method_name = f'get_{operation_name}'
                         
-                        if hasattr(custom_class, method_name):
-                            method = getattr(custom_class, method_name)
+                        # Create instance of the custom features class
+                        custom_instance = custom_class()
+                        
+                        if hasattr(custom_instance, method_name):
+                            method = getattr(custom_instance, method_name)
                             
                             # Check if method uses forbidden columns in source code
                             self._validate_custom_method_safety(method, method_name)
@@ -1217,27 +1220,17 @@ class FeatureSpace:
                 if hasattr(module, 'CustomFeatureOperations'):
                     custom_class = module.CustomFeatureOperations
                     
-                    # Get all get_* methods
-                    method_names = [name for name in dir(custom_class) 
-                                  if name.startswith('get_') and callable(getattr(custom_class, name))]
+                    # Create instance of the custom features class
+                    custom_instance = custom_class()
                     
-                    for method_name in method_names:
-                        try:
-                            method = getattr(custom_class, method_name)
-                            
-                            # Check if method uses forbidden columns in source code
-                            self._validate_custom_method_safety(method, method_name)
-                            
-                            # Call method with DataFrame
-                            custom_features = method(df)
-                            
-                            if isinstance(custom_features, dict):
-                                for feature_name, feature_data in custom_features.items():
-                                    result_df[feature_name] = feature_data
-                                    feature_count += 1
-                                logger.info(f"Added {len(custom_features)} features from {method_name}")
-                        except Exception as e:
-                            logger.warning(f"Failed to generate {method_name}: {e}")
+                    # Use the new architecture to generate all features with timing
+                    custom_features = custom_instance.generate_all_features(df)
+                    
+                    if isinstance(custom_features, dict):
+                        for feature_name, feature_data in custom_features.items():
+                            result_df[feature_name] = feature_data
+                        feature_count += len(custom_features)
+                        logger.info(f"Added {len(custom_features)} custom features using new architecture")
                             
             except Exception as e:
                 logger.warning(f"Failed to load custom domain module: {e}")
@@ -1357,25 +1350,15 @@ class FeatureSpace:
                 if hasattr(module, 'CustomFeatureOperations'):
                     custom_class = module.CustomFeatureOperations
                     
-                    # Get all get_* methods
-                    method_names = [name for name in dir(custom_class) 
-                                  if name.startswith('get_') and callable(getattr(custom_class, name))]
+                    # Create instance of the custom features class
+                    custom_instance = custom_class()
                     
-                    for method_name in method_names:
-                        try:
-                            method = getattr(custom_class, method_name)
-                            
-                            # Check if method uses forbidden columns in source code
-                            self._validate_custom_method_safety(method, method_name)
-                            
-                            # Call method with DataFrame
-                            custom_features = method(df)
-                            
-                            if isinstance(custom_features, dict):
-                                result_features.update(custom_features)
-                                logger.info(f"Added {len(custom_features)} features from {method_name}")
-                        except Exception as e:
-                            logger.warning(f"Failed to generate {method_name}: {e}")
+                    # Use the new architecture to generate all features with timing
+                    custom_features = custom_instance.generate_all_features(df)
+                    
+                    if isinstance(custom_features, dict):
+                        result_features.update(custom_features)
+                        logger.info(f"Generated {len(custom_features)} custom features using new architecture")
                             
             except Exception as e:
                 logger.warning(f"Failed to load custom domain module: {e}")

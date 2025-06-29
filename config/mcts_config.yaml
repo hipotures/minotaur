@@ -134,7 +134,7 @@ database:
 
 # Logging and Monitoring  
 logging:
-  level: 'INFO'                # DEBUG, INFO, WARNING, ERROR
+  level: 'DEBUG'               # DEBUG, INFO, WARNING, ERROR
   log_file: 'logs/minotaur.log'
   max_log_size_mb: 100
   backup_count: 5

@@ -41,7 +41,7 @@ class RunCommand(BaseSelfCheckCommand):
             
             # 1. Dataset Validation
             print("\n📊 DATASET VALIDATION")
-            dataset_valid, dataset_info = self.validate_dataset(dataset, verbose)
+            dataset_valid, dataset_info = self.validate_dataset(dataset, verbose, config_file)
             test_results.append(("Dataset Validation", dataset_valid))
             
             if not dataset_valid:

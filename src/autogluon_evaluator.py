@@ -275,11 +275,8 @@ class AutoGluonEvaluator:
             model_dir = self._create_temp_model_dir()
             logger.debug(f"Created model directory: {model_dir}")
             
-            # Show first 5 rows of training data before AutoGluon
-            logger.info("📊 First 5 rows of AutoGluon training data:")
-            logger.info(f"Columns: {list(train_data.columns)}")
-            for i, (_, row) in enumerate(train_data.head(5).iterrows(), 1):
-                logger.info(f"Row {i}: {list(row.values)}")
+            # Log basic data shape info only
+            logger.debug(f"Training data shape: {train_data.shape[0]} rows, {train_data.shape[1]} columns")
             
             # Train and evaluate
             logger.info("Starting AutoGluon training and evaluation...")
@@ -399,11 +396,11 @@ class AutoGluonEvaluator:
                 ignored_columns.extend(self.ignore_columns)
             
             # PART 3: Log configuration for data leakage prevention
-            logger.info(f"AutoGluon configuration:")
-            logger.info(f"  Target column: {self.target_column}")
-            logger.info(f"  ID column: {self.id_column}")
-            logger.info(f"  Ignored columns: {self.ignore_columns}")
-            logger.info(f"  Total ignored for AutoGluon: {ignored_columns}")
+            logger.debug(f"AutoGluon configuration:")
+            logger.debug(f"  Target column: {self.target_column}")
+            logger.debug(f"  ID column: {self.id_column}")
+            logger.debug(f"  Ignored columns: {self.ignore_columns}")
+            logger.debug(f"  Total ignored for AutoGluon: {ignored_columns}")
             
             # Create predictor with ignored columns
             # Use the configured metric, or None to let AutoGluon choose
@@ -470,9 +467,9 @@ class AutoGluonEvaluator:
             
             # Special handling for MAP@3 which isn't built-in to AutoGluon
             if self.target_metric.lower() in ['map@3', 'map_at_3', 'map3']:
-                logger.info(f"Val predictions columns: {val_predictions.columns.tolist()}")
-                logger.info(f"Val true labels sample: {val_true[:5]}")
-                logger.info(f"Val predictions sample: {val_predictions.values[:3]}")
+                logger.debug(f"Val predictions columns: {val_predictions.columns.tolist()}")
+                logger.debug(f"Val true labels sample: {val_true[:5]}")
+                logger.debug(f"Val predictions sample: {val_predictions.values[:3]}")
                 score = self._calculate_map3(val_true, val_predictions)
                 logger.info(f"Calculated MAP@3 score: {score:.5f}")
             else:

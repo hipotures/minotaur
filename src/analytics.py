@@ -36,6 +36,13 @@ try:
     plt.style.use('default')
     sns.set_palette("husl")
     
+    # Reduce matplotlib logging verbosity
+    import logging
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('seaborn').setLevel(logging.WARNING)
+    
 except ImportError:
     PLOTTING_AVAILABLE = False
     logger.warning("Matplotlib/Seaborn not available. Charts will be disabled.")

@@ -98,6 +98,10 @@ class ModularDuckDBManager:
         
         # Reduce noise from some libraries
         logging.getLogger('urllib3').setLevel(logging.WARNING)
+        logging.getLogger('matplotlib').setLevel(logging.WARNING)
+        logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+        logging.getLogger('PIL').setLevel(logging.WARNING)
+        logging.getLogger('seaborn').setLevel(logging.WARNING)
     
     def _init_repositories(self) -> None:
         """Initialize repository instances."""
@@ -233,7 +237,7 @@ class ModularDuckDBManager:
         # Get the requested module
         module = self.get_module(args.module)
         if not module:
-            print(f"❌ Unknown module: {args.module}")
+            print(f"❌ Missing module name. Use: ./manager.py [MODULE] [OPTIONS]")
             self._show_modules()
             return 1
         
@@ -263,41 +267,46 @@ class ModularDuckDBManager:
     
     def _show_modules(self) -> None:
         """Display available modules using rich."""
-        self.console.print("\n[bold cyan]🔧 MODULAR DUCKDB MANAGER[/bold cyan]")
-        self.console.print("[cyan]" + "=" * 50 + "[/cyan]")
+        from src.manager.core.colors import (
+            TABLE_TITLE, SEPARATOR, HEADERS, PRIMARY, TERTIARY, 
+            STATUS_SUCCESS, MUTED, ACCENT
+        )
+        
+        self.console.print(f"\n[{TABLE_TITLE}]🔧 MODULAR DUCKDB MANAGER[/{TABLE_TITLE}]")
+        self.console.print(f"[{SEPARATOR}]" + "=" * 50 + f"[/{SEPARATOR}]")
 
-        table = Table(title="[bold blue]Available modules[/bold blue]", show_header=True, header_style="bold magenta")
-        table.add_column("Module", style="bold yellow", width=15)
-        table.add_column("Description", style="white")
+        table = Table(title=f"[{TABLE_TITLE}]Available modules[/{TABLE_TITLE}]", show_header=True, header_style=HEADERS)
+        table.add_column("Module", style=PRIMARY, width=15)
+        table.add_column("Description", style=TERTIARY)
 
         for module in self.modules.values():
             table.add_row(module.name, module.description)
 
         self.console.print(table)
 
-        self.console.print("\n[bold green]Usage:[/bold green]")
-        self.console.print("  [dim]./manager.py <module> [options][/dim]")
-        self.console.print("  [dim]./manager.py <module> --help[/dim]")
+        self.console.print(f"\n[{STATUS_SUCCESS}]Usage:[/{STATUS_SUCCESS}]")
+        self.console.print(f"  [{MUTED}]./manager.py <module> [options][/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py <module> --help[/{MUTED}]")
 
-        self.console.print("\n[bold green]Examples:[/bold green]")
-        self.console.print("  [bold magenta]# Dataset management[/bold magenta]")
-        self.console.print("  [dim]./manager.py datasets --list[/dim]")
-        self.console.print("  [dim]./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto[/dim]")
-        self.console.print("  [dim]./manager.py datasets --details titanic[/dim]")
+        self.console.print(f"\n[{STATUS_SUCCESS}]Examples:[/{STATUS_SUCCESS}]")
+        self.console.print(f"  [{ACCENT}]# Dataset management[/{ACCENT}]")
+        self.console.print(f"  [{MUTED}]./manager.py datasets --list[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py datasets --details titanic[/{MUTED}]")
         self.console.print("")
-        self.console.print("  [bold magenta]# Session analysis[/bold magenta]")
-        self.console.print("  [dim]./manager.py sessions --list[/dim]")
-        self.console.print("  [dim]./manager.py sessions --details [session_id][/dim]")
-        self.console.print("  [dim]./manager.py sessions --best 5[/dim]")
+        self.console.print(f"  [{ACCENT}]# Session analysis[/{ACCENT}]")
+        self.console.print(f"  [{MUTED}]./manager.py sessions --list[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py sessions --details [session_id][/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py sessions --best 5[/{MUTED}]")
         self.console.print("")
-        self.console.print("  [bold magenta]# Feature analysis[/bold magenta]")
-        self.console.print("  [dim]./manager.py features --top 10[/dim]")
-        self.console.print("  [dim]./manager.py features --session [session_id][/dim]")
+        self.console.print(f"  [{ACCENT}]# Feature analysis[/{ACCENT}]")
+        self.console.print(f"  [{MUTED}]./manager.py features --top 10[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py features --session [session_id][/{MUTED}]")
         self.console.print("")
-        self.console.print("  [bold magenta]# System maintenance[/bold magenta]")
-        self.console.print("  [dim]./manager.py analytics --summary --days 7[/dim]")
-        self.console.print("  [dim]./manager.py backup --create[/dim]")
-        self.console.print("  [dim]./manager.py selfcheck --validate[/dim]")
+        self.console.print(f"  [{ACCENT}]# System maintenance[/{ACCENT}]")
+        self.console.print(f"  [{MUTED}]./manager.py analytics --summary --days 7[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py backup --create[/{MUTED}]")
+        self.console.print(f"  [{MUTED}]./manager.py selfcheck --validate[/{MUTED}]")
     
     def _get_epilog(self) -> str:
         """Get epilog text for help."""

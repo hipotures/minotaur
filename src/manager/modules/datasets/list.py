@@ -108,9 +108,24 @@ class ListCommand(BaseDatasetsCommand):
             return 0
     
     def _output_table(self, datasets: List[Dict[str, Any]]) -> None:
-        """Output datasets in table format."""
-        headers = ['Name', 'ID', 'Train Records', 'Last Used', 'Size (MB)', 'Status']
-        rows = []
+        """Output datasets in table format using rich."""
+        from rich.console import Console
+        from rich.table import Table
+        from ...core.colors import (
+            TABLE_TITLE, HEADERS, PRIMARY, SECONDARY, NUMBERS, DATES,
+            STATUS_SUCCESS, STATUS_INFO, MUTED, ACCENT, format_status, format_number
+        )
+        
+        console = Console()
+        
+        # Create rich table with consistent color scheme
+        table = Table(title=f"[{TABLE_TITLE}]📊 REGISTERED DATASETS[/{TABLE_TITLE}]", show_header=True, header_style=HEADERS)
+        table.add_column("Name", style=PRIMARY, width=20)
+        table.add_column("ID", style=SECONDARY, width=10)
+        table.add_column("Train Records", style=NUMBERS, justify="right", width=13)
+        table.add_column("Last Used", style=DATES, width=12)
+        table.add_column("Size (MB)", style=NUMBERS, justify="right", width=10)
+        table.add_column("Status", style="bold", width=10)
         
         for dataset in datasets:
             # Format last used date
@@ -127,32 +142,34 @@ class ListCommand(BaseDatasetsCommand):
             else:
                 last_used_str = 'Never'
             
-            # Status
-            status = 'Active' if dataset.get('is_active', False) else 'Inactive'
+            # Status with semantic colors
+            is_active = dataset.get('is_active', False)
+            status_text = "Active" if is_active else "Inactive"
+            status = format_status(status_text)
             
-            rows.append([
-                dataset.get('dataset_name', 'Unknown')[:30],
+            table.add_row(
+                dataset.get('dataset_name', 'Unknown')[:20],
                 dataset.get('dataset_id', 'Unknown')[:8],
                 str(dataset.get('train_records', 0)),
                 last_used_str,
                 f"{dataset.get('data_size_mb') or 0:.1f}",
                 status
-            ])
+            )
         
-        self.print_table(headers, rows, "Registered Datasets")
+        console.print(table)
         
-        # Summary information
+        # Summary information using consistent colors
         total_datasets = len(datasets)
         active_datasets = len([d for d in datasets if d.get('is_active', False)])
         
-        print(f"\n📈 Summary:")
-        print(f"   Total Datasets: {total_datasets}")
-        print(f"   Active Datasets: {active_datasets}")
+        console.print(f"\n[{STATUS_SUCCESS}]📈 Summary:[/{STATUS_SUCCESS}]")
+        console.print(f"   [{SECONDARY}]Total Datasets:[/{SECONDARY}] {format_number(total_datasets)}")
+        console.print(f"   [{STATUS_SUCCESS}]Active Datasets:[/{STATUS_SUCCESS}] {format_number(active_datasets)}")
         
         if total_datasets > 0:
-            print(f"\n💡 Usage:")
-            print(f"   Show details: python manager.py datasets --details DATASET_NAME")
-            print(f"   View sessions: python manager.py datasets --sessions DATASET_NAME")
+            console.print(f"\n[{STATUS_INFO}]💡 Usage:[/{STATUS_INFO}]")
+            console.print(f"   [{MUTED}]Show details:[/{MUTED}] [{ACCENT}]./manager.py datasets --details DATASET_NAME[/{ACCENT}]")
+            console.print(f"   [{MUTED}]View sessions:[/{MUTED}] [{ACCENT}]./manager.py datasets --sessions DATASET_NAME[/{ACCENT}]")
     
     def _output_json(self, datasets: List[Dict[str, Any]]) -> None:
         """Output datasets in JSON format."""

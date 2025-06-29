@@ -237,13 +237,28 @@ class StatsCommand(BaseDatasetsCommand):
         
         # Dataset Breakdown
         if breakdown:
-            print(f"\n📊 DATASET BREAKDOWN")
-            print("-" * 80)
-            headers = ['Dataset', 'ID', 'Sessions', 'Features', 'Success%', 'Best Score', 'Size']
+            # Dataset breakdown table using rich
+            from rich.console import Console
+            from rich.table import Table
+            from ...core.colors import (
+                TABLE_TITLE, HEADERS, PRIMARY, SECONDARY, NUMBERS, TERTIARY
+            )
             
-            rows = []
+            console = Console()
+            
+            console.print(f"\n[{TABLE_TITLE}]📊 DATASET BREAKDOWN[/{TABLE_TITLE}]")
+            
+            table = Table(show_header=True, header_style=HEADERS)
+            table.add_column("Dataset", style=PRIMARY, width=20)
+            table.add_column("ID", style=SECONDARY, width=10)
+            table.add_column("Sessions", style=NUMBERS, justify="right", width=8)
+            table.add_column("Features", style=NUMBERS, justify="right", width=8)
+            table.add_column("Success%", style=NUMBERS, justify="right", width=8)
+            table.add_column("Best Score", style=NUMBERS, justify="right", width=10)
+            table.add_column("Size", style=TERTIARY, justify="right", width=8)
+            
             for dataset in breakdown[:10]:  # Show top 10
-                rows.append([
+                table.add_row(
                     dataset['dataset_name'][:20],
                     dataset['dataset_id'],
                     str(dataset['session_count']),
@@ -251,9 +266,9 @@ class StatsCommand(BaseDatasetsCommand):
                     f"{dataset['success_rate']:.1f}%",
                     f"{dataset['best_score']:.3f}" if dataset['best_score'] > 0 else "N/A",
                     self.format_size(dataset['size_bytes'])
-                ])
+                )
             
-            self.print_table(headers, rows)
+            console.print(table)
             
             if len(breakdown) > 10:
                 print(f"\n... and {len(breakdown) - 10} more datasets")

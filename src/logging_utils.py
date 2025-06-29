@@ -117,6 +117,10 @@ def setup_main_logging(config):
     # Reduce verbosity of some libraries
     logging.getLogger('autogluon').setLevel(logging.INFO)
     logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('seaborn').setLevel(logging.WARNING)
     
     # Setup session-aware logging filters
     setup_session_logging()

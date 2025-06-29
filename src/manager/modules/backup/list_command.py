@@ -42,10 +42,21 @@ class ListCommand(BaseBackupCommand):
             self.print_error(f"Failed to list backups: {e}")
     
     def _output_table(self, backup_files: List) -> None:
-        """Output backup files in table format."""
-        # Table headers
-        headers = ['File', 'Size', 'Created', 'Type']
-        rows = []
+        """Output backup files in table format using rich."""
+        from rich.console import Console
+        from rich.table import Table
+        from ...core.colors import (
+            TABLE_TITLE, HEADERS, PRIMARY, SECONDARY, NUMBERS, DATES, TERTIARY
+        )
+        
+        console = Console()
+        
+        # Create rich table
+        table = Table(title=f"[{TABLE_TITLE}]📁 BACKUP FILES[/{TABLE_TITLE}]", show_header=True, header_style=HEADERS)
+        table.add_column("File", style=PRIMARY, width=30)
+        table.add_column("Size", style=NUMBERS, justify="right", width=10)
+        table.add_column("Created", style=DATES, width=18)
+        table.add_column("Type", style=SECONDARY, width=10)
         
         for backup_file in backup_files:
             info = self.format_backup_info(backup_file)
@@ -55,14 +66,14 @@ class ListCommand(BaseBackupCommand):
             if len(file_name) > 29:
                 file_name = file_name[:26] + "..."
             
-            rows.append([
+            table.add_row(
                 file_name,
                 info['size'],
                 info['created'],
                 info['type']
-            ])
+            )
         
-        self.print_table(headers, rows)
+        console.print(table)
     
     def _output_json(self, backup_files: List) -> None:
         """Output backup files in JSON format."""
