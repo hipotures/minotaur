@@ -307,10 +307,7 @@ class RunCommand(BaseSelfCheckCommand):
             'validation': {
                 'validate_generated_features': False
             },
-            'testing': {
-                'fast_test_mode': True,
-                'use_small_dataset': True
-            }
+            'test_mode': True
         }
         
         # Add target column if detected

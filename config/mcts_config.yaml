@@ -1,6 +1,9 @@
 # MCTS Feature Discovery Configuration
 # All parameters for MCTS, AutoGluon, SQLite, and system behavior
 
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
 # Session Management
 session:
   # Options: 'new', 'continue', 'resume_best'
@@ -253,9 +256,6 @@ analytics:
   include_timing_analysis: true
 
 # Testing Configuration (AutoGluon required - no mock mode)
-testing:
-  fast_test_mode: false      # Enable ultra-fast testing mode
-
 # Validation and Testing
 validation:
   # Feature validation

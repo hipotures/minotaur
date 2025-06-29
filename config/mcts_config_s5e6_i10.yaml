@@ -1,11 +1,14 @@
-# MCTS Configuration Override for Playground Series S5E6 - Fast Test
+# MCTS Configuration Override for Playground Series S5E6 - 10 Iterations
 # This file contains only parameters that override the main mcts_config.yaml
-# For ultra-fast testing with real AutoGluon on minimal datasets
+# For medium testing with real AutoGluon on small datasets
 #
-# PERFORMANCE TARGET: Complete 3 iterations in 30-60 seconds
-# RESOURCE LIMITS: train_size=100 samples, minimal memory, XGBoost only
+# PERFORMANCE TARGET: Complete 10 iterations in 5-10 minutes
+# RESOURCE LIMITS: train_size=1000 samples, limited memory, XGBoost+LightGBM
 
-# Session Management - Ultra-short runs
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
+# Session Management - Medium runs
 session:
   max_iterations: 10              # Ultra-short for testing
   max_runtime_hours: 0.25        # 15 minutes max

@@ -106,14 +106,8 @@ class DatabaseService:
         session_name = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         # Detect test mode
-        testing_config = self.config.get('testing', {})
-        session_config = self.config.get('session', {})
-        is_test_mode = (
-            session_config.get('is_test_mode', False) or  # Explicit test mode flag
-            session_config.get('max_iterations', 0) <= 5 or
-            testing_config.get('fast_test_mode', False) or
-            testing_config.get('use_small_dataset', False)
-        )
+        is_test_mode = self.config.get('test_mode', False)
+        self.logger.info(f"📊 Creating session with test_mode={is_test_mode}")
         
         # Calculate dataset hash
         dataset_hash = self._calculate_dataset_hash()

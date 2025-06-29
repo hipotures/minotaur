@@ -52,18 +52,12 @@ def setup_logging(config: Dict[str, Any]) -> None:
         maxBytes=log_config['max_log_size_mb'] * 1024 * 1024,
         backupCount=log_config['backup_count']
     )
-    
-    # Console handler for stdout
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(log_format))
+    file_handler.setFormatter(logging.Formatter(log_format))
     
     logging.basicConfig(
         level=getattr(logging, log_config['level']),
         format=log_format,
-        handlers=[
-            file_handler,
-            console_handler
-        ]
+        handlers=[file_handler]
     )
     
     # Reduce verbosity of some libraries
@@ -230,23 +224,27 @@ class FeatureDiscoveryRunner:
                     logger.info(f"🧪 Test file: {dataset_info['test_path']}")
             
         except Exception as e:
-            logger.error(f"❌ Dataset validation failed: {e}")
+            # Print to stdout for immediate user feedback
+            print(f"ℹ️ Dataset not available: {e}")
             
             # Show available datasets if validation fails
             try:
                 available_datasets = self.dataset_manager.list_available_datasets()
                 if available_datasets:
-                    logger.info("📋 Available registered datasets:")
+                    print("📋 Available registered datasets:")
                     for name, info in available_datasets.items():
                         status = "Active" if info['is_active'] else "Inactive"
-                        logger.info(f"   • {name} ({status}) - Target: {info['target_column']}")
+                        print(f"   • {name} ({status}) - Target: {info['target_column']}")
                 else:
-                    logger.info("📋 No datasets registered yet")
-                    logger.info("💡 Register a dataset: scripts/duckdb_manager.py datasets --register --help")
+                    print("📋 No datasets registered yet")
+                    print("💡 Register a dataset: scripts/duckdb_manager.py datasets --register --help")
             except:
                 pass
             
-            raise
+            # Exit gracefully instead of raising
+            import sys
+            print("🛑 Stopping due to dataset configuration issue")
+            sys.exit(0)
     
     def _get_initial_features(self) -> set:
         """Get initial feature set for MCTS tree."""
@@ -897,11 +895,6 @@ def main():
         help='Start new session (overrides config session mode)'
     )
     parser.add_argument(
-        '--real-autogluon',
-        action='store_true',
-        help='Use real AutoGluon with small dataset for testing'
-    )
-    parser.add_argument(
         '--list-sessions',
         action='store_true',
         help='List recent sessions and exit'
@@ -958,13 +951,6 @@ def main():
         elif args.new_session:
             config['session']['mode'] = 'new'
         
-        
-        # Add real autogluon test flag
-        if args.real_autogluon:
-            config['session']['max_iterations'] = min(config['session']['max_iterations'], 3)  # Very few iterations for real testing
-            config['testing']['use_small_dataset'] = True
-            print("REAL AUTOGLUON MODE: Using small dataset for real evaluation")
-            
     except Exception as e:
         print(f"Configuration error: {e}")
         sys.exit(1)
@@ -981,6 +967,14 @@ def main():
     logger.info(f"Session mode: {config['session']['mode']}")
     if session_id_to_continue:
         logger.info(f"Continuing session: {session_id_to_continue[:8]}...")
+    
+    # Log test mode status
+    test_mode = config.get('test_mode', False)
+    if test_mode:
+        logger.info("🧪 TEST MODE: Session will be marked as test (for cleanup)")
+    else:
+        logger.info("🚀 PRODUCTION MODE: Session will be marked as production")
+    
     logger.info(f"Max iterations: {config['session']['max_iterations']}")
     logger.info(f"Max runtime: {config['session']['max_runtime_hours']} hours")
     logger.info("="*80)

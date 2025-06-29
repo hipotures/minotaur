@@ -27,6 +27,7 @@ CONFIG_SCHEMA = {
     "type": "object",
     "required": ["database", "mcts", "session"],
     "properties": {
+        "test_mode": {"type": "boolean"},
         "database": {
             "type": "object",
             "required": ["path"],
@@ -64,14 +65,6 @@ CONFIG_SCHEMA = {
                 "test_path": {"type": ["string", "null"]},
                 "target_column": {"type": "string"},
                 "target_metric": {"type": "string"}
-            }
-        },
-        "testing": {
-            "type": "object",
-            "properties": {
-                "use_mock_evaluator": {"type": "boolean"},
-                "use_small_dataset": {"type": "boolean"},
-                "small_dataset_size": {"type": "integer", "minimum": 1}
             }
         },
         "data": {

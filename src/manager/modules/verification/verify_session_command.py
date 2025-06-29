@@ -207,11 +207,10 @@ class VerifySessionCommand(BaseVerificationCommand):
             
             # Check 3: Test mode consistency
             test_mode = session_info.get('is_test_mode', False)
-            testing_config = config.get('testing', {})
-            fast_test_mode = testing_config.get('fast_test_mode', False)
+            config_test_mode = config.get('test_mode', False)
             
-            if test_mode != fast_test_mode:
-                results['warnings'].append(f"Test mode mismatch: session={test_mode}, config={fast_test_mode}")
+            if test_mode != config_test_mode:
+                results['warnings'].append(f"Test mode mismatch: session={test_mode}, config={config_test_mode}")
                 results['checks']['test_mode_consistency'] = 'WARN'
             else:
                 results['checks']['test_mode_consistency'] = 'PASS'

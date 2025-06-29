@@ -97,7 +97,7 @@ class DatasetManager:
             return dataset_info
                 
         except Exception as e:
-            logger.error(f"Failed to retrieve dataset '{dataset_name}': {e}")
+            logger.info(f"Dataset '{dataset_name}' not available: {e}")
             # Preserve original error message if it's already about dataset not found
             if "not found or inactive" in str(e):
                 raise e

@@ -1,6 +1,9 @@
 # MCTS Configuration Override for Playground Series S5E6 - Production
 # This config inherits from mcts_config.yaml and overrides for production fertilizer prediction
 
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
 # Session settings for production
 session:
   max_iterations: 100

@@ -5,6 +5,9 @@
 # PERFORMANCE TARGET: Complete 3 iterations in 30-60 seconds
 # RESOURCE LIMITS: train_size=100 samples, minimal memory, XGBoost only
 
+# Test Mode Configuration  
+test_mode: true  # true = test session (for cleanup), false = production session
+
 # Session Management - Ultra-short runs
 session:
   max_iterations: 3              # Ultra-short for testing

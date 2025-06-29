@@ -5,6 +5,9 @@
 # PERFORMANCE TARGET: Complete 5 iterations in 2-5 minutes
 # RESOURCE LIMITS: 5K samples, reduced memory, focused on XGBoost
 
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
 # Session Management - Shorter runs
 session:
   max_iterations: 5              # Very short for fast iteration
@@ -90,10 +93,6 @@ logging:
   log_file: 'logs/mcts_discovery_fast.log'    # Separate log
   max_log_size_mb: 50                     # Smaller logs
   progress_interval: 5                    # More frequent progress
-
-# Testing - Mock evaluator settings
-testing:
-  fast_test_mode: false                   # Real AutoGluon mode
 
 # Export - Minimal for speed
 export:
