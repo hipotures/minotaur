@@ -75,3 +75,93 @@ def setup_session_logging(root_logger: Optional[logging.Logger] = None) -> None:
         logger = logging.getLogger(name)
         for handler in logger.handlers:
             handler.addFilter(session_filter)
+
+
+def setup_main_logging(config):
+    """
+    Setup main application logging to logs/minotaur.log.
+    
+    This is separate from database logging which goes to logs/db.log.
+    """
+    from pathlib import Path
+    from logging.handlers import RotatingFileHandler
+    
+    log_config = config['logging']
+    
+    # Ensure logs directory exists
+    log_dir = Path('logs')
+    log_dir.mkdir(exist_ok=True)
+    
+    # Main application log format with session context
+    log_format = '%(asctime)s - [%(session_name)s] - %(name)s - %(levelname)s - %(message)s'
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, log_config['level']))
+    
+    # Remove any existing handlers to avoid duplicates
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # File handler for main application logs
+    file_handler = RotatingFileHandler(
+        log_config['log_file'],
+        maxBytes=log_config['max_log_size_mb'] * 1024 * 1024,
+        backupCount=log_config['backup_count']
+    )
+    file_handler.setFormatter(logging.Formatter(log_format))
+    
+    # Only file handler - no console output
+    root_logger.addHandler(file_handler)
+    
+    # Reduce verbosity of some libraries
+    logging.getLogger('autogluon').setLevel(logging.INFO)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    
+    # Setup session-aware logging filters
+    setup_session_logging()
+    
+    # Get main logger and log initialization
+    logger = logging.getLogger(__name__)
+    logger.info("Main application logging configuration initialized")
+    
+    return root_logger
+
+
+def setup_dataset_logging(dataset_name: str, config):
+    """
+    Setup contextual logging for dataset operations that goes to main log.
+    
+    This creates a logger that uses the dataset name as session context
+    and logs to the main application log (minotaur.log), not database log.
+    """
+    # Set the dataset name as session context
+    original_session = get_session_context()
+    set_session_context(dataset_name)
+    
+    # Get logger that will use the main application logging system
+    logger = logging.getLogger('dataset_importer')
+    
+    # Return a wrapper that restores original session context when done
+    class DatasetLogger:
+        def __init__(self, logger, original_session):
+            self.logger = logger
+            self.original_session = original_session
+        
+        def info(self, msg, *args, **kwargs):
+            self.logger.info(msg, *args, **kwargs)
+        
+        def warning(self, msg, *args, **kwargs):
+            self.logger.warning(msg, *args, **kwargs)
+        
+        def error(self, msg, *args, **kwargs):
+            self.logger.error(msg, *args, **kwargs)
+        
+        def debug(self, msg, *args, **kwargs):
+            self.logger.debug(msg, *args, **kwargs)
+        
+        def __del__(self):
+            # Restore original session context when logger is destroyed
+            set_session_context(self.original_session)
+    
+    return DatasetLogger(logger, original_session)

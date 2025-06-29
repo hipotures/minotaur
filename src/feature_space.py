@@ -20,9 +20,9 @@ from pathlib import Path
 # Import existing feature engineering module
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from .feature_engineering import load_or_create_features
-from .timing import timed, timing_context, record_timing
-from .data_utils import DataManager, smart_sample, estimate_memory_usage
+from feature_engineering import load_or_create_features
+from timing import timed, timing_context, record_timing
+from data_utils import DataManager, smart_sample, estimate_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -617,7 +617,7 @@ class FeatureSpace:
         """Apply domain-specific operation to generate new features."""
         try:
             # First try generic operations
-            from .domains.generic import GenericFeatureOperations
+            from domains.generic import GenericFeatureOperations
             
             if operation_name == 'statistical_aggregations':
                 return self._apply_generic_statistical_aggregations(df)
@@ -665,7 +665,7 @@ class FeatureSpace:
             agg_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Use the GenericFeatureOperations class for consistency
-        from .domains.generic import GenericFeatureOperations
+        from domains.generic import GenericFeatureOperations
         return GenericFeatureOperations.get_statistical_aggregations(df, groupby_cols, agg_cols)
     
     def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
@@ -1011,7 +1011,7 @@ class FeatureSpace:
         feature_count = 0
         
         # Import generic operations module
-        from .domains.generic import GenericFeatureOperations
+        from domains.generic import GenericFeatureOperations
         
         # 1. Generate all generic features
         logger.info("Generating generic features...")
@@ -1106,6 +1106,142 @@ class FeatureSpace:
         elapsed_time = time.time() - start_time
         logger.info(f"Generated {feature_count} features in {elapsed_time:.2f}s")
         logger.info(f"Total columns: {len(result_df.columns)} (original: {len(df.columns)})")
+        
+        return result_df
+    
+    def generate_generic_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate ONLY generic features (statistical, polynomial, binning, ranking).
+        
+        Args:
+            df: Input DataFrame with original data
+            
+        Returns:
+            DataFrame with ONLY the generated generic features (no original columns)
+        """
+        logger.info("🔧 Generating generic features...")
+        start_time = time.time()
+        
+        # Start with empty result DataFrame
+        result_features = {}
+        
+        # Import generic operations module
+        from domains.generic import GenericFeatureOperations
+        
+        # Get numeric and categorical columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Statistical aggregations
+        if len(categorical_cols) > 0 and len(numeric_cols) > 0:
+            try:
+                stat_features = GenericFeatureOperations.get_statistical_aggregations(
+                    df, categorical_cols[:5], numeric_cols[:10]  # Limit to prevent explosion
+                )
+                result_features.update(stat_features)
+                logger.info(f"Added {len(stat_features)} statistical aggregation features")
+            except Exception as e:
+                logger.warning(f"Failed to generate statistical aggregations: {e}")
+        
+        # Polynomial features
+        if len(numeric_cols) > 0:
+            try:
+                poly_features = GenericFeatureOperations.get_polynomial_features(
+                    df, numeric_cols, degree=2
+                )
+                result_features.update(poly_features)
+                logger.info(f"Added {len(poly_features)} polynomial features")
+            except Exception as e:
+                logger.warning(f"Failed to generate polynomial features: {e}")
+        
+        # Binning features
+        if len(numeric_cols) > 0:
+            try:
+                bin_features = GenericFeatureOperations.get_binning_features(
+                    df, numeric_cols, n_bins=5
+                )
+                result_features.update(bin_features)
+                logger.info(f"Added {len(bin_features)} binning features")
+            except Exception as e:
+                logger.warning(f"Failed to generate binning features: {e}")
+        
+        # Ranking features
+        if len(numeric_cols) > 0:
+            try:
+                rank_features = GenericFeatureOperations.get_ranking_features(df, numeric_cols)
+                result_features.update(rank_features)
+                logger.info(f"Added {len(rank_features)} ranking features")
+            except Exception as e:
+                logger.warning(f"Failed to generate ranking features: {e}")
+        
+        # Convert to DataFrame
+        if result_features:
+            result_df = pd.DataFrame(result_features)
+        else:
+            # Return DataFrame with dummy column to avoid DuckDB empty table errors
+            result_df = pd.DataFrame({'_placeholder': [0] * len(df)}, index=df.index)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"Generated {len(result_df.columns)} generic features in {elapsed_time:.2f}s")
+        
+        return result_df
+    
+    def generate_custom_features(self, df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
+        """
+        Generate ONLY custom domain-specific features.
+        
+        Args:
+            df: Input DataFrame with original data
+            dataset_name: Name of the dataset (for custom domain operations)
+            
+        Returns:
+            DataFrame with ONLY the generated custom features (no original columns)
+        """
+        logger.info(f"🎯 Generating custom domain features for: {dataset_name}")
+        start_time = time.time()
+        
+        # Start with empty result 
+        result_features = {}
+        
+        # Generate custom domain features if available
+        if dataset_name and self.custom_domain_module:
+            try:
+                # Import custom domain module
+                import importlib
+                module_name = self.custom_domain_module.replace("domains.", "")
+                module = importlib.import_module(f'src.domains.{module_name}')
+                
+                if hasattr(module, 'CustomFeatureOperations'):
+                    custom_class = module.CustomFeatureOperations
+                    
+                    # Get all get_* methods
+                    method_names = [name for name in dir(custom_class) 
+                                  if name.startswith('get_') and callable(getattr(custom_class, name))]
+                    
+                    for method_name in method_names:
+                        try:
+                            method = getattr(custom_class, method_name)
+                            # Call method with DataFrame
+                            custom_features = method(df)
+                            
+                            if isinstance(custom_features, dict):
+                                result_features.update(custom_features)
+                                logger.info(f"Added {len(custom_features)} features from {method_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to generate {method_name}: {e}")
+                            
+            except Exception as e:
+                logger.warning(f"Failed to load custom domain module: {e}")
+        
+        # Convert to DataFrame
+        if result_features:
+            result_df = pd.DataFrame(result_features)
+        else:
+            # Return DataFrame with dummy column to avoid DuckDB empty table errors
+            result_df = pd.DataFrame({'_placeholder': [0] * len(df)}, index=df.index)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"Generated {len(result_df.columns)} custom features in {elapsed_time:.2f}s")
         
         return result_df
     

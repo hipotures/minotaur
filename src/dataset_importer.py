@@ -329,31 +329,45 @@ class DatasetImporter:
             raise ValueError(f"Failed to create DuckDB dataset: {e}")
     
     def _generate_and_save_features(self, conn, dataset_name: str, target_column: str, id_column: str = None):
-        """Generate all features and save as train_features/test_features tables."""
-        from .feature_space import FeatureSpace
+        """Generate features in separate tables: generic, custom, train_features, test_features."""
+        import sys
+        from pathlib import Path
         
-        # Create a minimal config for FeatureSpace initialization
-        config = {
-            'feature_space': {
-                'custom_domain_module': None,  # Will be determined by dataset name
-                'max_features_per_node': 1000,
-                'enable_caching': False
-            }
-        }
+        # Add src to path if needed
+        src_path = Path(__file__).parent
+        if str(src_path) not in sys.path:
+            sys.path.insert(0, str(src_path))
+        
+        # Setup contextual logging for this dataset
+        dataset_logger = self._setup_dataset_logging(dataset_name)
+        
+        from feature_space import FeatureSpace
+        
+        # Load configuration from main config file
+        import yaml
+        config_path = Path(__file__).parent.parent / 'config' / 'mcts_config.yaml'
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            dataset_logger.info(f"Loaded configuration from {config_path}")
+        except Exception as e:
+            dataset_logger.error(f"Failed to load config from {config_path}: {e}")
+            raise ValueError(f"Cannot load MCTS configuration: {e}")
+        
+        # Override dataset name in autogluon config
+        config['autogluon']['dataset_name'] = dataset_name
         
         # Determine custom domain module based on dataset name
-        # Map common dataset names to their domains
         domain_mapping = {
             's5e6': 'domains.fertilizer',
             'fertilizer': 'domains.fertilizer',
             'titanic': 'domains.titanic',
-            # Add more mappings as needed
         }
         
         for key, domain in domain_mapping.items():
             if key in dataset_name.lower():
                 config['feature_space']['custom_domain_module'] = domain
-                logger.info(f"Using custom domain module: {domain}")
+                dataset_logger.info(f"Using custom domain module: {domain}")
                 break
         
         # Initialize FeatureSpace
@@ -361,52 +375,97 @@ class DatasetImporter:
         
         # Process train data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train'").fetchone():
-            logger.info("Generating features for train data...")
+            dataset_logger.info("📊 Generating features for train data...")
             
-            # Load train data into pandas DataFrame
+            # Load train data
             train_df = conn.execute("SELECT * FROM train").df()
-            logger.info(f"Loaded {len(train_df)} train records with {len(train_df.columns)} columns")
+            dataset_logger.info(f"Loaded {len(train_df)} train records with {len(train_df.columns)} columns")
             
-            # Generate all features
-            train_features_df = feature_space.generate_all_features(train_df, dataset_name)
-            logger.info(f"Generated {len(train_features_df.columns)} total columns for train_features")
+            # 1. Generate GENERIC features only
+            dataset_logger.info("🔧 Generating GENERIC features...")
+            generic_df = feature_space.generate_generic_features(train_df)
+            dataset_logger.info(f"Generated {len(generic_df.columns)} generic columns")
             
-            # Save train_features table
-            conn.execute("DROP TABLE IF EXISTS train_features")
-            # Register the DataFrame as a virtual table
-            conn.register('train_features_df', train_features_df)
-            conn.execute("CREATE TABLE train_features AS SELECT * FROM train_features_df")
-            conn.unregister('train_features_df')
+            # Save generic table
+            conn.execute("DROP TABLE IF EXISTS generic")
+            conn.register('generic_df', generic_df)
+            conn.execute("CREATE TABLE generic AS SELECT * FROM generic_df")
+            conn.unregister('generic_df')
+            dataset_logger.info(f"✅ Created 'generic' table with {len(generic_df.columns)} columns")
             
-            # Get feature count
-            result = conn.execute("SELECT COUNT(*) as col_count FROM pragma_table_info('train_features')").fetchone()
-            logger.info(f"✅ Created train_features table with {result[0]} columns")
+            # 2. Generate CUSTOM features only
+            dataset_logger.info("🎯 Generating CUSTOM domain features...")
+            custom_df = feature_space.generate_custom_features(train_df, dataset_name)
+            dataset_logger.info(f"Generated {len(custom_df.columns)} custom columns")
+            
+            # Save custom table
+            conn.execute("DROP TABLE IF EXISTS custom")
+            conn.register('custom_df', custom_df)
+            conn.execute("CREATE TABLE custom AS SELECT * FROM custom_df")
+            conn.unregister('custom_df')
+            dataset_logger.info(f"✅ Created 'custom' table with {len(custom_df.columns)} columns")
+            
+            # 3. Create train_features by column concatenation in DuckDB
+            dataset_logger.info("🔗 Creating train_features (train + generic + custom)...")
+            conn.execute("""
+                DROP TABLE IF EXISTS train_features;
+                CREATE TABLE train_features AS 
+                SELECT t.*, g.*, c.*
+                FROM train t, generic g, custom c 
+                WHERE t.rowid = g.rowid AND g.rowid = c.rowid
+            """)
+            
+            result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('train_features')").fetchone()
+            dataset_logger.info(f"✅ Created 'train_features' table with {result[0]} columns")
         
         # Process test data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").fetchone():
-            logger.info("Generating features for test data...")
+            dataset_logger.info("📊 Generating features for test data...")
             
-            # Load test data into pandas DataFrame
+            # Load test data
             test_df = conn.execute("SELECT * FROM test").df()
-            logger.info(f"Loaded {len(test_df)} test records with {len(test_df.columns)} columns")
+            dataset_logger.info(f"Loaded {len(test_df)} test records with {len(test_df.columns)} columns")
             
-            # Generate all features (excluding target column if it exists)
+            # Remove target column if exists in test
             if target_column in test_df.columns:
                 test_df = test_df.drop(columns=[target_column])
             
-            test_features_df = feature_space.generate_all_features(test_df, dataset_name)
-            logger.info(f"Generated {len(test_features_df.columns)} total columns for test_features")
+            # 1. Generate GENERIC features for test
+            dataset_logger.info("🔧 Generating GENERIC features for test...")
+            test_generic_df = feature_space.generate_generic_features(test_df)
+            dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
             
-            # Save test_features table
-            conn.execute("DROP TABLE IF EXISTS test_features")
-            # Register the DataFrame as a virtual table
-            conn.register('test_features_df', test_features_df)
-            conn.execute("CREATE TABLE test_features AS SELECT * FROM test_features_df")
-            conn.unregister('test_features_df')
+            # Save test_generic table
+            conn.execute("DROP TABLE IF EXISTS test_generic")
+            conn.register('test_generic_df', test_generic_df)
+            conn.execute("CREATE TABLE test_generic AS SELECT * FROM test_generic_df")
+            conn.unregister('test_generic_df')
+            dataset_logger.info(f"✅ Created 'test_generic' table with {len(test_generic_df.columns)} columns")
             
-            # Get feature count
-            result = conn.execute("SELECT COUNT(*) as col_count FROM pragma_table_info('test_features')").fetchone()
-            logger.info(f"✅ Created test_features table with {result[0]} columns")
+            # 2. Generate CUSTOM features for test
+            dataset_logger.info("🎯 Generating CUSTOM domain features for test...")
+            test_custom_df = feature_space.generate_custom_features(test_df, dataset_name)
+            dataset_logger.info(f"Generated {len(test_custom_df.columns)} custom columns for test")
+            
+            # Save test_custom table
+            conn.execute("DROP TABLE IF EXISTS test_custom")
+            conn.register('test_custom_df', test_custom_df)
+            conn.execute("CREATE TABLE test_custom AS SELECT * FROM test_custom_df")
+            conn.unregister('test_custom_df')
+            dataset_logger.info(f"✅ Created 'test_custom' table with {len(test_custom_df.columns)} columns")
+            
+            # 3. Create test_features by column concatenation in DuckDB
+            dataset_logger.info("🔗 Creating test_features (test + test_generic + test_custom)...")
+            conn.execute("""
+                DROP TABLE IF EXISTS test_features;
+                CREATE TABLE test_features AS 
+                SELECT t.*, g.*, c.*
+                FROM test t, test_generic g, test_custom c 
+                WHERE t.rowid = g.rowid AND g.rowid = c.rowid
+            """)
+            
+            result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('test_features')").fetchone()
+            dataset_logger.info(f"✅ Created 'test_features' table with {result[0]} columns")
     
     def generate_dataset_id(self, file_mappings: Dict[str, str]) -> str:
         """Generate unique dataset ID based on file contents.
@@ -441,3 +500,34 @@ class DatasetImporter:
         
         logger.info(f"Generated dataset ID: {dataset_id}")
         return dataset_id
+    
+    def _setup_dataset_logging(self, dataset_name: str):
+        """Setup contextual logging for dataset operations."""
+        try:
+            import yaml
+            from logging_utils import setup_dataset_logging, setup_main_logging
+            
+            # Load main config for logging setup
+            try:
+                config_path = Path(__file__).parent.parent / 'config' / 'mcts_config.yaml'
+                with open(config_path, 'r') as f:
+                    main_config = yaml.safe_load(f)
+            except Exception:
+                # Fallback config
+                main_config = {'logging': {'level': 'INFO', 'log_file': 'logs/minotaur.log', 'max_log_size_mb': 100, 'backup_count': 5}}
+            
+            # Setup main logging system if not already configured
+            try:
+                setup_main_logging(main_config)
+            except Exception:
+                pass  # May already be configured
+            
+            # Create dataset logger that uses main application logging
+            dataset_logger = setup_dataset_logging(dataset_name, main_config)
+            
+            return dataset_logger
+            
+        except Exception as e:
+            # Fallback to global logger
+            logger.warning(f"Could not setup dataset logging for {dataset_name}: {e}")
+            return logger

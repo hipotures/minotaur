@@ -218,7 +218,6 @@ class DetailsCommand(BaseDatasetsCommand):
         print(f"📋 Name: {basic['dataset_name']}")
         print(f"🔑 ID: {basic['dataset_id']}")
         print(f"📝 Description: {basic.get('description', 'No description')}")
-        print(f"🏷️  Competition: {basic.get('competition_name', 'N/A')}")
         print(f"📅 Registered: {basic.get('created_at', 'Unknown')}")
         
         # Configuration
@@ -226,7 +225,7 @@ class DetailsCommand(BaseDatasetsCommand):
         print("-" * 30)
         print(f"🎯 Target Column: {basic.get('target_column', 'N/A')}")
         print(f"🆔 ID Column: {basic.get('id_column', 'N/A')}")
-        print(f"🔒 Dataset Hash: {basic.get('dataset_hash', 'N/A')[:16]}...")
+        print(f"🔒 Dataset Hash: {basic.get('dataset_id', 'N/A')[:16]}...")
         
         # File Information
         print(f"\n📁 FILES")

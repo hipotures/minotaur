@@ -3,13 +3,12 @@ Database connection management with pooling and query utilities
 """
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import threading
 from contextlib import contextmanager
 import time
-
-logger = logging.getLogger(__name__)
 
 try:
     import duckdb
@@ -49,7 +48,7 @@ class DatabaseConnection:
                 config_dict['threads'] = self.settings['threads']
             
             self.connection = duckdb.connect(str(self.db_path), config=config_dict)
-            logger.info(f"Connected to database: {self.db_path}")
+            # Note: DatabaseConnection doesn't have logger setup
         
         return self.connection
     
@@ -58,7 +57,7 @@ class DatabaseConnection:
         if self.connection:
             self.connection.close()
             self.connection = None
-            logger.info(f"Closed connection to database: {self.db_path}")
+            # Note: DatabaseConnection doesn't have logger, so we skip logging here
     
     def execute(self, query: str, params: Optional[tuple] = None) -> Any:
         """Execute a query and return results.
@@ -84,8 +83,7 @@ class DatabaseConnection:
             
             return result
         except Exception as e:
-            logger.error(f"Query execution failed: {e}")
-            logger.error(f"Query: {query}")
+            # Note: DatabaseConnection doesn't have logger setup
             raise
     
     def fetch_one(self, query: str, params: Optional[tuple] = None) -> Optional[tuple]:
@@ -133,6 +131,86 @@ class DatabasePool:
         self._available: List[DatabaseConnection] = []
         self._in_use: Dict[int, DatabaseConnection] = {}
         self._lock = threading.Lock()
+        self._migrations_run = False
+        
+        # Setup advanced logging with database context
+        self.logger = self._setup_database_logging()
+        
+        # Run migrations on first connection
+        self._ensure_migrations()
+    
+    def _setup_database_logging(self):
+        """Setup advanced database logging with context."""
+        try:
+            # Try to load the advanced logging configuration
+            src_path = Path(__file__).parent.parent.parent
+            if str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+            
+            from db.config.logging_config import setup_db_logging, DatabaseLoggerAdapter
+            
+            # Load main config for logging setup
+            try:
+                import yaml
+                config_path = src_path.parent / 'config' / 'mcts_config.yaml'
+                with open(config_path, 'r') as f:
+                    main_config = yaml.safe_load(f)
+            except Exception:
+                # Fallback config
+                main_config = {'logging': {'level': 'INFO'}}
+            
+            # Setup database logger
+            base_logger = setup_db_logging(main_config)
+            
+            # Create adapter with database context
+            db_name = self.db_path.stem  # Extract database name from path
+            adapter = DatabaseLoggerAdapter(
+                base_logger, 
+                {'component': 'manager', 'db_path': str(self.db_path)}
+            )
+            
+            return adapter
+            
+        except Exception as e:
+            # Fallback to simple logger if advanced logging fails
+            fallback_logger = logging.getLogger('manager.database')
+            fallback_logger.warning(f"Could not setup advanced logging: {e}")
+            return fallback_logger
+    
+    def _ensure_migrations(self):
+        """Ensure database migrations are run."""
+        if self._migrations_run:
+            return
+            
+        try:
+            # Import migration runner
+            from pathlib import Path
+            import sys
+            
+            # Add src to path if needed
+            src_path = Path(__file__).parent.parent.parent
+            if str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+            
+            from db.migrations.migration_runner import MigrationRunner
+            from db.core.connection import DuckDBConnectionManager
+            
+            # Create connection manager for migrations
+            config = {'database': {'db_path': str(self.db_path)}}
+            conn_manager = DuckDBConnectionManager(config)
+            
+            # Run migrations
+            migration_runner = MigrationRunner(conn_manager)
+            applied = migration_runner.run_migrations()
+            
+            if applied:
+                self.logger.info(f"Applied {len(applied)} database migrations")
+            
+            self._migrations_run = True
+            
+        except Exception as e:
+            self.logger.warning(f"Could not run migrations: {e}")
+            # Don't fail - maybe table exists from old system
     
     @contextmanager
     def get_connection(self) -> DatabaseConnection:

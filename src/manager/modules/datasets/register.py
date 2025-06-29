@@ -8,6 +8,9 @@ Handles both automatic and manual dataset registration:
 - Database registration and integrity checking
 """
 
+import threading
+import time
+import sys
 from typing import Dict, Any
 from .base import BaseDatasetsCommand
 
@@ -24,7 +27,7 @@ class RegisterCommand(BaseDatasetsCommand):
                 self.print_info("Usage: python manager.py datasets --register --dataset-name NAME [options]")
                 return
             
-            if args.auto:
+            if args.auto or args.dataset_path:
                 self._register_auto(args)
             else:
                 self._register_manual(args)
@@ -40,6 +43,23 @@ class RegisterCommand(BaseDatasetsCommand):
         
         self.print_info(f"Auto-registering dataset '{args.dataset_name}' from {args.dataset_path}")
         
+        # Animation control
+        animation_running = threading.Event()
+        animation_running.set()
+        
+        def animate():
+            """Show animated progress indicator"""
+            chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            i = 0
+            while animation_running.is_set():
+                print(f"\r🔄 Processing dataset files and generating features {chars[i % len(chars)]}", end="", flush=True)
+                time.sleep(0.1)
+                i += 1
+        
+        # Start animation in background
+        animation_thread = threading.Thread(target=animate, daemon=True)
+        animation_thread.start()
+        
         # Use dataset service to register
         try:
             result = self.dataset_service.register_dataset_auto(
@@ -51,15 +71,23 @@ class RegisterCommand(BaseDatasetsCommand):
                 description=getattr(args, 'description', None)
             )
             
-            if result:
+            # Stop animation
+            animation_running.clear()
+            
+            if result.get('success'):
+                print(f"\r✅ Dataset processing completed successfully!" + " " * 20, flush=True)  # Clear animation chars
                 self.print_success(f"Dataset '{args.dataset_name}' registered successfully!")
                 dataset_id = result.get('dataset_id', '')[:8]
                 self.print_info(f"Dataset ID: {dataset_id}")
                 self.print_info(f"Show details: python manager.py datasets --details {args.dataset_name}")
             else:
-                self.print_error("Registration failed - no result returned")
+                print(f"\r❌ Dataset processing failed" + " " * 30, flush=True)  # Clear animation chars
+                self.print_error(f"Registration failed: {result.get('error', 'Unknown error')}")
                 
         except Exception as e:
+            # Stop animation on error
+            animation_running.clear()
+            print(f"\r❌ Dataset processing failed" + " " * 30, flush=True)  # Clear animation chars
             self.print_error(f"Auto-registration failed: {e}")
     
     def _register_manual(self, args) -> None:
@@ -84,13 +112,13 @@ class RegisterCommand(BaseDatasetsCommand):
                 description=getattr(args, 'description', None)
             )
             
-            if result:
+            if result.get('success'):
                 self.print_success(f"Dataset '{args.dataset_name}' registered successfully!")
                 dataset_id = result.get('dataset_id', '')[:8]
                 self.print_info(f"Dataset ID: {dataset_id}")
                 self.print_info(f"Show details: python manager.py datasets --details {args.dataset_name}")
             else:
-                self.print_error("Registration failed - no result returned")
+                self.print_error(f"Registration failed: {result.get('error', 'Unknown error')}")
                 
         except Exception as e:
             self.print_error(f"Manual registration failed: {e}")

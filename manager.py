@@ -65,15 +65,29 @@ class ModularDuckDBManager:
         self._discover_modules()
     
     def _setup_logging(self) -> None:
-        """Setup logging configuration."""
-        log_level = self.config.get('logging.level', 'INFO')
-        log_format = self.config.get('logging.format', 
-                                   '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        
-        logging.basicConfig(
-            level=getattr(logging, log_level),
-            format=log_format
-        )
+        """Setup logging configuration using main application logging."""
+        try:
+            import yaml
+            from logging_utils import setup_main_logging, set_session_context
+            
+            # Load config for logging
+            config_path = self.project_root / 'config' / 'mcts_config.yaml'
+            try:
+                with open(config_path, 'r') as f:
+                    main_config = yaml.safe_load(f)
+                setup_main_logging(main_config)
+                set_session_context('manager')
+            except Exception as e:
+                # Fallback to basic logging
+                logging.basicConfig(level=logging.INFO,
+                                  format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                logging.getLogger(__name__).warning(f"Could not setup main logging: {e}")
+        except ImportError:
+            # Fallback to basic logging if logging_utils not available  
+            logging.basicConfig(
+                level=getattr(logging, self.config.get('logging.level', 'INFO')),
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
         
         # Reduce noise from some libraries
         logging.getLogger('urllib3').setLevel(logging.WARNING)
