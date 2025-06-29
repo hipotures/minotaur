@@ -158,10 +158,10 @@ class RunCommand(BaseSelfCheckCommand):
                 with open(config_file, 'r') as f:
                     config_content = yaml.safe_load(f)
                 
-                # Override database path for selfcheck
-                if 'database' not in config_content:
-                    config_content['database'] = {}
-                config_content['database']['path'] = 'data/minotaur_selfcheck.duckdb'
+                # Add test mode flag for selfcheck
+                if 'session' not in config_content:
+                    config_content['session'] = {}
+                config_content['session']['is_test_mode'] = True
                 
                 # Ensure dataset info is in autogluon section
                 if 'autogluon' not in config_content:
@@ -180,7 +180,7 @@ class RunCommand(BaseSelfCheckCommand):
                 config_path = self._write_temp_config(config_content)
                 if verbose:
                     print(f"   📋 Based on config: {config_file}")
-                    print(f"   📊 Using test database to avoid conflicts")
+                    print(f"   📊 Running in test mode (is_test_mode=True)")
             else:
                 # Create temporary config
                 config_content = self._create_test_config(dataset_info)
@@ -242,7 +242,8 @@ class RunCommand(BaseSelfCheckCommand):
             'session': {
                 'max_iterations': 3,
                 'max_runtime_hours': 0.25,
-                'checkpoint_interval': 1
+                'checkpoint_interval': 1,
+                'is_test_mode': True  # Mark as test session
             },
             'mcts': {
                 'max_tree_depth': 4,
@@ -298,12 +299,8 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_cpu_cores': 2,
                 'max_disk_usage_gb': 5
             },
-            'database': {
-                'path': 'data/minotaur_selfcheck.duckdb',  # Separate DB for selfcheck to avoid conflicts
-                'max_history_size': 100,
-                'backup_interval': 10,
-                'retention_days': 1
-            },
+            # Database config will use main database from config
+            # No need to override database path
             'logging': {
                 'log_level': 'WARNING',
                 'max_log_size_mb': 10,
@@ -367,6 +364,11 @@ class RunCommand(BaseSelfCheckCommand):
         # Start animation in background
         animation_thread = threading.Thread(target=animate, daemon=True)
         animation_thread.start()
+        
+        # Close database connections before running MCTS to avoid conflicts
+        # Since MCTS needs exclusive access to the database
+        if hasattr(self, 'db_pool') and self.db_pool:
+            self.db_pool.close_all()
         
         start_time = datetime.now()
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5 min timeout

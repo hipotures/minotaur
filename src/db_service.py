@@ -107,8 +107,10 @@ class DatabaseService:
         
         # Detect test mode
         testing_config = self.config.get('testing', {})
+        session_config = self.config.get('session', {})
         is_test_mode = (
-            self.config.get('session', {}).get('max_iterations', 0) <= 5 or
+            session_config.get('is_test_mode', False) or  # Explicit test mode flag
+            session_config.get('max_iterations', 0) <= 5 or
             testing_config.get('fast_test_mode', False) or
             testing_config.get('use_small_dataset', False)
         )
