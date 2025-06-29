@@ -183,9 +183,9 @@ class FeatureDiscoveryDB:
             'session_id': self.session_id
         }
     
-    def get_operation_rankings(self, session_id: str = None) -> List[Dict]:
+    def get_operation_rankings(self, session_id: str = None, limit: int = 10) -> List[Dict]:
         """Get operation effectiveness rankings."""
-        return self.db_service.get_operation_rankings()
+        return self.db_service.get_operation_rankings(limit=limit)
     
     def get_feature_code(self, feature_name: str) -> Optional[str]:
         """Get Python code for a specific feature."""

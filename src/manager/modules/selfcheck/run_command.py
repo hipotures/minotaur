@@ -163,19 +163,10 @@ class RunCommand(BaseSelfCheckCommand):
                     config_content['session'] = {}
                 config_content['session']['is_test_mode'] = True
                 
-                # Ensure dataset info is in autogluon section
+                # Ensure dataset_name is present in the autogluon section
                 if 'autogluon' not in config_content:
                     config_content['autogluon'] = {}
-                # For selfcheck, remove dataset_name to force path-based approach
-                if 'dataset_name' in config_content['autogluon']:
-                    del config_content['autogluon']['dataset_name']
-                # Ensure paths are present
-                if 'train_path' not in config_content['autogluon']:
-                    config_content['autogluon']['train_path'] = dataset_info['train_path']
-                if 'test_path' not in config_content['autogluon']:
-                    config_content['autogluon']['test_path'] = dataset_info['test_path']
-                if 'target_column' not in config_content['autogluon']:
-                    config_content['autogluon']['target_column'] = dataset_info.get('target_column')
+                config_content['autogluon']['dataset_name'] = dataset
                 
                 config_path = self._write_temp_config(config_content)
                 if verbose:
@@ -254,11 +245,7 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_nodes_in_memory': 1000
             },
             'autogluon': {
-                # Don't use dataset_name to avoid database lookup in selfcheck
-                # Use path-based approach instead
-                'train_path': dataset_info['train_path'],
-                'test_path': dataset_info['test_path'],
-                'target_column': dataset_info.get('target_column'),  # Add target column
+                'dataset_name': dataset_info['dataset_name'],
                 'target_metric': dataset_info.get('metric', 'accuracy'),
                 'included_model_types': ['XGB'],
                 'enable_gpu': True,

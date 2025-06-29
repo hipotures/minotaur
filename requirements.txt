@@ -37,3 +37,4 @@ duckdb
 
 # Distributed Computing (optional for large-scale)
 # ray>=2.44.0  # Uncomment if using Ray for distributed processing
+rich

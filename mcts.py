@@ -19,8 +19,9 @@ from typing import Dict, Any, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
-# Add current directory to path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path for imports
+from src.project_root import PROJECT_ROOT
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import (
     FeatureDiscoveryDB,
@@ -572,8 +573,10 @@ class FeatureDiscoveryRunner:
                 # Export partial results
                 best_features = self.db.get_best_features(10)
                 if best_features:
-                    self.db.export_best_features_code('partial_best_features.py', 10)
-                    logger.info("Exported partial results")
+                    session_id_short = self.db.session_id[:8]
+                    output_filename = f'partial_best_features_{session_id_short}.py'
+                    self.db.export_best_features_code(output_filename, 10)
+                    logger.info(f"Exported partial results to {output_filename}")
             
         except Exception as e:
             logger.error(f"Failed to save partial results: {e}")
@@ -689,20 +692,10 @@ def list_sessions(config_path: str, limit: int = 10) -> None:
             print(f"Expected database at: {db_path}")
             return
         
-        # Connect to database and ensure migrations
+        # Connect to database
         import sqlite3
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        
-        # Check if strategy column exists and add if missing
-        cursor.execute("PRAGMA table_info(sessions)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        if 'strategy' not in columns:
-            print("🔧 Migrating database: adding strategy column...")
-            cursor.execute("ALTER TABLE sessions ADD COLUMN strategy TEXT DEFAULT 'default'")
-            conn.commit()
-            print("✅ Database migration completed")
         
         # Query recent sessions
         query = '''
@@ -767,7 +760,8 @@ def load_config_with_overrides(config_path: str) -> Dict[str, Any]:
     Returns:
         Merged configuration dictionary
     """
-    base_config_path = 'config/mcts_config.yaml'
+    # Use PROJECT_ROOT to construct the base config path
+    base_config_path = PROJECT_ROOT / 'config' / 'mcts_config.yaml'
     
     # Load base configuration first
     try:

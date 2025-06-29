@@ -34,10 +34,6 @@ mcts:
 autogluon:
   # Dataset configuration (new centralized system)
   dataset_name: null                   # Name of registered dataset (preferred method)
-  
-  # Legacy data paths (for backward compatibility - will be deprecated)
-  train_path: null
-  test_path: null
   target_metric: null          # classification: [‘accuracy’, ‘balanced_accuracy’, ‘f1’, ‘f1_macro’, ‘f1_micro’, ‘f1_weighted’, 
                                # ‘roc_auc’, ‘roc_auc_ovo’, ‘roc_auc_ovr’, ‘average_precision’, ‘precision’, 
                                # ‘precision_macro’, ‘precision_micro’, ‘precision_weighted’, ‘recall’, ‘recall_macro’, 
@@ -229,19 +225,19 @@ export:
   formats: ['python', 'json', 'html']
   
   # Python code export
-  python_output: '../outputs/best_features_discovered.py'
+  python_output: 'outputs/best_features_discovered.py'
   include_dependencies: true
   include_documentation: true
   code_style: 'pep8'
   
   # Report generation
-  html_report: '../outputs/discovery_report.html'
+  html_report: 'outputs/discovery_report.html'
   include_plots: true
   plot_format: 'png'
   
   # Analytics configuration
   include_analytics: true
-  output_dir: '../outputs/reports'
+  output_dir: 'outputs/reports'
   
   # Export triggers
   export_on_completion: true

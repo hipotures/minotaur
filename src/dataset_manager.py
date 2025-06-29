@@ -39,28 +39,10 @@ class DatasetManager:
         
         # Check if using new dataset name system
         dataset_name = autogluon_config.get('dataset_name')
-        if dataset_name:
-            return self._get_registered_dataset(dataset_name)
-        
-        # Fallback to legacy path-based system
-        train_path = autogluon_config.get('train_path')
-        test_path = autogluon_config.get('test_path')
-        
-        if not train_path:
-            raise ValueError("No dataset_name or train_path specified in configuration")
-        
-        logger.warning("⚠️ Using legacy path-based dataset access")
-        logger.warning("💡 Consider registering this dataset: scripts/duckdb_manager.py datasets --register --help")
-        
-        return {
-            'dataset_name': 'legacy_dataset',
-            'train_path': train_path,
-            'test_path': test_path,
-            'target_column': autogluon_config.get('target_column', 'target'),
-            'id_column': autogluon_config.get('id_column'),
-            'is_registered': False,
-            'duckdb_path': None
-        }
+        if not dataset_name:
+            raise ValueError("Configuration error: 'autogluon.dataset_name' must be specified.")
+
+        return self._get_registered_dataset(dataset_name)
     
     def _get_registered_dataset(self, dataset_name: str) -> Dict[str, Any]:
         """Get information about a registered dataset."""
@@ -116,6 +98,9 @@ class DatasetManager:
                 
         except Exception as e:
             logger.error(f"Failed to retrieve dataset '{dataset_name}': {e}")
+            # Preserve original error message if it's already about dataset not found
+            if "not found or inactive" in str(e):
+                raise e
             raise ValueError(f"Dataset '{dataset_name}' is not properly registered")
     
     def validate_dataset_registration(self, dataset_name: str) -> bool:

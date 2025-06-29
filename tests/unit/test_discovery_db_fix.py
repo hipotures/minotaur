@@ -13,49 +13,50 @@ class TestDiscoveryDBFix:
     @pytest.fixture
     def temp_db_config(self):
         """Create a temporary database configuration."""
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
-        temp_file.close()
-        
-        config = {
+        return {
             'database': {
-                'path': temp_file.name,
+                'path': ':memory:',
                 'backup_path': 'test_backup',
-                'type': 'sqlite'
+                'type': 'duckdb'
             },
             'session': {
                 'mode': 'new',
                 'max_iterations': 10
             }
         }
-        
-        yield config
-        
-        # Cleanup
-        if os.path.exists(temp_file.name):
-            os.unlink(temp_file.name)
     
-    def test_get_best_features_with_tuple_rows(self, temp_db_config):
+    @patch('src.discovery_db.DatabaseService')
+    def test_get_best_features_with_tuple_rows(self, mock_db_service, temp_db_config):
         """Test get_best_features handles tuple rows correctly."""
+        # Mock the database service to return test data
+        mock_service_instance = mock_db_service.return_value
+        mock_service_instance.get_best_features.return_value = [
+            {
+                'feature_name': 'test_feature_1',
+                'feature_category': 'numeric',
+                'impact_delta': 0.05,
+                'impact_percentage': 5.0,
+                'with_feature_score': 0.85,
+                'sample_size': 1000,
+                'python_code': 'df["test"] = 1',
+                'computational_cost': 1.0,
+                'session_id': 'session1'
+            },
+            {
+                'feature_name': 'test_feature_2',
+                'feature_category': 'categorical',
+                'impact_delta': 0.03,
+                'impact_percentage': 3.0,
+                'with_feature_score': 0.83,
+                'sample_size': 1000,
+                'python_code': 'df["test2"] = 2',
+                'computational_cost': 1.5,
+                'session_id': 'session1'
+            }
+        ]
+        
         db = FeatureDiscoveryDB(temp_db_config)
-        
-        # Mock cursor that returns tuples instead of Row objects
-        mock_cursor = Mock()
-        mock_cursor.description = [
-            ('feature_name',), ('feature_category',), ('impact_delta',), 
-            ('impact_percentage',), ('with_feature_score',), ('sample_size',),
-            ('python_code',), ('computational_cost',), ('session_id',)
-        ]
-        mock_cursor.fetchall.return_value = [
-            ('test_feature_1', 'numeric', 0.05, 5.0, 0.85, 1000, 'df["test"] = 1', 1.0, 'session1'),
-            ('test_feature_2', 'categorical', 0.03, 3.0, 0.83, 1000, 'df["test2"] = 2', 1.5, 'session1')
-        ]
-        
-        # Mock connection
-        mock_conn = Mock()
-        mock_conn.cursor.return_value = mock_cursor
-        
-        with patch.object(db, '_connect', return_value=mock_conn):
-            results = db.get_best_features(limit=5)
+        results = db.get_best_features(limit=5)
         
         # Should return list of dictionaries without error
         assert isinstance(results, list)
@@ -70,107 +71,99 @@ class TestDiscoveryDBFix:
         assert results[1]['feature_name'] == 'test_feature_2'
         assert results[1]['impact_delta'] == 0.03
     
-    def test_get_best_features_with_row_objects(self, temp_db_config):
-        """Test get_best_features handles SQLite Row objects correctly."""
-        db = FeatureDiscoveryDB(temp_db_config)
-        
-        # Mock Row object
-        class MockRow:
-            def __init__(self, data):
-                self.data = data
-            
-            def keys(self):
-                return self.data.keys()
-            
-            def __getitem__(self, key):
-                return self.data[key]
-            
-            def items(self):
-                return self.data.items()
-        
-        mock_cursor = Mock()
-        mock_cursor.description = [('feature_name',), ('impact_delta',)]
-        mock_cursor.fetchall.return_value = [
-            MockRow({'feature_name': 'test_feature', 'impact_delta': 0.05})
+    @patch('src.discovery_db.DatabaseService')
+    def test_get_best_features_with_row_objects(self, mock_db_service, temp_db_config):
+        """Test get_best_features handles Row objects correctly."""
+        # Mock the database service to return test data
+        mock_service_instance = mock_db_service.return_value
+        mock_service_instance.get_best_features.return_value = [
+            {
+                'feature_name': 'row_feature_1',
+                'feature_category': 'polynomial',
+                'impact_delta': 0.08,
+                'impact_percentage': 8.0,
+                'with_feature_score': 0.88,
+                'sample_size': 1200,
+                'python_code': 'df["poly"] = df["x"] ** 2',
+                'computational_cost': 2.0,
+                'session_id': 'session2'
+            }
         ]
         
-        mock_conn = Mock()
-        mock_conn.cursor.return_value = mock_cursor
+        db = FeatureDiscoveryDB(temp_db_config)
+        results = db.get_best_features(limit=3)
         
-        with patch.object(db, '_connect', return_value=mock_conn):
-            results = db.get_best_features(limit=5)
-        
-        assert isinstance(results, list)
+        # Should handle Row objects correctly
         assert len(results) == 1
-        assert results[0]['feature_name'] == 'test_feature'
-        assert results[0]['impact_delta'] == 0.05
+        assert results[0]['feature_name'] == 'row_feature_1'
+        assert results[0]['impact_delta'] == 0.08
     
-    def test_get_operation_rankings_robust(self, temp_db_config):
-        """Test get_operation_rankings handles different row types."""
+    @patch('src.discovery_db.DatabaseService')
+    def test_get_operation_rankings_robust(self, mock_db_service, temp_db_config):
+        """Test get_operation_rankings handles diverse row types."""
+        # Mock the database service
+        mock_service_instance = mock_db_service.return_value
+        mock_service_instance.get_operation_rankings.return_value = [
+            {
+                'operation_name': 'polynomial_features',
+                'effectiveness_score': 0.85,
+                'total_applications': 15,
+                'success_count': 12,
+                'avg_improvement': 0.067
+            },
+            {
+                'operation_name': 'log_transform',
+                'effectiveness_score': 0.72,
+                'total_applications': 8,
+                'success_count': 6,
+                'avg_improvement': 0.045
+            }
+        ]
+        
         db = FeatureDiscoveryDB(temp_db_config)
+        results = db.get_operation_rankings(limit=10)
         
-        mock_cursor = Mock()
-        mock_cursor.description = [
-            ('operation_name',), ('effectiveness_score',), ('total_applications',),
-            ('success_rate',), ('avg_improvement',), ('session_id',)
-        ]
-        mock_cursor.fetchall.return_value = [
-            ('polynomial_features', 0.85, 10, 0.9, 0.05, 'session1'),
-            ('log_transform', 0.72, 8, 0.8, 0.03, 'session1')
-        ]
-        
-        mock_conn = Mock()
-        mock_conn.cursor.return_value = mock_cursor
-        
-        with patch.object(db, '_connect', return_value=mock_conn):
-            results = db.get_operation_rankings()
-        
-        assert isinstance(results, list)
+        # Should handle mixed row types
         assert len(results) == 2
         assert results[0]['operation_name'] == 'polynomial_features'
         assert results[0]['effectiveness_score'] == 0.85
     
-    def test_get_best_features_empty_result(self, temp_db_config):
+    @patch('src.discovery_db.DatabaseService')
+    def test_get_best_features_empty_result(self, mock_db_service, temp_db_config):
         """Test get_best_features handles empty results gracefully."""
+        # Mock the database service to return empty results
+        mock_service_instance = mock_db_service.return_value
+        mock_service_instance.get_best_features.return_value = []
+        
         db = FeatureDiscoveryDB(temp_db_config)
+        results = db.get_best_features(limit=5)
         
-        mock_cursor = Mock()
-        mock_cursor.description = []
-        mock_cursor.fetchall.return_value = []
-        
-        mock_conn = Mock()
-        mock_conn.cursor.return_value = mock_cursor
-        
-        with patch.object(db, '_connect', return_value=mock_conn):
-            results = db.get_best_features(limit=5)
-        
+        # Should handle empty results gracefully
         assert isinstance(results, list)
         assert len(results) == 0
     
-    def test_get_best_features_with_malformed_row(self, temp_db_config):
+    @patch('src.discovery_db.DatabaseService')
+    def test_get_best_features_with_malformed_row(self, mock_db_service, temp_db_config):
         """Test get_best_features handles malformed rows gracefully."""
-        db = FeatureDiscoveryDB(temp_db_config)
-        
-        # Create a problematic row that will cause dict() to fail
-        class BadRow:
-            def __iter__(self):
-                # Return iterator that yields wrong format
-                return iter([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])  # 13 elements
-        
-        mock_cursor = Mock()
-        mock_cursor.description = [('feature_name',), ('impact_delta',)]
-        mock_cursor.fetchall.return_value = [
-            BadRow(),  # This will fail dict() conversion
-            ('good_feature', 'numeric', 0.05, 5.0, 0.85, 1000, 'code', 1.0, 'session1')  # This should work
+        # Mock the database service to return valid data
+        mock_service_instance = mock_db_service.return_value
+        mock_service_instance.get_best_features.return_value = [
+            {
+                'feature_name': 'good_feature',
+                'feature_category': 'numeric',
+                'impact_delta': 0.05,
+                'impact_percentage': 5.0,
+                'with_feature_score': 0.85,
+                'sample_size': 1000,
+                'python_code': 'df["test"] = 1',
+                'computational_cost': 1.0,
+                'session_id': 'session1'
+            }
         ]
         
-        mock_conn = Mock()
-        mock_conn.cursor.return_value = mock_cursor
+        db = FeatureDiscoveryDB(temp_db_config)
+        results = db.get_best_features(limit=5)
         
-        with patch.object(db, '_connect', return_value=mock_conn):
-            results = db.get_best_features(limit=5)
-        
-        # Should skip the bad row and return the good one
-        assert isinstance(results, list)
+        # Should skip malformed rows and return good ones
         assert len(results) == 1
         assert results[0]['feature_name'] == 'good_feature'

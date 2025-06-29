@@ -31,8 +31,12 @@ class FeatureOperation:
     """Represents a single feature engineering operation."""
     
     name: str
-    category: str
     description: str
+    category: str = ""
+    operation_type: str = ""
+    operation_subtype: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    new_features: List[str] = field(default_factory=list)
     dependencies: List[str] = field(default_factory=list)
     computational_cost: float = 1.0
     

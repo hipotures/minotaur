@@ -7,7 +7,7 @@ providing type safety and validation for session-related operations.
 
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 
@@ -48,25 +48,28 @@ class Session(BaseModel):
     notes: Optional[str] = Field(None, description="Additional session notes")
     dataset_hash: Optional[str] = Field(None, description="Hash of dataset used")
     
-    @validator('session_id')
+    @field_validator('session_id')
+    @classmethod
     def validate_session_id(cls, v):
         """Validate session ID format."""
         if not v or len(v) < 8:
             raise ValueError('Session ID must be at least 8 characters long')
         return v
     
-    @validator('session_name')
+    @field_validator('session_name')
+    @classmethod
     def validate_session_name(cls, v):
         """Validate session name if provided."""
         if v is not None and len(v.strip()) == 0:
             return None
         return v
     
-    @validator('end_time')
-    def validate_end_time(cls, v, values):
+    @field_validator('end_time')
+    @classmethod
+    def validate_end_time(cls, v, info):
         """Validate that end_time is after start_time."""
-        if v is not None and 'start_time' in values:
-            start_time = values['start_time']
+        if v is not None and info.data and 'start_time' in info.data:
+            start_time = info.data['start_time']
             if v < start_time:
                 raise ValueError('End time must be after start time')
         return v
@@ -92,12 +95,11 @@ class Session(BaseModel):
             return self.total_iterations / duration
         return None
     
-    class Config:
-        """Pydantic configuration."""
-        json_encoders = {
+    model_config = {
+        "json_encoders": {
             datetime: lambda v: v.isoformat()
-        }
-        json_schema_extra = {
+        },
+        "json_schema_extra": {
             "example": {
                 "session_id": "f09084df-01c1-446f-9996-4b59937691cb",
                 "session_name": "session_20250628_174253",
@@ -111,6 +113,7 @@ class Session(BaseModel):
                 "dataset_hash": "abc123def456"
             }
         }
+    }
 
 
 class SessionSummary(BaseModel):
@@ -134,11 +137,12 @@ class SessionSummary(BaseModel):
     status: SessionStatus
     target_metric: Optional[str]
     
-    @validator('improvement')
-    def validate_improvement(cls, v, values):
+    @field_validator('improvement')
+    @classmethod
+    def validate_improvement(cls, v, info):
         """Validate that improvement calculation is correct."""
-        if 'min_score' in values and 'max_score' in values:
-            expected = values['max_score'] - values['min_score']
+        if info.data and 'min_score' in info.data and 'max_score' in info.data:
+            expected = info.data['max_score'] - info.data['min_score']
             if abs(v - expected) > 0.0001:  # Allow small floating point differences
                 raise ValueError('Improvement must equal max_score - min_score')
         return v
@@ -150,11 +154,11 @@ class SessionSummary(BaseModel):
             return self.improvement / self.min_score
         return 0.0
     
-    class Config:
-        """Pydantic configuration."""
-        json_encoders = {
+    model_config = {
+        "json_encoders": {
             datetime: lambda v: v.isoformat()
         }
+    }
 
 
 class SessionCreate(BaseModel):
@@ -173,7 +177,8 @@ class SessionCreate(BaseModel):
     dataset_hash: Optional[str] = Field(None, description="Hash of dataset to use")
     notes: Optional[str] = Field(None, description="Initial session notes")
     
-    @validator('config_snapshot')
+    @field_validator('config_snapshot')
+    @classmethod
     def validate_config_snapshot(cls, v):
         """Validate that config snapshot is not empty."""
         if not v:
@@ -195,8 +200,8 @@ class SessionUpdate(BaseModel):
     status: Optional[SessionStatus] = None
     notes: Optional[str] = None
     
-    class Config:
-        """Pydantic configuration."""
-        json_encoders = {
+    model_config = {
+        "json_encoders": {
             datetime: lambda v: v.isoformat()
         }
+    }

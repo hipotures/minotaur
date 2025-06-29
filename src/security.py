@@ -283,6 +283,14 @@ class InputValidator:
             flags=re.IGNORECASE
         )
         
+        # Remove standalone passwords (common patterns)
+        message = re.sub(
+            r'\bpassword\d*\b',
+            '***REDACTED***',
+            message,
+            flags=re.IGNORECASE
+        )
+        
         # Remove file paths that might expose system structure
         message = re.sub(r'/home/[^/\s]+/', '/home/***/', message)
         message = re.sub(r'C:\\\\Users\\\\[^\\\\]+\\\\', r'C:\\Users\\***\\', message)

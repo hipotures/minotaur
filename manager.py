@@ -35,6 +35,9 @@ from src.manager.services import (
 )
 
 
+from rich.console import Console
+from rich.table import Table
+
 class ModularDuckDBManager:
     """Universal database manager with modern architecture."""
     
@@ -62,6 +65,7 @@ class ModularDuckDBManager:
         self._init_services()
         
         # Load available modules
+        self.console = Console()
         self.modules = {}
         self._discover_modules()
     
@@ -72,7 +76,7 @@ class ModularDuckDBManager:
             from logging_utils import setup_main_logging, set_session_context
             
             # Load config for logging
-            config_path = self.project_root / 'config' / 'mcts_config.yaml'
+            config_path = self.config.config_path
             try:
                 with open(config_path, 'r') as f:
                     main_config = yaml.safe_load(f)
@@ -248,36 +252,42 @@ class ModularDuckDBManager:
             return 1
     
     def _show_modules(self) -> None:
-        """Display available modules."""
-        print("\n\033[96m🔧 MODULAR DUCKDB MANAGER\033[0m")
-        print("\033[96m" + "=" * 50 + "\033[0m")
-        print("\n\033[94mAvailable modules:\033[0m\n")
-        
+        """Display available modules using rich."""
+        self.console.print("\n[bold cyan]🔧 MODULAR DUCKDB MANAGER[/bold cyan]")
+        self.console.print("[cyan]" + "=" * 50 + "[/cyan]")
+
+        table = Table(title="[bold blue]Available modules[/bold blue]", show_header=True, header_style="bold magenta")
+        table.add_column("Module", style="bold yellow", width=15)
+        table.add_column("Description", style="white")
+
         for module in self.modules.values():
-            print(f"  \033[93m{module.name:<15}\033[0m - \033[97m{module.description}\033[0m")
-        
-        print("\n\033[92mUsage:\033[0m")
-        print("  \033[90m./manager.py <module> [options]\033[0m")
-        print("  \033[90m./manager.py <module> --help\033[0m")
-        print("\n\033[92mExamples:\033[0m")
-        print("  \033[95m# Dataset management\033[0m")
-        print("  \033[90m./manager.py datasets --list\033[0m")
-        print("  \033[90m./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto\033[0m")
-        print("  \033[90m./manager.py datasets --details titanic\033[0m")
-        print("")
-        print("  \033[95m# Session analysis\033[0m")
-        print("  \033[90m./manager.py sessions --list\033[0m")
-        print("  \033[90m./manager.py sessions --details [session_id]\033[0m")
-        print("  \033[90m./manager.py sessions --best 5\033[0m")
-        print("")
-        print("  \033[95m# Feature analysis\033[0m")
-        print("  \033[90m./manager.py features --top 10\033[0m")
-        print("  \033[90m./manager.py features --session [session_id]\033[0m")
-        print("")
-        print("  \033[95m# System maintenance\033[0m")
-        print("  \033[90m./manager.py analytics --summary --days 7\033[0m")
-        print("  \033[90m./manager.py backup --create\033[0m")
-        print("  \033[90m./manager.py selfcheck --validate\033[0m")
+            table.add_row(module.name, module.description)
+
+        self.console.print(table)
+
+        self.console.print("\n[bold green]Usage:[/bold green]")
+        self.console.print("  [dim]./manager.py <module> [options][/dim]")
+        self.console.print("  [dim]./manager.py <module> --help[/dim]")
+
+        self.console.print("\n[bold green]Examples:[/bold green]")
+        self.console.print("  [bold magenta]# Dataset management[/bold magenta]")
+        self.console.print("  [dim]./manager.py datasets --list[/dim]")
+        self.console.print("  [dim]./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto[/dim]")
+        self.console.print("  [dim]./manager.py datasets --details titanic[/dim]")
+        self.console.print("")
+        self.console.print("  [bold magenta]# Session analysis[/bold magenta]")
+        self.console.print("  [dim]./manager.py sessions --list[/dim]")
+        self.console.print("  [dim]./manager.py sessions --details [session_id][/dim]")
+        self.console.print("  [dim]./manager.py sessions --best 5[/dim]")
+        self.console.print("")
+        self.console.print("  [bold magenta]# Feature analysis[/bold magenta]")
+        self.console.print("  [dim]./manager.py features --top 10[/dim]")
+        self.console.print("  [dim]./manager.py features --session [session_id][/dim]")
+        self.console.print("")
+        self.console.print("  [bold magenta]# System maintenance[/bold magenta]")
+        self.console.print("  [dim]./manager.py analytics --summary --days 7[/dim]")
+        self.console.print("  [dim]./manager.py backup --create[/dim]")
+        self.console.print("  [dim]./manager.py selfcheck --validate[/dim]")
     
     def _get_epilog(self) -> str:
         """Get epilog text for help."""

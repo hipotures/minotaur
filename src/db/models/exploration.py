@@ -7,7 +7,7 @@ including exploration steps, nodes, and analysis results.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import json
 
 
@@ -37,28 +37,32 @@ class ExplorationStep(BaseModel):
     memory_usage_mb: Optional[float] = Field(None, ge=0, description="Memory usage in MB")
     notes: Optional[str] = Field(None, description="Additional notes about the step")
     
-    @validator('features_before', 'features_after')
+    @field_validator('features_before', 'features_after')
+    @classmethod
     def validate_features(cls, v):
         """Validate feature lists."""
         if not isinstance(v, list):
             raise ValueError('Features must be a list')
         return v
     
-    @validator('operation_applied')
+    @field_validator('operation_applied')
+    @classmethod
     def validate_operation(cls, v):
         """Validate operation name."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Operation applied cannot be empty')
         return v.strip()
     
-    @validator('target_metric')
+    @field_validator('target_metric')
+    @classmethod
     def validate_target_metric(cls, v):
         """Validate target metric name."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Target metric cannot be empty')
         return v.strip()
     
-    @validator('autogluon_config')
+    @field_validator('autogluon_config')
+    @classmethod
     def validate_autogluon_config(cls, v):
         """Validate AutoGluon configuration."""
         if not isinstance(v, dict):
@@ -168,7 +172,8 @@ class ExplorationPath(BaseModel):
     final_score: float = Field(..., ge=0.0, le=1.0, description="Final evaluation score")
     operations_sequence: List[str] = Field(..., description="Sequence of operations applied")
     
-    @validator('path_nodes')
+    @field_validator('path_nodes')
+    @classmethod
     def validate_path_nodes(cls, v):
         """Validate that path nodes form a valid sequence."""
         if not v:
@@ -181,11 +186,12 @@ class ExplorationPath(BaseModel):
         
         return v
     
-    @validator('total_depth')
-    def validate_total_depth(cls, v, values):
+    @field_validator('total_depth')
+    @classmethod
+    def validate_total_depth(cls, v, info):
         """Validate that total depth matches path length."""
-        if 'path_nodes' in values:
-            expected_depth = len(values['path_nodes']) - 1  # Root is depth 0
+        if info.data and 'path_nodes' in info.data:
+            expected_depth = len(info.data['path_nodes']) - 1  # Root is depth 0
             if v != expected_depth:
                 raise ValueError(f'Total depth {v} does not match path length {expected_depth}')
         return v

@@ -82,7 +82,7 @@ class ConnectionPool:
             self.logger.error(f"Failed to initialize connection pool: {e}")
             raise
     
-    def _create_connection(self) -> Optional[duckdb.DuckDBPyConnection]:
+    def _create_connection(self) -> Optional['duckdb.DuckDBPyConnection']:
         """Create a new DuckDB connection with optimized settings."""
         if not DUCKDB_AVAILABLE:
             raise RuntimeError("DuckDB is not available")
@@ -116,7 +116,7 @@ class ConnectionPool:
             self.logger.error(f"Failed to create connection: {e}")
             return None
     
-    def _configure_connection(self, conn: duckdb.DuckDBPyConnection) -> None:
+    def _configure_connection(self, conn: 'duckdb.DuckDBPyConnection') -> None:
         """Apply DuckDB performance optimizations to connection."""
         try:
             config = get_duckdb_config()
@@ -144,7 +144,7 @@ class ConnectionPool:
         except Exception as e:
             self.logger.warning(f"Failed to configure connection: {e}")
     
-    def acquire(self) -> Optional[duckdb.DuckDBPyConnection]:
+    def acquire(self) -> Optional['duckdb.DuckDBPyConnection']:
         """
         Acquire a connection from the pool.
         
@@ -197,7 +197,7 @@ class ConnectionPool:
             self.logger.error(f"Error acquiring connection: {e}")
             return None
     
-    def release(self, conn: duckdb.DuckDBPyConnection) -> None:
+    def release(self, conn: 'duckdb.DuckDBPyConnection') -> None:
         """
         Release a connection back to the pool.
         
@@ -228,7 +228,7 @@ class ConnectionPool:
             self.logger.error(f"Error releasing connection: {e}")
             self._remove_connection(conn)
     
-    def _is_connection_healthy(self, conn: duckdb.DuckDBPyConnection) -> bool:
+    def _is_connection_healthy(self, conn: 'duckdb.DuckDBPyConnection') -> bool:
         """Check if connection is healthy and responsive."""
         try:
             # Simple health check query
@@ -237,7 +237,7 @@ class ConnectionPool:
         except:
             return False
     
-    def _remove_connection(self, conn: duckdb.DuckDBPyConnection) -> None:
+    def _remove_connection(self, conn: 'duckdb.DuckDBPyConnection') -> None:
         """Remove and close a connection."""
         try:
             if conn in self._all_connections:

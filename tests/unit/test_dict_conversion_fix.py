@@ -69,8 +69,12 @@ def test_database_row_conversion_pattern():
                     # SQLite Row object with keys
                     results.append(dict(row))
                 elif isinstance(row, (list, tuple)):
-                    # DuckDB or plain tuple result
-                    results.append(dict(zip(columns, row)))
+                    # DuckDB or plain tuple result - check length matches
+                    if len(row) == len(columns):
+                        results.append(dict(zip(columns, row)))
+                    else:
+                        # Skip rows with mismatched length
+                        continue
                 else:
                     # Fallback: try to convert directly
                     results.append(dict(row))
@@ -118,7 +122,7 @@ def test_original_error_reproduction():
     problematic_sequence = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
     
     # This would fail in the original code
-    with pytest.raises(ValueError, match="dictionary update sequence element"):
+    with pytest.raises(TypeError, match="cannot convert dictionary update sequence element"):
         dict(problematic_sequence)
     
     # Our fix handles this correctly

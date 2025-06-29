@@ -7,7 +7,7 @@ including dataset metadata, file information, and usage tracking.
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
 
 
@@ -67,7 +67,8 @@ class Dataset(BaseModel):
     last_used: Optional[datetime] = Field(None, description="When dataset was last used")
     is_active: bool = Field(default=True, description="Whether dataset is actively used")
     
-    @validator('dataset_id')
+    @field_validator('dataset_id')
+    @classmethod
     def validate_dataset_id(cls, v):
         """Validate dataset ID format (MD5 hash)."""
         if not v or len(v) != 32:
@@ -76,28 +77,32 @@ class Dataset(BaseModel):
             raise ValueError('Dataset ID must be a valid hexadecimal hash')
         return v.lower()
     
-    @validator('dataset_name')
+    @field_validator('dataset_name')
+    @classmethod
     def validate_dataset_name(cls, v):
         """Validate dataset name."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Dataset name cannot be empty')
         return v.strip()
     
-    @validator('train_path')
+    @field_validator('train_path')
+    @classmethod
     def validate_train_path(cls, v):
         """Validate train path."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Train path cannot be empty')
         return v.strip()
     
-    @validator('target_column')
+    @field_validator('target_column')
+    @classmethod
     def validate_target_column(cls, v):
         """Validate target column name."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Target column cannot be empty')
         return v.strip()
     
-    @validator('train_format', 'test_format', 'submission_format', 'validation_format')
+    @field_validator('train_format', 'test_format', 'submission_format', 'validation_format')
+    @classmethod
     def validate_file_format(cls, v):
         """Validate file format."""
         if v is not None:
@@ -211,7 +216,8 @@ class DatasetCreate(BaseModel):
     # Auto-detection will fill in file statistics and formats
     auto_detect: bool = Field(default=True, description="Whether to auto-detect file properties")
     
-    @validator('train_path', 'test_path', 'submission_path', 'validation_path')
+    @field_validator('train_path', 'test_path', 'submission_path', 'validation_path')
+    @classmethod
     def validate_file_paths(cls, v):
         """Validate file paths exist if provided."""
         if v is not None and len(v.strip()) > 0:

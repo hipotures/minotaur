@@ -7,7 +7,7 @@ including feature definitions, impact analysis, and performance tracking.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 
@@ -49,7 +49,8 @@ class Feature(BaseModel):
     computational_cost: float = Field(default=1.0, ge=0.0, description="Relative computational cost")
     data_type: str = Field(default="float64", description="Expected data type of feature")
     
-    @validator('feature_name')
+    @field_validator('feature_name')
+    @classmethod
     def validate_feature_name(cls, v):
         """Validate feature name format."""
         if not v or len(v.strip()) == 0:
@@ -61,21 +62,24 @@ class Feature(BaseModel):
         
         return v.strip()
     
-    @validator('python_code')
+    @field_validator('python_code')
+    @classmethod
     def validate_python_code(cls, v):
         """Validate Python code is not empty."""
         if not v or len(v.strip()) == 0:
             raise ValueError('Python code cannot be empty')
         return v
     
-    @validator('dependencies')
+    @field_validator('dependencies')
+    @classmethod
     def validate_dependencies(cls, v):
         """Validate dependencies list."""
         if not isinstance(v, list):
             raise ValueError('Dependencies must be a list')
         return v
     
-    @validator('data_type')
+    @field_validator('data_type')
+    @classmethod
     def validate_data_type(cls, v):
         """Validate data type string."""
         valid_types = [
@@ -132,18 +136,20 @@ class FeatureImpact(BaseModel):
     # Removed validator - impact_delta can be averaged across samples
     # so it doesn't need to equal current baseline_score - with_feature_score
     
-    @validator('impact_percentage')
-    def validate_impact_percentage(cls, v, values):
+    @field_validator('impact_percentage')
+    @classmethod
+    def validate_impact_percentage(cls, v, info):
         """Validate impact percentage calculation."""
-        if 'baseline_score' in values and 'impact_delta' in values:
-            baseline = values['baseline_score']
+        if info.data and 'baseline_score' in info.data and 'impact_delta' in info.data:
+            baseline = info.data['baseline_score']
             if baseline > 0:
-                expected = (values['impact_delta'] / baseline) * 100
+                expected = (info.data['impact_delta'] / baseline) * 100
                 if abs(v - expected) > 0.01:  # Allow small floating point differences
                     raise ValueError('Impact percentage calculation is incorrect')
         return v
     
-    @validator('confidence_interval')
+    @field_validator('confidence_interval')
+    @classmethod
     def validate_confidence_interval(cls, v):
         """Validate confidence interval format."""
         if v is not None:
@@ -191,10 +197,11 @@ class OperationPerformance(BaseModel):
     effectiveness_score: float = Field(default=0.0, description="Overall effectiveness score")
     session_id: str = Field(..., description="Session where performance was tracked")
     
-    @validator('success_count')
-    def validate_success_count(cls, v, values):
+    @field_validator('success_count')
+    @classmethod
+    def validate_success_count(cls, v, info):
         """Validate that success count doesn't exceed total applications."""
-        if 'total_applications' in values and v > values['total_applications']:
+        if info.data and 'total_applications' in info.data and v > info.data['total_applications']:
             raise ValueError('Success count cannot exceed total applications')
         return v
     
