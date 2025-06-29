@@ -647,11 +647,12 @@ class AutoGluonEvaluator:
         return len(self.evaluation_cache) > 0
     
     def _create_temp_model_dir(self) -> str:
-        """Create temporary directory for AutoGluon model."""
-        model_dir = tempfile.mkdtemp(
-            prefix=f'ag_model_{self.evaluation_count}_',
-            dir=self.temp_base_dir
-        )
+        """Generate unique path for AutoGluon model directory (AutoGluon will create it)."""
+        # Generate unique model directory name without creating it
+        # AutoGluon expects to create the directory itself
+        random_chars = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        model_dir_name = f'ag_model_{self.evaluation_count}_{random_chars}'
+        model_dir = os.path.join(self.temp_base_dir, model_dir_name)
         self.model_dirs.append(model_dir)
         return model_dir
     
