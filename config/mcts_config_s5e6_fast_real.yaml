@@ -41,7 +41,7 @@ autogluon:
 
 # Feature Space - Focused categories for fertilizer domain
 feature_space:
-  domain_module: 'domains.fertilizer_s5e6'
+  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
   enabled_categories:
     - 'npk_interactions'
     - 'agricultural_domain'

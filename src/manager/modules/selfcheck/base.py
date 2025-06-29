@@ -234,14 +234,14 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
         total_commands_tested = 0
         total_commands_available = 0
         
-        print("\\n   📊 COMPREHENSIVE MODULE TESTING")
+        print("\n   📊 COMPREHENSIVE MODULE TESTING")
         print("   " + "=" * 50)
         
         for module_name, module_info in manager.available_modules.items():
             if module_name == 'selfcheck':  # Skip self
                 continue
                 
-            print(f"\\n   📦 Testing {module_name.upper()} module...")
+            print(f"\n   📦 Testing {module_name.upper()} module...")
             
             try:
                 passed, failed = self._test_module(module_name, module_info, manager, verbose)
@@ -266,7 +266,7 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
                     traceback.print_exc()
         
         # Summary
-        print(f"\\n   📈 TESTING SUMMARY:")
+        print(f"\n   📈 TESTING SUMMARY:")
         print(f"   • Total commands available: {total_commands_available}")
         print(f"   • Commands tested: {total_commands_tested}")
         overall_coverage = total_commands_tested / total_commands_available * 100 if total_commands_available > 0 else 0
@@ -486,7 +486,7 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
     
     def print_final_results(self, test_results: List[Tuple[str, bool]], session_name: Optional[str] = None) -> None:
         """Print final test results summary."""
-        print("\\n" + "=" * 50)
+        print("\n" + "=" * 50)
         print("📋 SELF-CHECK SUMMARY")
         print("=" * 50)
         
@@ -497,7 +497,7 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
             if not passed:
                 all_passed = False
         
-        print("\\n" + "=" * 50)
+        print("\n" + "=" * 50)
         if all_passed:
             print("🎉 FINAL RESULT: ✅ ALL TESTS PASSED")
             if session_name:

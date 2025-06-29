@@ -333,15 +333,19 @@ class DatasetImporter:
         import sys
         from pathlib import Path
         
-        # Add src to path if needed
-        src_path = Path(__file__).parent
-        if str(src_path) not in sys.path:
-            sys.path.insert(0, str(src_path))
-        
         # Setup contextual logging for this dataset
         dataset_logger = self._setup_dataset_logging(dataset_name)
         
-        from feature_space import FeatureSpace
+        # Import FeatureSpace using absolute import
+        try:
+            # Try absolute import first (when run as module)
+            from src.feature_space import FeatureSpace
+        except ImportError:
+            # Fallback to adding src to path for standalone execution
+            src_path = Path(__file__).parent
+            if str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+            from feature_space import FeatureSpace
         
         # Load configuration from main config file
         import yaml

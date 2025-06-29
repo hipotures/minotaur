@@ -246,6 +246,18 @@ class SecureConfigManager:
             logger.error(f"Failed at path: {'.'.join(str(p) for p in e.path)}")
             raise
     
+    def get(self, path: str, default: Any = None) -> Any:
+        """Get a configuration value using dot notation.
+        
+        Args:
+            path: Dot-separated path (e.g., 'database.path')
+            default: Default value if path not found
+            
+        Returns:
+            Configuration value or default
+        """
+        return self._get_nested_value(self.merged_config, path, default)
+    
     def get_config(self, redact_secrets: bool = True) -> Dict[str, Any]:
         """Get the merged configuration.
         

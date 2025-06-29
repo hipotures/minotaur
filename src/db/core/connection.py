@@ -65,13 +65,18 @@ class ConnectionPool:
         try:
             # Create initial connections (start with half of pool size)
             initial_size = max(1, self.pool_size // 2)
+            created_count = 0
             
-            for _ in range(initial_size):
+            for i in range(initial_size):
+                self.logger.debug(f"Creating initial connection {i+1}/{initial_size}")
                 conn = self._create_connection()
                 if conn:
                     self._pool.put(conn, block=False)
+                    created_count += 1
+                else:
+                    self.logger.warning(f"Failed to create initial connection {i+1}")
                     
-            self.logger.info(f"Connection pool initialized with {initial_size} connections")
+            self.logger.info(f"Connection pool initialized with {created_count}/{initial_size} connections")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize connection pool: {e}")
@@ -85,9 +90,14 @@ class ConnectionPool:
         try:
             with self._lock:
                 if self._created_count >= self.pool_size:
+                    self.logger.debug(f"Cannot create connection: limit reached ({self._created_count}/{self.pool_size})")
                     return None
                 
                 # Create connection
+                self.logger.debug(f"Creating connection to {self.db_path}")
+                import os
+                abs_path = os.path.abspath(self.db_path)
+                self.logger.debug(f"Absolute path: {abs_path}, exists: {os.path.exists(abs_path)}")
                 conn = duckdb.connect(database=self.db_path)
                 
                 # Apply performance optimizations
@@ -142,6 +152,7 @@ class ConnectionPool:
             DuckDB connection or None if unable to acquire
         """
         start_time = time.time()
+        self.logger.debug(f"Attempting to acquire connection (pool size: {self._pool.qsize()}, active: {self._active_count})")
         
         try:
             # Try to get existing connection from pool
@@ -307,7 +318,8 @@ class DuckDBConnectionManager:
         
         # Database path from main config
         db_config = main_config.get('database', {})
-        self.db_path = str(Path(db_config.get('path', 'data/minotaur.duckdb')))
+        db_path_str = db_config.get('path', 'data/minotaur.duckdb')
+        self.db_path = str(Path(db_path_str).resolve())
         
         # Setup logging
         self.logger = DatabaseLoggerAdapter(

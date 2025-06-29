@@ -236,18 +236,37 @@ class ModularDuckDBManager:
         print("  ./manager.py <module> [options]")
         print("  ./manager.py <module> --help")
         print("\nExamples:")
+        print("  # Dataset management")
+        print("  ./manager.py datasets --list")
+        print("  ./manager.py datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto")
+        print("  ./manager.py datasets --details titanic")
+        print("")
+        print("  # Session analysis")
         print("  ./manager.py sessions --list")
+        print("  ./manager.py sessions --details [session_id]")
+        print("  ./manager.py sessions --best 5")
+        print("")
+        print("  # Feature analysis")
+        print("  ./manager.py features --top 10")
+        print("  ./manager.py features --session [session_id]")
+        print("")
+        print("  # System maintenance")
         print("  ./manager.py analytics --summary --days 7")
-        print("  ./manager.py datasets --register")
+        print("  ./manager.py backup --create")
+        print("  ./manager.py selfcheck --validate")
     
     def _get_epilog(self) -> str:
         """Get epilog text for help."""
         return """
 Examples:
   %(prog)s                          # Show available modules
-  %(prog)s sessions --list          # List all sessions
+  %(prog)s datasets --list          # List registered datasets
+  %(prog)s datasets --register --dataset-name titanic --dataset-path datasets/Titanic/ --target-column Survived --auto
+  %(prog)s sessions --list          # List all MCTS sessions
+  %(prog)s features --top 10        # Show top 10 performing features
   %(prog)s analytics --summary      # Show performance summary
-  %(prog)s features --top 10        # Show top 10 features
+  %(prog)s backup --create          # Create database backup
+  %(prog)s selfcheck --validate     # Run system validation
 
 For module-specific help:
   %(prog)s <module> --help

@@ -277,10 +277,15 @@ class DatasetService:
                     'error': f'Directory not found: {path}'
                 }
             
-            # Import dataset importer
+            # Import dataset importer dynamically
             import sys
-            src_path = Path(__file__).parent.parent.parent
-            sys.path.insert(0, str(src_path))
+            import os
+            # Get the absolute path to src directory
+            current_dir = Path(__file__).resolve()
+            src_dir = current_dir.parent.parent.parent
+            if str(src_dir) not in sys.path:
+                sys.path.insert(0, str(src_dir))
+            
             from dataset_importer import DatasetImporter
             
             # Initialize importer and auto-detect files

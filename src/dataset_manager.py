@@ -105,7 +105,10 @@ class DatasetManager:
             self._dataset_cache[dataset_name] = dataset_info
             
             logger.info(f"✅ Retrieved registered dataset: {result.dataset_name}")
-            logger.info(f"   📊 Train: {result.train_records:,} records, {result.train_columns} columns")
+            if result.train_records is not None:
+                logger.info(f"   📊 Train: {result.train_records:,} records, {result.train_columns} columns")
+            else:
+                logger.info(f"   📊 Train: records not counted yet")
             if result.test_records:
                 logger.info(f"   🧪 Test: {result.test_records:,} records, {result.test_columns} columns")
             

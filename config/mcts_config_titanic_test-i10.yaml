@@ -48,10 +48,9 @@ autogluon:
     fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
     enable_ray: false  # Force disable Ray
 
-# Feature Space - Custom domain for Titanic with simplified system
+# Feature Space - Domain operations are loaded automatically based on dataset name
 feature_space:
-  # KEY: Specify custom domain module for Titanic
-  custom_domain_module: 'domains.titanic'  # Load CustomFeatureOperations from titanic.py
+  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
   
   max_features_per_node: 50               # Very few features
   feature_timeout: 30                     # Short timeout

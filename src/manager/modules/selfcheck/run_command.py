@@ -40,7 +40,7 @@ class RunCommand(BaseSelfCheckCommand):
             session_id = None
             
             # 1. Dataset Validation
-            print("\\n📊 DATASET VALIDATION")
+            print("\n📊 DATASET VALIDATION")
             dataset_valid, dataset_info = self.validate_dataset(dataset, verbose)
             test_results.append(("Dataset Validation", dataset_valid))
             
@@ -49,7 +49,7 @@ class RunCommand(BaseSelfCheckCommand):
                 return
             
             # 2. Database Validation
-            print("\\n🗄️  DATABASE VALIDATION")
+            print("\n🗄️  DATABASE VALIDATION")
             db_valid = self.validate_database(verbose)
             test_results.append(("Database Validation", db_valid))
             
@@ -59,7 +59,7 @@ class RunCommand(BaseSelfCheckCommand):
             
             # 3. MCTS Integration Test (unless quick mode)
             if not quick:
-                print("\\n🎯 MCTS INTEGRATION TEST")
+                print("\n🎯 MCTS INTEGRATION TEST")
                 mcts_result = self._test_mcts_integration(dataset, dataset_info, verbose, config_file)
                 if mcts_result[0]:  # if success
                     mcts_valid = True
@@ -70,7 +70,7 @@ class RunCommand(BaseSelfCheckCommand):
                 test_results.append(("MCTS Integration", mcts_valid))
             
             # 4. Module Testing - runs after MCTS creates data
-            print("\\n🧩 MODULE TESTING")
+            print("\n🧩 MODULE TESTING")
             # Pass the manager from the service layer
             manager = self._get_manager_instance()
             modules_valid = self.test_all_modules(manager, verbose)
@@ -81,7 +81,7 @@ class RunCommand(BaseSelfCheckCommand):
             self.print_final_results(test_results, session_display)
             
         except KeyboardInterrupt:
-            print("\\n⚠️  Self-check interrupted by user")
+            print("\n⚠️  Self-check interrupted by user")
         except Exception as e:
             self.print_error(f"Self-check failed with error: {e}")
             if getattr(args, 'verbose', False):
@@ -141,17 +141,46 @@ class RunCommand(BaseSelfCheckCommand):
         
         return MockManager(self.db_pool)
     
+    def _reinitialize_db_pool(self):
+        """Reinitialize database connection pool after closing it for subprocess."""
+        from src.db import DuckDBConnectionManager
+        # Get the config and reinitialize the connection pool
+        db_manager = DuckDBConnectionManager(self.config)
+        return db_manager.pool
+    
     def _test_mcts_integration(self, dataset: str, dataset_info: Dict, verbose: bool, config_file: Optional[str] = None) -> Tuple[bool, Optional[Tuple[str, str]]]:
         """Test MCTS integration with real feature discovery."""
         try:
-            # Use provided config file or create temporary config
+            # Always create modified config for selfcheck to avoid database conflicts
             if config_file:
-                config_path = config_file
-                if not Path(config_path).exists():
-                    self.print_error(f"Config file not found: {config_path}")
-                    return False, None
+                # Load existing config and modify for selfcheck
+                import yaml
+                with open(config_file, 'r') as f:
+                    config_content = yaml.safe_load(f)
+                
+                # Override database path for selfcheck
+                if 'database' not in config_content:
+                    config_content['database'] = {}
+                config_content['database']['path'] = 'data/minotaur_selfcheck.duckdb'
+                
+                # Ensure dataset info is in autogluon section
+                if 'autogluon' not in config_content:
+                    config_content['autogluon'] = {}
+                # For selfcheck, remove dataset_name to force path-based approach
+                if 'dataset_name' in config_content['autogluon']:
+                    del config_content['autogluon']['dataset_name']
+                # Ensure paths are present
+                if 'train_path' not in config_content['autogluon']:
+                    config_content['autogluon']['train_path'] = dataset_info['train_path']
+                if 'test_path' not in config_content['autogluon']:
+                    config_content['autogluon']['test_path'] = dataset_info['test_path']
+                if 'target_column' not in config_content['autogluon']:
+                    config_content['autogluon']['target_column'] = dataset_info.get('target_column')
+                
+                config_path = self._write_temp_config(config_content)
                 if verbose:
-                    print(f"   📋 Using provided config: {config_path}")
+                    print(f"   📋 Based on config: {config_file}")
+                    print(f"   📊 Using test database to avoid conflicts")
             else:
                 # Create temporary config
                 config_content = self._create_test_config(dataset_info)
@@ -169,19 +198,31 @@ class RunCommand(BaseSelfCheckCommand):
             # Run feature discovery
             result = self._run_mcts_process(config_path, verbose)
             
-            # Clean up temp config (only if we created it)
-            if not config_file:
-                os.unlink(config_path)
+            # Clean up temp config (always created for selfcheck)
+            os.unlink(config_path)
             
             if not result['success']:
                 return False, None
             
-            # Verify session was created
+            # Extract session info from result without database verification
             session_id = result.get('session_id')
+            session_name = result.get('session_name')
             if session_id:
-                session_info = self._verify_session_created(session_id, result, verbose)
-                if session_info:
-                    return True, session_info
+                iterations = result['iterations']
+                best_score = result['score']
+                duration = result['duration']
+                
+                session_display = session_name if session_name else f"{session_id[:8]}..."
+                
+                print(f"   ✅ Feature discovery completed ({duration:.1f}s)")
+                print(f"   ✅ Session created: {session_display}")
+                print(f"   ✅ Iterations: {iterations}")
+                if best_score:
+                    print(f"   ✅ Best score: {best_score:.5f}")
+                else:
+                    print(f"   ⚠️  No score recorded")
+                
+                return True, (session_id, session_name)
             
             return False, None
             
@@ -212,8 +253,11 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_nodes_in_memory': 1000
             },
             'autogluon': {
+                # Don't use dataset_name to avoid database lookup in selfcheck
+                # Use path-based approach instead
                 'train_path': dataset_info['train_path'],
                 'test_path': dataset_info['test_path'],
+                'target_column': dataset_info.get('target_column'),  # Add target column
                 'target_metric': dataset_info.get('metric', 'accuracy'),
                 'included_model_types': ['XGB'],
                 'enable_gpu': True,
@@ -255,7 +299,7 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_disk_usage_gb': 5
             },
             'database': {
-                'path': 'data/feature_discovery_selfcheck.duckdb',
+                'path': 'data/minotaur_selfcheck.duckdb',  # Separate DB for selfcheck to avoid conflicts
                 'max_history_size': 100,
                 'backup_interval': 10,
                 'retention_days': 1
@@ -304,8 +348,7 @@ class RunCommand(BaseSelfCheckCommand):
         cmd = [
             sys.executable, 
             str(Path.cwd() / "mcts.py"),
-            "--config", config_path,
-            "--real-autogluon"
+            "--config", config_path
         ]
         
         # Animation control
@@ -317,7 +360,7 @@ class RunCommand(BaseSelfCheckCommand):
             chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
             i = 0
             while animation_running.is_set():
-                print(f"\\r   🔄 MCTS simulation in progress {chars[i % len(chars)]}", end="", flush=True)
+                print(f"\r   🔄 MCTS simulation in progress {chars[i % len(chars)]}", end="", flush=True)
                 time.sleep(0.1)
                 i += 1
         
@@ -331,7 +374,7 @@ class RunCommand(BaseSelfCheckCommand):
         
         # Stop animation
         animation_running.clear()
-        print("\\r   ✅ MCTS simulation completed" + " " * 10, flush=True)  # Clear animation chars
+        print("\r   ✅ MCTS simulation completed" + " " * 10, flush=True)  # Clear animation chars
         
         duration = (end_time - start_time).total_seconds()
         

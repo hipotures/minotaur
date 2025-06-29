@@ -15,12 +15,12 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from timing import timed, timing_context, record_timing
-from feature_cache import FeatureCacheManager
+from .timing import timed, timing_context, record_timing
+from .feature_cache import FeatureCacheManager
 
 # Import DuckDB manager
 try:
-    from duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
+    from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
     DUCKDB_INTEGRATION_AVAILABLE = True
 except ImportError:
     DUCKDB_INTEGRATION_AVAILABLE = False

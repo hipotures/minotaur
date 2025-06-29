@@ -20,9 +20,9 @@ from pathlib import Path
 # Import existing feature engineering module
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from feature_engineering import load_or_create_features
-from timing import timed, timing_context, record_timing
-from data_utils import DataManager, smart_sample, estimate_memory_usage
+from .feature_engineering import load_or_create_features
+from .timing import timed, timing_context, record_timing
+from .data_utils import DataManager, smart_sample, estimate_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -143,24 +143,30 @@ class FeatureSpace:
         # Initialize data manager for optimized loading
         self.data_manager = DataManager(config)
         
-        # Initialize operations with custom domain support
-        self.custom_domain_module = self.feature_config.get('custom_domain_module')
+        # Initialize operations with automatic domain support
         self._initialize_operations()
         
         logger.info(f"Initialized FeatureSpace with {len(self.operations)} operations")
     
     def _initialize_operations(self) -> None:
-        """Initialize all available feature operations with dynamic domain loading."""
+        """Initialize all available feature operations with automatic domain loading."""
         
         # Always load generic operations
         self._add_generic_operations()
         
-        # Load custom domain operations if specified
-        if self.custom_domain_module:
-            self._load_custom_domain_operations(self.custom_domain_module)
+        # Try to load custom domain operations based on dataset name
+        if self.dataset_name:
+            # Try automatic domain loading based on dataset name
+            domain_module = self.dataset_name.lower()
+            self._load_custom_domain_operations(domain_module)
+        else:
+            # Fallback to config if provided (for backward compatibility)
+            custom_domain_module = self.feature_config.get('custom_domain_module')
+            if custom_domain_module:
+                logger.warning("Using deprecated 'custom_domain_module' config. Domain modules are now loaded automatically based on dataset name.")
+                self._load_custom_domain_operations(custom_domain_module)
         
-        logger.info(f"Initialized {len(self.operations)} feature operations with "
-                   f"custom_domain_module: {self.custom_domain_module}")
+        logger.info(f"Initialized {len(self.operations)} feature operations")
     
     def _add_generic_operations(self) -> None:
         """Add truly generic operations that work with any dataset (configurable)."""
@@ -213,16 +219,26 @@ class FeatureSpace:
             disabled_ops = [op for op in all_operations.keys() if not self.generic_operations.get(op, False)]
             logger.info(f"Disabled generic operations: {disabled_ops}")
     
-    def _load_custom_domain_operations(self, custom_domain_module: str) -> None:
-        """Dynamically load custom domain operations from specified module."""
+    def _load_custom_domain_operations(self, domain_name: str) -> None:
+        """Dynamically load custom domain operations from domain module.
+        
+        Args:
+            domain_name: Name of the domain (e.g., 'titanic', 'fertilizer_s5e6')
+        """
+        # Clean the domain name (remove 'domains.' prefix if present)
+        clean_domain_name = domain_name.replace("domains.", "").replace("src.domains.", "")
+        
         try:
             # Import the custom domain module
             import importlib
-            module = importlib.import_module(f'src.domains.{custom_domain_module.replace("domains.", "")}')
+            module_path = f'src.domains.{clean_domain_name}'
+            
+            logger.info(f"Attempting to load custom domain module: {module_path}")
+            module = importlib.import_module(module_path)
             
             # Get the CustomFeatureOperations class
             if not hasattr(module, 'CustomFeatureOperations'):
-                logger.warning(f"No CustomFeatureOperations class found in {custom_domain_module}")
+                logger.warning(f"No CustomFeatureOperations class found in {module_path}")
                 return
             
             custom_class = module.CustomFeatureOperations
@@ -231,7 +247,7 @@ class FeatureSpace:
             method_names = [name for name in dir(custom_class) 
                           if name.startswith('get_') and callable(getattr(custom_class, name))]
             
-            logger.info(f"Found {len(method_names)} custom operations in {custom_domain_module}: {method_names}")
+            logger.info(f"Found {len(method_names)} custom operations in {clean_domain_name}: {method_names}")
             
             # Add each method as an operation
             for method_name in method_names:
@@ -252,10 +268,12 @@ class FeatureSpace:
                 
                 self.operations[operation_name] = operation
                 
-            logger.info(f"Loaded {len(method_names)} operations from {custom_domain_module}")
+            logger.info(f"✅ Successfully loaded {len(method_names)} custom domain operations from {clean_domain_name}.py")
             
+        except ImportError:
+            logger.info(f"No custom domain module found at src/domains/{clean_domain_name}.py - using generic operations only")
         except Exception as e:
-            logger.error(f"Failed to load custom domain module {custom_domain_module}: {e}")
+            logger.error(f"Failed to load custom domain module {clean_domain_name}: {e}")
             logger.info("Falling back to generic operations only")
     
     def _add_npk_operations_old(self) -> None:
@@ -617,7 +635,7 @@ class FeatureSpace:
         """Apply domain-specific operation to generate new features."""
         try:
             # First try generic operations
-            from domains.generic import GenericFeatureOperations
+            from src.domains.generic import GenericFeatureOperations
             
             if operation_name == 'statistical_aggregations':
                 return self._apply_generic_statistical_aggregations(df)
@@ -631,17 +649,21 @@ class FeatureSpace:
                 return GenericFeatureOperations.get_ranking_features(df, self._get_numeric_columns(df))
             
             # Try custom domain operations
-            if self.custom_domain_module:
-                import importlib
-                module = importlib.import_module(f'src.domains.{self.custom_domain_module.replace("domains.", "")}')
-                
-                if hasattr(module, 'CustomFeatureOperations'):
-                    custom_class = module.CustomFeatureOperations
-                    method_name = f'get_{operation_name}'
+            if self.dataset_name:
+                try:
+                    import importlib
+                    module_path = f'src.domains.{self.dataset_name.lower()}'
+                    module = importlib.import_module(module_path)
                     
-                    if hasattr(custom_class, method_name):
-                        method = getattr(custom_class, method_name)
-                        return method(df)
+                    if hasattr(module, 'CustomFeatureOperations'):
+                        custom_class = module.CustomFeatureOperations
+                        method_name = f'get_{operation_name}'
+                        
+                        if hasattr(custom_class, method_name):
+                            method = getattr(custom_class, method_name)
+                            return method(df)
+                except ImportError:
+                    pass  # No custom domain module, use generic operations
             
             logger.warning(f"Unknown operation: {operation_name}")
             return {}
@@ -665,7 +687,7 @@ class FeatureSpace:
             agg_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Use the GenericFeatureOperations class for consistency
-        from domains.generic import GenericFeatureOperations
+        from src.domains.generic import GenericFeatureOperations
         return GenericFeatureOperations.get_statistical_aggregations(df, groupby_cols, agg_cols)
     
     def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
@@ -1011,7 +1033,7 @@ class FeatureSpace:
         feature_count = 0
         
         # Import generic operations module
-        from domains.generic import GenericFeatureOperations
+        from src.domains.generic import GenericFeatureOperations
         
         # 1. Generate all generic features
         logger.info("Generating generic features...")
@@ -1071,13 +1093,13 @@ class FeatureSpace:
                 logger.warning(f"Failed to generate ranking features: {e}")
         
         # 2. Generate custom domain features if available
-        if dataset_name and self.custom_domain_module:
+        if dataset_name:
             logger.info(f"Generating custom domain features for: {dataset_name}")
             try:
                 # Import custom domain module
                 import importlib
-                module_name = self.custom_domain_module.replace("domains.", "")
-                module = importlib.import_module(f'src.domains.{module_name}')
+                module_path = f'src.domains.{dataset_name.lower()}'
+                module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
                     custom_class = module.CustomFeatureOperations
@@ -1126,7 +1148,7 @@ class FeatureSpace:
         result_features = {}
         
         # Import generic operations module
-        from domains.generic import GenericFeatureOperations
+        from src.domains.generic import GenericFeatureOperations
         
         # Get numeric and categorical columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -1204,12 +1226,12 @@ class FeatureSpace:
         result_features = {}
         
         # Generate custom domain features if available
-        if dataset_name and self.custom_domain_module:
+        if dataset_name:
             try:
                 # Import custom domain module
                 import importlib
-                module_name = self.custom_domain_module.replace("domains.", "")
-                module = importlib.import_module(f'src.domains.{module_name}')
+                module_path = f'src.domains.{dataset_name.lower()}'
+                module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
                     custom_class = module.CustomFeatureOperations
@@ -1280,11 +1302,11 @@ class FeatureSpace:
         feature_names.extend(generic_patterns)
         
         # Add custom domain features if available
-        if dataset_name and self.custom_domain_module:
+        if dataset_name:
             try:
                 import importlib
-                module_name = self.custom_domain_module.replace("domains.", "")
-                module = importlib.import_module(f'src.domains.{module_name}')
+                module_path = f'src.domains.{dataset_name.lower()}'
+                module = importlib.import_module(module_path)
                 
                 if hasattr(module, 'CustomFeatureOperations'):
                     custom_class = module.CustomFeatureOperations

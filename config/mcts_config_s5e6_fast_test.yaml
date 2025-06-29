@@ -48,7 +48,7 @@ autogluon:
 
 # Feature Space - Minimal features for fertilizer domain
 feature_space:
-  domain_module: 'domains.fertilizer_s5e6'
+  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
   max_features_per_node: 50               # Very few features
   feature_timeout: 30                     # Short timeout
   max_cache_size_mb: 256                  # Tiny cache

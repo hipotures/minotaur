@@ -81,13 +81,15 @@ class RegisterCommand(BaseDatasetsCommand):
                 self.print_info(f"Dataset ID: {dataset_id}")
                 self.print_info(f"Show details: python manager.py datasets --details {args.dataset_name}")
             else:
-                print(f"\r❌ Dataset processing failed" + " " * 30, flush=True)  # Clear animation chars
+                print(f"\r" + " " * 60, end="", flush=True)  # Clear animation without error message
+                print(f"\r", end="")  # Return to beginning of line
                 self.print_error(f"Registration failed: {result.get('error', 'Unknown error')}")
                 
         except Exception as e:
             # Stop animation on error
             animation_running.clear()
-            print(f"\r❌ Dataset processing failed" + " " * 30, flush=True)  # Clear animation chars
+            print(f"\r" + " " * 60, end="", flush=True)  # Clear animation without error message
+            print(f"\r", end="")  # Return to beginning of line
             self.print_error(f"Auto-registration failed: {e}")
     
     def _register_manual(self, args) -> None:

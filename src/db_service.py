@@ -120,7 +120,7 @@ class DatabaseService:
         session_create = SessionCreate(
             session_id=session_id,
             session_name=session_name,
-            config_snapshot=self.config,
+            config_snapshot=self.config.get_config() if hasattr(self.config, 'get_config') else self.config,
             is_test_mode=is_test_mode,
             dataset_hash=dataset_hash
         )
