@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 13:35
-Compatible with commit: 02d53a5
-Changes: Created new overview document as main entry point for MCTS documentation
+Last Updated: 2025-06-30 23:57
+Compatible with commit: 601a407
+Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
 -->
 
 # MCTS Feature Discovery System - Overview
@@ -31,29 +31,35 @@ Slow, unreliable           Fast, deterministic
 ```
 
 ### Core Components
-- **🗄️ Dataset Manager**: Registers datasets and pre-builds all possible features
+- **🗄️ Dataset Manager**: Registers datasets and pre-builds all possible features with origin classification
+- **📊 Feature Catalog**: Database-driven dynamic feature categorization with auto-registration
 - **🌳 MCTS Engine**: Explores feature combinations using Monte Carlo Tree Search
-- **⚙️ Feature Space**: Manages feature operations and column selection
+- **⚙️ Feature Space**: Manages feature operations and column selection from pre-built catalog
 - **🤖 AutoGluon Evaluator**: Fast ML evaluation on selected feature subsets
-- **🗃️ Database Layer**: Persistent storage with DuckDB for exploration history
+- **🗃️ Database Layer**: Persistent storage with DuckDB for exploration history and feature metadata
 
 ## 📋 Key Concepts & Terminology
 
-### Feature Operations
-- **Generic Operations**: Statistical aggregations, polynomial features, binning, ranking
-- **Domain-Specific Operations**: NPK ratios, environmental stress indicators, compatibility scores
-- **No-Signal Features**: Constant/single-value features automatically filtered out
+### Feature Classification System
+- **Train Features** (`origin='train'`): Original dataset columns (automatically registered during dataset import)
+- **Generic Operations** (`origin='generic'`): Statistical aggregations, polynomial features, binning, ranking
+- **Custom Operations** (`origin='custom'`): Domain-specific features (NPK ratios, environmental stress indicators, compatibility scores)
+- **Auto-Registration**: All features automatically cataloged with origin classification and metadata
+- **No-Signal Features**: Constant/single-value features automatically filtered out during generation
 
 ### MCTS Tree Structure
-- **Root Node**: Baseline features (original dataset columns)
-- **Child Nodes**: Feature operation results (pre-built subsets)
+- **Root Node**: Train features (original dataset columns with `origin='train'`)
+- **Child Nodes**: Feature operation results from catalog (generic and custom features)
+- **Dynamic Selection**: Features selected from comprehensive catalog by origin and operation type
 - **Node Evaluation**: AutoGluon ML performance (MAP@3, accuracy, etc.)
 - **UCB1 Selection**: Balanced exploration vs exploitation
 
 ### Database Persistence
 - **Sessions**: Individual MCTS runs with unique identifiers
 - **Exploration History**: Tree structure, evaluations, and metadata
-- **Feature Metadata**: Operations, column mappings, and performance data
+- **Feature Catalog**: Comprehensive registry of all features with origin classification
+- **Dynamic Categories**: Database-driven operation categorization with automatic updates
+- **Feature Metadata**: Operations, column mappings, performance data, and origin tracking
 
 ## 🚀 Quick Start Guide
 

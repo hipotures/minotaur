@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 13:35
-Compatible with commit: 02d53a5
-Changes: Refactored to focus only on data flow, removed duplicated content moved to other docs
+Last Updated: 2025-06-30 23:57
+Compatible with commit: 601a407
+Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
 -->
 
 # MCTS Data Flow - Phase-by-Phase Analysis
@@ -18,26 +18,30 @@ Raw Dataset Files
 
                     ↓ [Dataset Registration]
 
-Feature Generation (100% data)
-├── Generic Features
+Auto-Registration Process (100% data)
+├── Train Features (origin='train')
+│   └── Original dataset columns automatically registered
+├── Generic Features (origin='generic')
 │   ├── Statistical Aggregations (mean/std by Soil/Crop)
 │   ├── Polynomial Features (squares, products)
 │   ├── Binning Features (quantile bins)
 │   └── Ranking Features (percentiles)
-├── Custom Domain Features
+├── Custom Domain Features (origin='custom')
 │   ├── NPK Ratios & Interactions
 │   ├── Environmental Stress Indicators
 │   └── Agricultural Compatibility Scores
 
-                    ↓ [Feature Building & Validation]
+                    ↓ [Feature Catalog Registration & Validation]
 
 DuckDB Dataset (cache/dataset-name/dataset.duckdb)
-├── train (original 8 columns)
-├── test (original 7 columns)
-├── train_generic (~200 columns)
-├── train_custom (~50 columns)
-├── test_generic (~200 columns)
-├── test_custom (~50 columns)
+├── train (original 8 columns, origin='train')
+├── test (original 7 columns, origin='train')
+├── train_generic (~200 columns, origin='generic')
+├── train_custom (~50 columns, origin='custom')
+├── test_generic (~200 columns, origin='generic')
+├── test_custom (~50 columns, origin='custom')
+├── feature_catalog (all features with origin classification)
+├── operation_categories (dynamic category mappings)
 ├── train_features (8 + ~250 columns = ~258 total)
 └── test_features (7 + ~250 columns = ~257 total)
     

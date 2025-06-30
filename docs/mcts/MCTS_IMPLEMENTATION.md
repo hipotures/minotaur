@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 13:35
-Compatible with commit: 02d53a5
-Changes: Created new implementation document with technical details and component analysis
+Last Updated: 2025-06-30 23:57
+Compatible with commit: 601a407
+Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
 -->
 
 # MCTS Implementation - Technical Details
@@ -12,22 +12,25 @@ Changes: Created new implementation document with technical details and componen
 ### Feature Space Manager (`src/feature_space.py`)
 
 **Primary responsibilities**:
-- Maintains operation definitions (statistical, polynomial, binning, ranking, custom domain)
-- Manages feature column selection during MCTS search
-- Interfaces with pre-built feature tables in DuckDB
+- Maintains operation definitions with origin classification (train, generic, custom)
+- Manages feature column selection from comprehensive feature catalog
+- Interfaces with feature catalog and pre-built feature tables in DuckDB
+- Coordinates auto-registration of features during dataset import
 
 **Key methods**:
 ```python
 FeatureSpace.__init__()  # Initialize with config and dataset manager
-get_feature_columns_for_node(node)  # Returns column names for SQL SELECT
-get_available_operations(node)  # Returns valid operations for expansion
-apply_operation_to_node(node, operation)  # Creates child node with operation
+get_feature_columns_for_node(node)  # Returns column names from feature catalog
+get_available_operations(node)  # Returns valid operations by origin and category
+apply_operation_to_node(node, operation)  # Creates child node with cataloged features
+generate_generic_features(df, origin='generic')  # Generate with auto-registration
 ```
 
-**Current role**:
-- **NOT generating features** during search (pre-built approach)
-- **Column selection logic** for existing features
-- **Operation definitions** for node expansion
+**Enhanced Architecture**:
+- **Feature Catalog Integration**: Selects features from comprehensive catalog by origin
+- **Dynamic Operation Discovery**: Uses database-driven category system for operations
+- **Auto-Registration Coordination**: Manages feature registration during dataset processing
+- **Origin-Based Selection**: Prioritizes features by their classification (train/generic/custom)
 
 ### MCTS Engine (`src/mcts_engine.py`)
 

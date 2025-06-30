@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 13:35
-Compatible with commit: 02d53a5
-Changes: Created dedicated operations document with configuration, performance, and troubleshooting
+Last Updated: 2025-06-30 23:57
+Compatible with commit: 601a407
+Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
 -->
 
 # MCTS Operations Guide
