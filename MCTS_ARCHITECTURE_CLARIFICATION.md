@@ -1,4 +1,11 @@
-# MCTS Architecture - How It Actually Works Now (2025-06-29)
+<!-- 
+Documentation Status: CURRENT
+Last Updated: 2025-06-30
+Compatible with commit: e7adb806e391a36f70f03c1a5b1d02926dd95023
+Changes: Added MCTS node ID tracking, database persistence, validation framework
+-->
+
+# MCTS Architecture - How It Actually Works Now (2025-06-30)
 
 ## Executive Summary
 
@@ -60,13 +67,28 @@ generate_features_for_node(node) -> pd.DataFrame  # Legacy method
 **Node representation**:
 - Each `FeatureNode` represents a feature selection state
 - `applied_operations` tracks which feature categories are included
+- `node_id` auto-assigned using class-level counter for unique identification
+- `parent` references maintain tree structure for backpropagation
 - No actual feature generation during tree traversal
+
+**Node ID Management** (Added 2025-06-30):
+- Each `FeatureNode` has auto-assigned `node_id` using class-level counter
+- Database tracking with `mcts_node_id` column in `exploration_history`
+- Parent-child relationships tracked via `parent_node_id`
+- Proper tree structure persistence for session resumption and analysis
+
+**Key methods**:
+```python
+FeatureNode.__post_init__()  # Auto-assigns node_id = ++_node_counter
+FeatureNode.add_child(child)  # Maintains parent-child relationships
+log_exploration_step(..., mcts_node_id=node.node_id)  # Database logging
+```
 
 **Search process**:
 1. **Selection**: Navigate tree using UCB1 to find promising feature combinations
 2. **Expansion**: Add new operation (feature category) to include more columns
 3. **Evaluation**: Use AutoGluon with SQL SELECT on chosen columns
-4. **Backpropagation**: Update node scores based on AutoGluon results
+4. **Backpropagation**: Update node scores and visit counts through parent chain
 
 ### Dataset Manager (`src/dataset_manager.py`)
 
@@ -189,6 +211,60 @@ if operation_name == 'statistical_aggregations':
 4. AutoGluon trains model and returns MAP@3 score
 5. MCTS updates tree with score
 
+## MCTS Validation Framework (Added 2025-06-30)
+
+**Location**: `scripts/mcts/`
+
+**Validation scripts**:
+- `validate_mcts.py` - Comprehensive MCTS implementation validation
+- `visualize_tree.py` - ASCII tree structure visualization  
+- `analyze_session.py` - Deep session analysis and metrics
+- `monitor_live.py` - Real-time MCTS monitoring
+
+**Validation tests**:
+1. **Node ID Assignment** - ✅ Working (validates sequential node ID assignment)
+2. **Parent-Child Relationships** - ✅ Working (validates tree structure integrity)
+3. **Visit Count Accumulation** - ❌ Needs improvement (backpropagation issue)
+4. **Feature Evolution** - ✅ Working (validates feature changes per operation)
+5. **Tree Growth** - ✅ Working (validates iteration progression)
+6. **MCTS Logging** - ✅ Working (validates dedicated MCTS logger functionality)
+
+**Usage**:
+```bash
+# Validate latest MCTS session
+python scripts/mcts/validate_mcts.py
+
+# Visualize tree structure
+python scripts/mcts/visualize_tree.py SESSION_ID
+
+# Analyze session performance
+python scripts/mcts/analyze_session.py SESSION_ID
+```
+
+## Database Persistence Layer
+
+**Key tables**:
+- `exploration_history` - Main MCTS exploration tracking with node IDs
+- `mcts_tree_nodes` - Future dedicated tree structure storage (migration available)
+- `sessions` - Session metadata and statistics
+
+**Critical fields added**:
+- `mcts_node_id` - Internal MCTS node identifier for tree reconstruction
+- `parent_node_id` - Parent's MCTS node ID for tree relationships
+- `node_visits` - Visit count for UCB1 calculations
+
+## Known Issues (2025-06-30)
+
+1. **Missing Iteration 0**: Root evaluation (baseline) not being logged to database
+   - MCTS shows "iteration 0" in logs but exploration_history starts from iteration 1
+   - Root node evaluation happening but not persisted properly
+   - Affects completeness of tree analysis
+
+2. **Visit Count Accumulation**: Nodes not getting multiple visits during backpropagation
+   - All nodes show `node_visits = 1` in database
+   - Indicates backpropagation may not be updating visit counts properly
+   - UCB1 calculations may be affected
+
 ## Future Enhancement Opportunities
 
 1. **Dynamic feature combinations**: Allow operations on selected column subsets
@@ -196,5 +272,7 @@ if operation_name == 'statistical_aggregations':
 3. **Feature interaction discovery**: Cross-operation combinations
 4. **Online feature generation**: Selective generation of promising features
 5. **Multi-dataset learning**: Transfer knowledge between registered datasets
+6. **Session resumption**: Complete tree restoration from database state
+7. **Advanced tree analysis**: Exploit validation framework for optimization insights
 
-This architecture provides a solid foundation for rapid feature space exploration while maintaining the benefits of MCTS-driven search strategy.
+This architecture provides a solid foundation for rapid feature space exploration while maintaining the benefits of MCTS-driven search strategy, now enhanced with comprehensive tree persistence and validation capabilities.
