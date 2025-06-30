@@ -430,6 +430,7 @@ class DatasetImporter:
             dataset_logger.info(f"Loaded {len(train_df)} train records with {len(train_df.columns)} columns")
             
             # NEW PIPELINE PATH - All features at once with signal detection during generation
+            dataset_logger.info(f"🔧 Pipeline selection: use_new_pipeline={use_new_pipeline}")
             if use_new_pipeline:
                 dataset_logger.info("🚀 Using new feature pipeline with signal detection during generation...")
                 
@@ -472,7 +473,7 @@ class DatasetImporter:
                 
                 # 2. Generate CUSTOM features only
                 dataset_logger.info("🎯 Generating CUSTOM domain features...")
-                custom_df = feature_space.generate_custom_features(train_df, dataset_name)
+                custom_df = feature_space.generate_custom_features(train_df, dataset_name, auto_register=True, origin='custom')
                 dataset_logger.info(f"Generated {len(custom_df.columns)} custom columns")
                 
                 # Save train_custom table
