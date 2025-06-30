@@ -1,0 +1,76 @@
+# MCTS Configuration with New Feature Pipeline
+# This configuration enables the new feature generation pipeline with:
+# - Signal detection during generation (not post-hoc)
+# - Standardized logging format
+# - Feature metadata tracking
+# - Improved performance
+
+# Inherit from base configuration
+!include mcts_config.yaml
+
+# Enable new feature pipeline
+feature_space:
+  # ENABLE NEW PIPELINE - Main switch
+  use_new_pipeline: true
+  
+  # Signal detection configuration
+  check_signal: true              # Check for signal during generation
+  min_signal_ratio: 0.01         # Minimum ratio of unique values to consider signal
+  signal_sample_size: 1000       # Sample size for signal detection on large datasets
+  lowercase_features: false      # Whether to lowercase all feature names
+  
+  # Pipeline configuration
+  apply_generic_to_custom: true  # Apply generic operations to custom features too
+  cache_intermediate: false      # Cache results after each stage
+  parallel_generation: false     # Run independent stages in parallel
+  
+  # Feature categories to enable
+  enabled_categories:
+    - 'statistical_aggregations'
+    - 'polynomial_features'
+    - 'feature_transformations'
+    - 'text_features'
+    - 'custom_domain'
+  
+  # Category weights for prioritization
+  category_weights:
+    'statistical_aggregations': 1.0
+    'polynomial_features': 0.8
+    'feature_transformations': 0.7
+    'text_features': 0.6
+    'custom_domain': 1.2
+  
+  # Generic operation parameters
+  generic_params:
+    # For statistical aggregations
+    groupby_columns: []  # Auto-detect if empty
+    aggregate_columns: []  # Auto-detect if empty
+    
+    # For polynomial features
+    polynomial_degree: 2
+    
+    # For binning
+    binning_bins: 5
+    
+    # For text features
+    max_text_features: 10
+  
+  # Generic operations to enable
+  generic_operations:
+    statistical_aggregations: true
+    polynomial_features: true
+    binning_features: true
+    ranking_features: true
+    categorical_features: true
+    temporal_features: false  # Disable if no time features
+    text_features: true
+
+# Logging configuration for detailed feature generation info
+logging:
+  level: 'DEBUG'  # Set to DEBUG to see individual feature generation times
+  progress_interval: 10
+  show_memory_usage: true
+
+# Example usage:
+# python mcts.py --config config/mcts_config_with_new_pipeline.yaml
+# python manager.py datasets --register --dataset-name titanic --auto --dataset-path /path/to/titanic/ --config config/mcts_config_with_new_pipeline.yaml

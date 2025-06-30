@@ -91,8 +91,8 @@ class AutoGluonEvaluator:
         
         from .discovery_db import FeatureDiscoveryDB
         
-        # Create temporary DB instance to access dataset registry
-        temp_db = FeatureDiscoveryDB(self.config)
+        # Create temporary DB instance to access dataset registry (read-only mode)
+        temp_db = FeatureDiscoveryDB(self.config, read_only=True)
         
         # Use the new database service API
         dataset_repo = temp_db.db_service.dataset_repo

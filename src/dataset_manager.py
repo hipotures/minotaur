@@ -55,8 +55,8 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            # Create temporary DB connection to lookup dataset
-            temp_db = FeatureDiscoveryDB(self.config)
+            # Create temporary DB connection to lookup dataset (read-only mode)
+            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
             
             # Use the new database service API
             dataset_repo = temp_db.db_service.dataset_repo
@@ -207,7 +207,7 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            temp_db = FeatureDiscoveryDB(self.config)
+            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
             
             # Use the new database service API
             dataset_repo = temp_db.db_service.dataset_repo
@@ -234,7 +234,7 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            temp_db = FeatureDiscoveryDB(self.config)
+            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
             
             # Use the new database service API - first find dataset by name
             dataset_repo = temp_db.db_service.dataset_repo

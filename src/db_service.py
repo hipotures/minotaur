@@ -31,14 +31,16 @@ class DatabaseService:
     using the new repository-based architecture underneath.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], read_only: bool = False):
         """
         Initialize database service with configuration.
         
         Args:
             config: Main MCTS configuration dictionary
+            read_only: If True, don't create new sessions (for read-only access)
         """
         self.config = config
+        self.read_only = read_only
         self.logger = logging.getLogger(__name__)
         
         # Initialize connection manager
@@ -60,7 +62,10 @@ class DatabaseService:
         self.session_name = None
         self.output_manager: Optional[SessionOutputManager] = None
         
-        self.logger.info("Database service initialized successfully")
+        if read_only:
+            self.logger.debug("Database service initialized in read-only mode")
+        else:
+            self.logger.info("Database service initialized successfully")
     
     def _run_migrations(self) -> None:
         """Run database migrations to ensure schema is up to date."""

@@ -462,8 +462,8 @@ class AnalyticsGenerator:
                     import json
                     config = json.loads(row['config_snapshot']) if isinstance(row['config_snapshot'], str) else row['config_snapshot']
                     metric = config.get('autogluon', {}).get('target_metric', 'unknown')
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not read config file: {e}")
             
             status = row.get('status', 'unknown')
             

@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Type, TypeVar, Generic, Union
 from datetime import datetime
 import logging
 import time
+import json
 
 from .connection import DuckDBConnectionManager
 from ..config.logging_config import DatabaseLoggerAdapter
@@ -462,6 +463,162 @@ class BaseRepository(ABC, Generic[T]):
                 'error': str(e),
                 'repository_class': self.__class__.__name__
             }
+    
+    # Helper methods for common row parsing patterns
+    def _parse_json_field(self, data: Dict[str, Any], field_name: str, 
+                         default: Any = None) -> Any:
+        """
+        Parse JSON field from row data.
+        
+        Args:
+            data: Row data dictionary
+            field_name: Name of the field containing JSON
+            default: Default value if parsing fails
+            
+        Returns:
+            Parsed JSON object or default value
+        """
+        value = data.get(field_name)
+        if value is None:
+            return default
+        
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                self.logger.debug(f"Failed to parse JSON from {field_name}: {value}")
+                return default
+        
+        return value
+    
+    def _parse_datetime_field(self, data: Dict[str, Any], field_name: str,
+                            default: Optional[datetime] = None) -> Optional[datetime]:
+        """
+        Parse datetime field from row data.
+        
+        Args:
+            data: Row data dictionary
+            field_name: Name of the field containing datetime
+            default: Default value if parsing fails
+            
+        Returns:
+            Parsed datetime or default value
+        """
+        value = data.get(field_name)
+        if value is None:
+            return default
+        
+        if isinstance(value, datetime):
+            return value
+        
+        if isinstance(value, str):
+            try:
+                # Handle ISO format with Z timezone
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                self.logger.debug(f"Failed to parse datetime from {field_name}: {value}")
+                return default
+        
+        return default
+    
+    def _parse_float_field(self, data: Dict[str, Any], field_name: str,
+                         default: float = 0.0) -> float:
+        """
+        Parse float field from row data.
+        
+        Args:
+            data: Row data dictionary
+            field_name: Name of the field containing float
+            default: Default value if parsing fails
+            
+        Returns:
+            Parsed float or default value
+        """
+        value = data.get(field_name)
+        if value is None:
+            return default
+        
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            self.logger.debug(f"Failed to parse float from {field_name}: {value}")
+            return default
+    
+    def _parse_int_field(self, data: Dict[str, Any], field_name: str,
+                       default: int = 0) -> int:
+        """
+        Parse integer field from row data.
+        
+        Args:
+            data: Row data dictionary
+            field_name: Name of the field containing integer
+            default: Default value if parsing fails
+            
+        Returns:
+            Parsed integer or default value
+        """
+        value = data.get(field_name)
+        if value is None:
+            return default
+        
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            self.logger.debug(f"Failed to parse int from {field_name}: {value}")
+            return default
+    
+    def _parse_bool_field(self, data: Dict[str, Any], field_name: str,
+                        default: bool = False) -> bool:
+        """
+        Parse boolean field from row data.
+        
+        Args:
+            data: Row data dictionary
+            field_name: Name of the field containing boolean
+            default: Default value if field is missing
+            
+        Returns:
+            Parsed boolean or default value
+        """
+        value = data.get(field_name, default)
+        if isinstance(value, bool):
+            return value
+        
+        if isinstance(value, (int, float)):
+            return bool(value)
+        
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        
+        return default
+    
+    def _prepare_row_dict(self, row: Any, columns: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Convert row to dictionary, handling both tuple and dict-like rows.
+        
+        Args:
+            row: Database row (tuple or dict-like object)
+            columns: Column names if row is a tuple
+            
+        Returns:
+            Dictionary representation of row
+        """
+        if hasattr(row, 'keys'):
+            # Row is already dict-like (e.g., from fetchdf)
+            return dict(row)
+        elif columns:
+            # Row is a tuple, zip with column names
+            return dict(zip(columns, row))
+        else:
+            # Try to get columns from table schema
+            try:
+                schema_query = f"SELECT name FROM pragma_table_info('{self.table_name}')"
+                result = self.conn_manager.execute_query(schema_query, fetch='all')
+                columns = [col[0] for col in result]
+                return dict(zip(columns, row))
+            except Exception as e:
+                self.logger.error(f"Failed to get table columns: {e}")
+                raise ValueError(f"Cannot convert row to dict without column information")
 
 
 class ReadOnlyRepository(BaseRepository[T]):

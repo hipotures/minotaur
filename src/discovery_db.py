@@ -31,12 +31,18 @@ class FeatureDiscoveryDB:
     for improved performance and maintainability.
     """
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize database with configuration parameters."""
+    def __init__(self, config: Dict[str, Any], read_only: bool = False):
+        """Initialize database with configuration parameters.
+        
+        Args:
+            config: Configuration dictionary
+            read_only: If True, don't create a new session (for read-only access)
+        """
         self.config = config
+        self.read_only = read_only
         
         # Initialize the new database service layer
-        self.db_service = DatabaseService(config)
+        self.db_service = DatabaseService(config, read_only=read_only)
         
         # Extract session information from the service
         self.session_id = self.db_service.current_session_id
@@ -50,15 +56,18 @@ class FeatureDiscoveryDB:
         self.db_type = 'duckdb'  # New system exclusively uses DuckDB
         self.schema = 'main'
         
-        # Initialize session if not already done
-        if not self.session_id:
+        # Initialize session if not already done and not in read-only mode
+        if not self.session_id and not read_only:
             session_mode = config.get('session', {}).get('mode', 'new')
             resume_session_id = config.get('session', {}).get('resume_session_id')
             self.session_id = self.db_service.initialize_session(session_mode, resume_session_id)
             self.session_name = self.db_service.session_name
             self.output_manager = self.db_service.output_manager
         
-        logger.info(f"Initialized FeatureDiscoveryDB with session_id: {self.session_id[:8]}... (using DatabaseService)")
+        if not read_only:
+            logger.info(f"Initialized FeatureDiscoveryDB with session_id: {self.session_id[:8]}... (using DatabaseService)")
+        else:
+            logger.debug("Initialized FeatureDiscoveryDB in read-only mode (no session created)")
     
     def init_database(self):
         """Initialize database schema - delegated to DatabaseService."""

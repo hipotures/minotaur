@@ -60,6 +60,20 @@ def setup_logging(config: Dict[str, Any]) -> None:
         handlers=[file_handler]
     )
     
+    # Setup dedicated MCTS logger
+    mcts_logger = logging.getLogger('mcts')
+    mcts_handler = RotatingFileHandler(
+        'logs/mcts.log',
+        maxBytes=log_config.get('mcts_log_size_mb', 50) * 1024 * 1024,
+        backupCount=log_config.get('mcts_backup_count', 3)
+    )
+    mcts_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - [%(session_name)s] - MCTS - %(levelname)s - %(message)s'
+    ))
+    mcts_logger.addHandler(mcts_handler)
+    mcts_logger.setLevel(logging.DEBUG)  # Always DEBUG for MCTS logger
+    mcts_logger.propagate = True  # Also log to main log file
+    
     # Reduce verbosity of some libraries
     logging.getLogger('autogluon').setLevel(logging.INFO)  # Show AutoGluon logs
     logging.getLogger('urllib3').setLevel(logging.WARNING)
@@ -69,6 +83,7 @@ def setup_logging(config: Dict[str, Any]) -> None:
     
     logger = logging.getLogger(__name__)
     logger.info("Logging configuration initialized")
+    logger.info(f"MCTS logger initialized at logs/mcts.log with DEBUG level")
 
 class FeatureDiscoveryRunner:
     """Main runner for MCTS feature discovery system."""

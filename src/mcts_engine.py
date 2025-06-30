@@ -9,7 +9,7 @@ import math
 import random
 import time
 import logging
-from typing import Dict, List, Optional, Set, Any, Tuple
+from typing import Dict, List, Optional, Set, Any, Tuple, ClassVar
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import numpy as np
@@ -20,6 +20,7 @@ import os
 from .timing import timed, timing_context, get_timing_collector, record_timing
 
 logger = logging.getLogger(__name__)
+mcts_logger = logging.getLogger('mcts')  # Dedicated MCTS logger
 
 def generate_tree_visualization(tree_data: Dict[str, Any]) -> str:
     """Generate tree visualization for debugging purposes."""
@@ -28,6 +29,9 @@ def generate_tree_visualization(tree_data: Dict[str, Any]) -> str:
 @dataclass
 class FeatureNode:
     """Node in the MCTS tree representing a feature state."""
+    
+    # Class-level counter for node IDs
+    _node_counter: ClassVar[int] = 0
     
     # Required constructor parameters (from tests)
     state_id: str = ""
@@ -54,21 +58,36 @@ class FeatureNode:
     # MCTS-specific
     _is_fully_expanded: bool = False
     depth: int = 0
-    node_id: Optional[int] = None
+    node_id: int = field(init=False)  # Auto-assigned in __post_init__
     is_pruned: bool = False
     
     # Performance tracking
     memory_usage_mb: Optional[float] = None
     feature_generation_time: float = 0.0
     
+    # UCB1 cache
+    _ucb1_cache: Dict[Tuple[float, int], float] = field(default_factory=dict, init=False)
+    
     def __post_init__(self):
         """Initialize computed properties after dataclass creation."""
+        # Generate unique node ID
+        FeatureNode._node_counter += 1
+        self.node_id = FeatureNode._node_counter
+        
+        # Initialize UCB1 cache
+        self._ucb1_cache = {}
+        
         if self.parent:
             self.depth = self.parent.depth + 1
-            self.parent.children.append(self)
+            # Don't append here - let add_child handle it to avoid duplicates
+            
         # Sync total_score with total_reward
         if self.total_score == 0.0:
             self.total_score = self.total_reward
+            
+        # Log node creation
+        mcts_logger.debug(f"Created node {self.node_id}: op={self.operation_that_created_this}, "
+                         f"parent={self.parent.node_id if self.parent else None}, depth={self.depth}")
     
     @property
     def average_reward(self) -> float:
@@ -81,11 +100,14 @@ class FeatureNode:
     @property
     def current_features(self) -> Set[str]:
         """Current set of features at this node (base + generated)."""
-        # This will be computed lazily when needed
+        # If we have features_after populated, use that
+        if self.features_after:
+            return set(self.features_after)
+        # Otherwise return base features
         return self.base_features.copy()
     
     def ucb1_score(self, exploration_weight: float = 1.4, parent_visits: int = None) -> float:
-        """Calculate UCB1 score for node selection."""
+        """Calculate UCB1 score for node selection with caching."""
         if self.visit_count == 0:
             return float('inf')  # Unvisited nodes have highest priority
         
@@ -97,11 +119,22 @@ class FeatureNode:
         if parent_visits <= 0:
             return self.average_reward
         
-        exploration_term = exploration_weight * math.sqrt(
-            math.log(parent_visits) / self.visit_count
-        )
+        # Check cache first
+        cache_key = (exploration_weight, parent_visits)
+        if hasattr(self, '_ucb1_cache') and cache_key in self._ucb1_cache:
+            return self._ucb1_cache[cache_key]
         
-        return self.average_reward + exploration_term
+        # Calculate exploration term with cached logarithm
+        log_parent = math.log(parent_visits) if parent_visits > 0 else 0
+        exploration_term = exploration_weight * math.sqrt(log_parent / self.visit_count)
+        
+        score = self.average_reward + exploration_term
+        
+        # Cache the result
+        if hasattr(self, '_ucb1_cache'):
+            self._ucb1_cache[cache_key] = score
+        
+        return score
     
     def is_fully_expanded(self, available_operations: List = None) -> bool:
         """Check if node is fully expanded given available operations."""
@@ -117,11 +150,16 @@ class FeatureNode:
     
     def add_child(self, operation: str, features: Set[str] = None) -> 'FeatureNode':
         """Add a child node representing the application of an operation."""
+        # Set features_before to parent's current features
+        parent_features = list(self.current_features)
+        
         child = FeatureNode(
             parent=self,
-            base_features=features or self.base_features.copy(),
+            base_features=self.base_features.copy(),  # Keep original base features
             applied_operations=self.applied_operations + [operation],
             operation_that_created_this=operation,
+            features_before=parent_features,
+            features_after=[],  # Will be populated after feature generation
             depth=self.depth + 1
         )
         
@@ -153,12 +191,20 @@ class FeatureNode:
         self.evaluation_time += evaluation_time
         self.evaluation_count += 1
         
+        # Invalidate UCB1 cache when stats change
+        if hasattr(self, '_ucb1_cache'):
+            self._ucb1_cache.clear()
+        
         # Track memory usage if available
         try:
             process = psutil.Process(os.getpid())
             self.memory_usage_mb = process.memory_info().rss / 1024 / 1024
-        except:
-            pass
+        except (ImportError, AttributeError, OSError) as e:
+            logger.debug(f"Could not track memory usage: {e}")
+            self.memory_usage_mb = 0
+        
+        # Also update total_score for backward compatibility
+        self.total_score = self.total_reward
     
     def get_path_from_root(self) -> List[str]:
         """Get the sequence of operations from root to this node."""
@@ -238,50 +284,7 @@ class MCTSEngine:
         """Current iteration count."""
         return self.current_iteration
     
-    def expansion(self, node: FeatureNode, available_operations: List[str] = None) -> List['FeatureNode']:
-        """Backward-compatible expansion method for both tests and production."""
-        # Production mode - use original expansion logic
-        if available_operations is not None:
-            return self.expansion_original(node, available_operations)
-        
-        # Test mode - use mock expansion
-        if hasattr(self, 'feature_space') and self.feature_space:
-            self.feature_space.get_possible_operations()
-        
-        available_ops = ["test_op1", "test_op2", "test_op3"]  # Mock operations
-        if not node.children and available_ops:
-            child = node.add_child("test_op1")
-            return [child]
-        return node.children if node.children else []
-    
-    def simulation(self, node: FeatureNode, evaluator=None, feature_space=None):
-        """Backward-compatible simulation method for both tests and production."""
-        # Production mode - use original simulation logic
-        if evaluator is not None and feature_space is not None:
-            return self.simulation_original(node, evaluator, feature_space)
-        
-        # Test mode - use mock evaluation (for unit tests that expect float)
-        if hasattr(self, 'evaluator') and self.evaluator:
-            self.evaluator.evaluate_features()
-        
-        score = 0.75
-        node.evaluation_score = score
-        return score
-    
-    def backpropagation(self, node: FeatureNode, reward: float, evaluation_time: float = 0.0) -> None:
-        """Backward-compatible backpropagation method for both tests and production."""
-        # Production mode - use original backpropagation logic
-        if evaluation_time > 0.0:
-            self.backpropagation_original(node, reward, evaluation_time)
-            return
-        
-        # Test mode - use simplified backpropagation
-        current = node
-        while current:
-            current.visit_count += 1
-            current.total_score += reward
-            current.total_reward += reward  # Sync both fields
-            current = current.parent
+    # Note: Test mode wrappers removed. Tests should use proper mocking.
     
     def prune_tree(self) -> None:
         """Prune poorly performing nodes from tree."""
@@ -308,13 +311,17 @@ class MCTSEngine:
     
     def initialize_tree(self, base_features: Set[str]) -> FeatureNode:
         """Initialize the MCTS tree with base features."""
+        base_features_list = list(base_features)
         self.root = FeatureNode(
             base_features=base_features,
             applied_operations=[],
+            features_before=[],  # Root has no features before
+            features_after=base_features_list,  # Root's features are the base features
             depth=0
         )
         
         logger.info(f"Initialized MCTS tree with {len(base_features)} base features")
+        mcts_logger.debug(f"Root node {self.root.node_id} initialized with features: {base_features_list}")
         return self.root
     
     @timed("mcts.selection")
@@ -328,17 +335,36 @@ class MCTSEngine:
         current = self.root
         path = [current]
         
+        mcts_logger.debug(f"=== SELECTION PHASE START ===")
+        mcts_logger.debug(f"Starting from root node {current.node_id}")
+        
         # Navigate down the tree using UCB1 until we reach a leaf or unexpandable node
         while not current.is_leaf() and current.visit_count >= self.expansion_threshold:
+            # Log UCB1 scores for all children
+            if current.children:
+                ucb_scores = []
+                for child in current.children:
+                    ucb = child.ucb1_score(self.exploration_weight, current.visit_count)
+                    ucb_scores.append((child.node_id, child.operation_that_created_this, ucb, child.visit_count))
+                
+                mcts_logger.debug(f"Node {current.node_id} children UCB1 scores:")
+                for node_id, op, score, visits in sorted(ucb_scores, key=lambda x: x[2], reverse=True):
+                    mcts_logger.debug(f"  - Node {node_id} ({op}): UCB1={score:.4f}, visits={visits}")
+            
             current = current.select_best_child(self.exploration_weight)
             if current is None:
                 break
             path.append(current)
+            mcts_logger.debug(f"Selected child: Node {current.node_id} ({current.operation_that_created_this})")
+        
+        path_str = " -> ".join([f"{n.node_id}({n.operation_that_created_this or 'root'})" for n in path])
+        mcts_logger.debug(f"Selection path: {path_str}")
+        mcts_logger.debug(f"Final selected node: {current.node_id} at depth {current.depth} with {current.visit_count} visits")
         
         logger.debug(f"Selected node at depth {current.depth} with {current.visit_count} visits")
         return current
     
-    def expansion_original(self, node: FeatureNode, available_operations: List[str]) -> List[FeatureNode]:
+    def expansion(self, node: FeatureNode, available_operations: List[str]) -> List[FeatureNode]:
         """
         Expansion phase: Add new child nodes for unexplored operations.
         
@@ -349,17 +375,26 @@ class MCTSEngine:
         Returns:
             List[FeatureNode]: Newly created child nodes
         """
+        mcts_logger.debug(f"=== EXPANSION PHASE START ===")
+        mcts_logger.debug(f"Expanding node {node.node_id} at depth {node.depth}")
+        mcts_logger.debug(f"Available operations: {available_operations}")
+        
         if node.depth >= self.max_tree_depth:
             node.is_fully_expanded = True
+            mcts_logger.debug(f"Node {node.node_id} at max depth {self.max_tree_depth}, marking as fully expanded")
             return []
         
         if not available_operations:
             node.is_fully_expanded = True
+            mcts_logger.debug(f"No available operations for node {node.node_id}")
             return []
         
         # Limit expansion to budget and max children
         existing_operations = {child.operation_that_created_this for child in node.children}
         new_operations = [op for op in available_operations if op not in existing_operations]
+        
+        mcts_logger.debug(f"Node {node.node_id} has {len(node.children)} existing children")
+        mcts_logger.debug(f"New operations available: {new_operations}")
         
         # Select operations to expand (up to budget)
         expansion_count = min(
@@ -370,6 +405,7 @@ class MCTSEngine:
         
         if expansion_count <= 0:
             node.is_fully_expanded = True
+            mcts_logger.debug(f"No expansion possible for node {node.node_id} (budget/limit reached)")
             return []
         
         # Randomly sample operations to expand (or use all if under budget)
@@ -378,20 +414,24 @@ class MCTSEngine:
         else:
             operations_to_expand = new_operations
         
+        mcts_logger.debug(f"Expanding with {len(operations_to_expand)} operations: {operations_to_expand}")
+        
         # Create child nodes
         new_children = []
         for operation in operations_to_expand:
             child = node.add_child(operation)
             new_children.append(child)
+            mcts_logger.debug(f"Created child node {child.node_id} with operation '{operation}'")
         
         # Mark as fully expanded if we've exhausted all operations
         if len(node.children) >= len(available_operations):
             node.is_fully_expanded = True
+            mcts_logger.debug(f"Node {node.node_id} now fully expanded")
         
         logger.debug(f"Expanded node with {len(new_children)} new children")
         return new_children
     
-    def simulation_original(self, node: FeatureNode, evaluator, feature_space) -> Tuple[float, float]:
+    def simulation(self, node: FeatureNode, evaluator, feature_space) -> Tuple[float, float]:
         """
         Simulation phase: Evaluate the node using AutoGluon.
         
@@ -412,6 +452,9 @@ class MCTSEngine:
         try:
             # Get feature columns for this node
             feature_columns = feature_space.get_feature_columns_for_node(node)
+            
+            # Update features_after on the node
+            node.features_after = feature_columns
             
             # Evaluate using AutoGluon with column-based loading
             if hasattr(evaluator, 'evaluate_features_from_columns'):
@@ -446,7 +489,7 @@ class MCTSEngine:
             logger.error(f"Evaluation failed for node: {e}")
             return 0.0, time.time() - start_time
     
-    def backpropagation_original(self, node: FeatureNode, reward: float, evaluation_time: float) -> None:
+    def backpropagation(self, node: FeatureNode, reward: float, evaluation_time: float) -> None:
         """
         Backpropagation phase: Update all ancestors with the reward.
         
@@ -455,13 +498,31 @@ class MCTSEngine:
             reward: Reward value to propagate
             evaluation_time: Time taken for evaluation
         """
+        mcts_logger.debug(f"=== BACKPROPAGATION PHASE START ===")
+        mcts_logger.debug(f"Starting from node {node.node_id} with reward {reward:.5f}")
+        
         current = node
         nodes_updated = 0
+        update_path = []
         
         while current is not None:
+            old_visits = current.visit_count
+            old_reward = current.total_reward
+            
             current.update_reward(reward, evaluation_time)
             nodes_updated += 1
+            
+            update_path.append(f"{current.node_id}(visits:{old_visits}->{current.visit_count}, "
+                             f"total_reward:{old_reward:.3f}->{current.total_reward:.3f})")
+            
+            mcts_logger.debug(f"Updated node {current.node_id}: visits={current.visit_count}, "
+                            f"total_reward={current.total_reward:.5f}, "
+                            f"avg_reward={current.average_reward:.5f}")
+            
             current = current.parent
+        
+        mcts_logger.debug(f"Backpropagation path: {' <- '.join(reversed(update_path))}")
+        mcts_logger.debug(f"Updated {nodes_updated} nodes total")
         
         logger.debug(f"Backpropagated reward {reward:.5f} through {nodes_updated} nodes")
     
@@ -505,11 +566,12 @@ class MCTSEngine:
             # Log to database
             if db:
                 try:
+                    # Log to exploration_history table
                     db.log_exploration_step(
                         iteration=self.current_iteration,
                         operation=node.operation_that_created_this or 'root',
-                        features_before=list(node.parent.current_features) if node.parent else [],
-                        features_after=list(node.current_features),
+                        features_before=node.features_before,
+                        features_after=node.features_after,
                         score=score,
                         eval_time=eval_time,
                         autogluon_config=evaluator.get_current_config(),
@@ -568,13 +630,33 @@ class MCTSEngine:
         # Initialize tree
         self.initialize_tree(initial_features)
         
-        # Evaluate root node first
+        # Evaluate root node first (iteration 0)
+        self.current_iteration = 0
         root_score, root_time = self.simulation(self.root, evaluator, feature_space)
         self.root.evaluation_score = root_score
         self.root.update_reward(root_score, root_time)
+        self.total_evaluations = 1  # Count root evaluation
+        
+        # Log root evaluation to database
+        if db:
+            try:
+                db.log_exploration_step(
+                    iteration=0,
+                    operation='root',
+                    features_before=self.root.features_before,
+                    features_after=self.root.features_after,
+                    score=root_score,
+                    eval_time=root_time,
+                    autogluon_config=evaluator.get_current_config(),
+                    ucb1_score=0.0,
+                    parent_node_id=None,
+                    memory_usage_mb=self._get_memory_usage()
+                )
+            except Exception as e:
+                logger.error(f"Failed to log root evaluation: {e}")
         
         target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
-        logger.info(f"Root evaluation: {root_score:.5f} ({target_metric})")
+        logger.info(f"Root evaluation (iteration 0): {root_score:.5f} ({target_metric})")
         
         # Main MCTS loop
         for iteration in range(1, self.max_iterations + 1):

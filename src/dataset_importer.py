@@ -381,6 +381,9 @@ class DatasetImporter:
         # Initialize FeatureSpace
         feature_space = FeatureSpace(config)
         
+        # Check if new pipeline is enabled
+        use_new_pipeline = config.get('feature_space', {}).get('use_new_pipeline', False)
+        
         # Process train data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train'").fetchone():
             dataset_logger.info("📊 Generating features for train data...")
@@ -389,78 +392,107 @@ class DatasetImporter:
             train_df = conn.execute("SELECT * FROM train").df()
             dataset_logger.info(f"Loaded {len(train_df)} train records with {len(train_df.columns)} columns")
             
-            # 1. Generate GENERIC features only
-            dataset_logger.info("🔧 Generating GENERIC features...")
-            generic_df = feature_space.generate_generic_features(train_df)
-            dataset_logger.info(f"Generated {len(generic_df.columns)} generic columns")
-            
-            # Save train_generic table
-            conn.execute("DROP TABLE IF EXISTS train_generic")
-            conn.register('generic_df', generic_df)
-            conn.execute("CREATE TABLE train_generic AS SELECT * FROM generic_df")
-            conn.unregister('generic_df')
-            dataset_logger.info(f"✅ Created 'train_generic' table with {len(generic_df.columns)} columns")
-            
-            # 2. Generate CUSTOM features only
-            dataset_logger.info("🎯 Generating CUSTOM domain features...")
-            custom_df = feature_space.generate_custom_features(train_df, dataset_name)
-            dataset_logger.info(f"Generated {len(custom_df.columns)} custom columns")
-            
-            # Save train_custom table
-            conn.execute("DROP TABLE IF EXISTS train_custom")
-            conn.register('custom_df', custom_df)
-            conn.execute("CREATE TABLE train_custom AS SELECT * FROM custom_df")
-            conn.unregister('custom_df')
-            dataset_logger.info(f"✅ Created 'train_custom' table with {len(custom_df.columns)} columns")
-            
-            # 3. Create train_features by column concatenation in DuckDB
-            dataset_logger.info("🔗 Creating train_features (train + train_generic + train_custom)...")
-            
-            # Get column names from each table to handle duplicates
-            train_cols = conn.execute("SELECT name FROM pragma_table_info('train')").fetchall()
-            generic_cols = conn.execute("SELECT name FROM pragma_table_info('train_generic')").fetchall()
-            custom_cols = conn.execute("SELECT name FROM pragma_table_info('train_custom')").fetchall()
-            
-            # Build deduplicated column list
-            seen_columns = set()
-            select_parts = []
-            
-            # Add all columns from train table
-            for col in train_cols:
-                col_name = col[0]
-                select_parts.append(f't."{col_name}"')
-                seen_columns.add(col_name)
-            
-            # Add non-duplicate columns from generic table
-            for col in generic_cols:
-                col_name = col[0]
-                if col_name not in seen_columns:
-                    select_parts.append(f'g."{col_name}"')
+            # NEW PIPELINE PATH - All features at once with signal detection during generation
+            if use_new_pipeline:
+                dataset_logger.info("🚀 Using new feature pipeline with signal detection during generation...")
+                
+                # Generate all features using pipeline
+                features_df = feature_space.generate_all_features_pipeline(
+                    train_df, 
+                    dataset_name=dataset_name,
+                    target_column=target_column,
+                    id_column=id_column
+                )
+                
+                # Save directly as train_features (no post-hoc filtering needed)
+                conn.execute("DROP TABLE IF EXISTS train_features")
+                conn.register('features_df', features_df)
+                conn.execute("CREATE TABLE train_features AS SELECT * FROM features_df")
+                conn.unregister('features_df')
+                
+                dataset_logger.info(f"✅ Created 'train_features' table with {len(features_df.columns)} columns (signal checked during generation)")
+                
+                # Save feature metadata
+                metadata = feature_space.get_feature_metadata()
+                dataset_logger.info(f"📊 Feature statistics: {len(metadata)} total, "
+                                  f"{sum(1 for m in metadata.values() if m.has_signal)} with signal")
+                
+                # Skip the old logic
+                valid_train_columns = list(features_df.columns)
+            else:
+                # OLD PIPELINE PATH - Generate features separately with post-hoc filtering
+                # 1. Generate GENERIC features only
+                dataset_logger.info("🔧 Generating GENERIC features...")
+                generic_df = feature_space.generate_generic_features(train_df)
+                dataset_logger.info(f"Generated {len(generic_df.columns)} generic columns")
+                
+                # Save train_generic table
+                conn.execute("DROP TABLE IF EXISTS train_generic")
+                conn.register('generic_df', generic_df)
+                conn.execute("CREATE TABLE train_generic AS SELECT * FROM generic_df")
+                conn.unregister('generic_df')
+                dataset_logger.info(f"✅ Created 'train_generic' table with {len(generic_df.columns)} columns")
+                
+                # 2. Generate CUSTOM features only
+                dataset_logger.info("🎯 Generating CUSTOM domain features...")
+                custom_df = feature_space.generate_custom_features(train_df, dataset_name)
+                dataset_logger.info(f"Generated {len(custom_df.columns)} custom columns")
+                
+                # Save train_custom table
+                conn.execute("DROP TABLE IF EXISTS train_custom")
+                conn.register('custom_df', custom_df)
+                conn.execute("CREATE TABLE train_custom AS SELECT * FROM custom_df")
+                conn.unregister('custom_df')
+                dataset_logger.info(f"✅ Created 'train_custom' table with {len(custom_df.columns)} columns")
+                
+                # 3. Create train_features by column concatenation in DuckDB
+                dataset_logger.info("🔗 Creating train_features (train + train_generic + train_custom)...")
+                
+                # Get column names from each table to handle duplicates
+                train_cols = conn.execute("SELECT name FROM pragma_table_info('train')").fetchall()
+                generic_cols = conn.execute("SELECT name FROM pragma_table_info('train_generic')").fetchall()
+                custom_cols = conn.execute("SELECT name FROM pragma_table_info('train_custom')").fetchall()
+                
+                # Build deduplicated column list
+                seen_columns = set()
+                select_parts = []
+                
+                # Add all columns from train table
+                for col in train_cols:
+                    col_name = col[0]
+                    select_parts.append(f't."{col_name}"')
                     seen_columns.add(col_name)
-            
-            # Add non-duplicate columns from custom table
-            for col in custom_cols:
-                col_name = col[0]
-                if col_name not in seen_columns:
-                    select_parts.append(f'c."{col_name}"')
-                    seen_columns.add(col_name)
-            
-            # Build the SELECT statement
-            select_clause = ", ".join(select_parts)
-            
-            conn.execute(f"""
-                DROP TABLE IF EXISTS train_features;
-                CREATE TABLE train_features AS 
-                SELECT {select_clause}
-                FROM train t, train_generic g, train_custom c 
-                WHERE t.rowid = g.rowid AND g.rowid = c.rowid
-            """)
-            
-            result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('train_features')").fetchone()
-            dataset_logger.info(f"✅ Created 'train_features' table with {result[0]} columns")
-            
-            # Filter out no-signal columns from train_features and get valid column list
-            valid_train_columns = self._filter_no_signal_columns(conn, 'train_features', target_column, dataset_logger)
+                
+                # Add non-duplicate columns from generic table
+                for col in generic_cols:
+                    col_name = col[0]
+                    if col_name not in seen_columns:
+                        select_parts.append(f'g."{col_name}"')
+                        seen_columns.add(col_name)
+                
+                # Add non-duplicate columns from custom table
+                for col in custom_cols:
+                    col_name = col[0]
+                    if col_name not in seen_columns:
+                        select_parts.append(f'c."{col_name}"')
+                        seen_columns.add(col_name)
+                
+                # Build the SELECT statement
+                select_clause = ", ".join(select_parts)
+                
+                conn.execute(f"""
+                    DROP TABLE IF EXISTS train_features;
+                    CREATE TABLE train_features AS 
+                    SELECT {select_clause}
+                    FROM train t, train_generic g, train_custom c 
+                    WHERE t.rowid = g.rowid AND g.rowid = c.rowid
+                """)
+                
+                result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('train_features')").fetchone()
+                dataset_logger.info(f"✅ Created 'train_features' table with {result[0]} columns")
+                
+                # Filter out no-signal columns from train_features and get valid column list
+                valid_train_columns = self._filter_no_signal_columns(conn, 'train_features', target_column, dataset_logger)
         
         # Process test data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").fetchone():
@@ -474,9 +506,39 @@ class DatasetImporter:
             if target_column in test_df.columns:
                 test_df = test_df.drop(columns=[target_column])
             
-            # 1. Generate GENERIC features for test (without signal checking)
-            dataset_logger.info("🔧 Generating GENERIC features for test...")
-            test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False)
+            # NEW PIPELINE PATH for test data
+            if use_new_pipeline:
+                dataset_logger.info("🚀 Using new feature pipeline for test data...")
+                
+                # Configure to not check signal for test data
+                feature_space._adapter.generator.check_signal = False
+                
+                # Generate all features using pipeline
+                test_features_df = feature_space.generate_all_features_pipeline(
+                    test_df, 
+                    dataset_name=dataset_name,
+                    target_column=None,  # No target in test
+                    id_column=id_column
+                )
+                
+                # Align with train columns
+                if 'valid_train_columns' in locals():
+                    # Keep only columns that exist in training
+                    common_columns = [col for col in valid_train_columns if col in test_features_df.columns]
+                    test_features_df = test_features_df[common_columns]
+                
+                # Save directly as test_features
+                conn.execute("DROP TABLE IF EXISTS test_features")
+                conn.register('test_features_df', test_features_df)
+                conn.execute("CREATE TABLE test_features AS SELECT * FROM test_features_df")
+                conn.unregister('test_features_df')
+                
+                dataset_logger.info(f"✅ Created 'test_features' table with {len(test_features_df.columns)} columns")
+            else:
+                # OLD PIPELINE PATH for test data
+                # 1. Generate GENERIC features for test (without signal checking)
+                dataset_logger.info("🔧 Generating GENERIC features for test...")
+                test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False)
             dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
             
             # Save test_generic table

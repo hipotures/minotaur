@@ -54,6 +54,10 @@ class FeatureSpace:
         self.autogluon_config = config['autogluon']
         self.duckdb_manager = duckdb_manager
         
+        # New pipeline adapter (optional)
+        self._adapter = None
+        self._use_new_pipeline = config.get('feature_space', {}).get('use_new_pipeline', False)
+        
         # Feature operation definitions
         self.operations: Dict[str, FeatureOperation] = {}
         
@@ -87,6 +91,16 @@ class FeatureSpace:
         #     self._load_feature_stats_from_history()
         
         logger.info(f"Initialized FeatureSpace with {len(self.operations)} operations from src/features/")
+        
+        # Initialize adapter if new pipeline is enabled
+        if self._use_new_pipeline:
+            try:
+                from .features.space_adapter import create_adapter
+                self._adapter = create_adapter(config, duckdb_manager)
+                logger.info("✨ New feature pipeline enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize new pipeline adapter: {e}")
+                self._use_new_pipeline = False
     
     def _load_feature_operations(self):
         """Load feature operations from src/features/ modules."""
@@ -341,8 +355,8 @@ class FeatureSpace:
                     SELECT name FROM pragma_table_info('train_features')
                 """).fetchall()
                 return {col[0] for col in result}
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not get table columns from DuckDB: {e}")
         
         # Fallback - return empty set
         return set()
@@ -528,6 +542,10 @@ class FeatureSpace:
         Generate generic features using new modular architecture.
         Used by dataset registration process.
         """
+        # Use new pipeline if enabled and available
+        if self._use_new_pipeline and self._adapter:
+            return self._adapter.generate_generic_features_new(df, check_signal)
+        
         logger.info("🔧 Generating generic features using modular architecture...")
         start_time = time.time()
         
@@ -661,6 +679,10 @@ class FeatureSpace:
         Generate custom domain-specific features using new modular architecture.
         Used by dataset registration process.
         """
+        # Use new pipeline if enabled and available
+        if self._use_new_pipeline and self._adapter:
+            return self._adapter.generate_custom_features_new(df, dataset_name, check_signal)
+        
         logger.info(f"🎯 Generating custom domain features for: {dataset_name}")
         start_time = time.time()
         
@@ -717,6 +739,23 @@ class FeatureSpace:
         if hasattr(self, 'feature_cache'):
             self.feature_cache.clear()
         logger.debug("Feature space cleanup completed")
+    
+    def get_feature_metadata(self) -> Dict[str, Any]:
+        """Get feature metadata if using new pipeline."""
+        if self._use_new_pipeline and self._adapter:
+            return self._adapter.get_feature_metadata()
+        return {}
+    
+    def generate_all_features_pipeline(self, df: pd.DataFrame, dataset_name: str, 
+                                     target_column: Optional[str] = None,
+                                     id_column: Optional[str] = None) -> pd.DataFrame:
+        """Generate all features using new pipeline (if enabled)."""
+        if self._use_new_pipeline and self._adapter:
+            return self._adapter.generate_all_features_pipeline(
+                df, dataset_name, target_column, id_column
+            )
+        else:
+            raise ValueError("New pipeline not enabled. Set use_new_pipeline: true in config")
     
     def _get_node_cache_key(self, node) -> str:
         """Generate cache key for node."""

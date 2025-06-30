@@ -98,6 +98,10 @@ class DuckDBDataManager:
         # Dataset metadata cache (for backward compatibility)
         self.dataset_metadata: Dict[str, Dict[str, Any]] = {}
         
+        # Column schema cache to avoid repeated queries
+        self._column_cache: Dict[str, List[Tuple[str, str]]] = {}
+        self._column_set_cache: Dict[str, set] = {}
+        
         # Column mapping cache - will be populated after data loading
         self.column_mapping: Dict[str, Optional[str]] = {}
         
@@ -319,9 +323,10 @@ class DuckDBDataManager:
                 logger.info(f"Train table columns: {column_names}")
                 
                 # Build column list for JSON conversion
-                json_columns = []
-                for col in column_names:
-                    json_columns.append(f"'{col}': COALESCE(CAST(\"{col}\" AS VARCHAR), 'NULL')")
+                json_columns = [
+                    f"'{col}': COALESCE(CAST(\"{col}\" AS VARCHAR), 'NULL')"
+                    for col in column_names
+                ]
                 
                 json_construction = '{' + ', '.join(json_columns) + '}'
                 
@@ -348,9 +353,10 @@ class DuckDBDataManager:
                 logger.info(f"Test table columns: {test_column_names}")
                 
                 # Build JSON for test table
-                test_json_columns = []
-                for col in test_column_names:
-                    test_json_columns.append(f"'{col}': COALESCE(CAST(\"{col}\" AS VARCHAR), 'NULL')")
+                test_json_columns = [
+                    f"'{col}': COALESCE(CAST(\"{col}\" AS VARCHAR), 'NULL')"
+                    for col in test_column_names
+                ]
                 
                 test_json_construction = '{' + ', '.join(test_json_columns) + '}'
                 
@@ -1204,6 +1210,70 @@ class DuckDBDataManager:
         """Clear dataset metadata cache."""
         self.dataset_metadata.clear()
         logger.info("DuckDB dataset metadata cache cleared")
+    
+    def get_table_columns(self, table_name: str, use_cache: bool = True) -> List[Tuple[str, str]]:
+        """Get column names and types for a table with caching.
+        
+        Args:
+            table_name: Name of the table
+            use_cache: Whether to use cached results
+            
+        Returns:
+            List of (column_name, column_type) tuples
+        """
+        if use_cache and table_name in self._column_cache:
+            return self._column_cache[table_name]
+        
+        try:
+            # Query column information
+            query = f"DESCRIBE {table_name}"
+            result = self.connection.execute(query).fetchall()
+            
+            # Cache the result
+            self._column_cache[table_name] = result
+            
+            # Also update the column set cache
+            self._column_set_cache[table_name] = {col[0] for col in result}
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get columns for table {table_name}: {e}")
+            return []
+    
+    def get_column_set(self, table_name: str, use_cache: bool = True) -> set:
+        """Get set of column names for a table with caching.
+        
+        Args:
+            table_name: Name of the table
+            use_cache: Whether to use cached results
+            
+        Returns:
+            Set of column names
+        """
+        if use_cache and table_name in self._column_set_cache:
+            return self._column_set_cache[table_name]
+        
+        # Get columns and extract names
+        columns = self.get_table_columns(table_name, use_cache)
+        column_set = {col[0] for col in columns}
+        
+        # Cache the set
+        self._column_set_cache[table_name] = column_set
+        
+        return column_set
+    
+    def invalidate_column_cache(self, table_name: Optional[str] = None):
+        """Invalidate column cache for a table or all tables.
+        
+        Args:
+            table_name: Specific table to invalidate, or None for all tables
+        """
+        if table_name:
+            self._column_cache.pop(table_name, None)
+            self._column_set_cache.pop(table_name, None)
+        else:
+            self._column_cache.clear()
+            self._column_set_cache.clear()
     
     def close(self) -> None:
         """Close DuckDB connection."""
