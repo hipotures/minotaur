@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 14:15
-Compatible with commit: TBD
-Changes: Created comprehensive features system overview documentation
+Last Updated: 2025-06-30 23:40
+Compatible with commit: bcc1217
+Changes: Added auto-registration process documentation and enhanced origin field coverage
 -->
 
 # Feature Engineering System - Overview
@@ -124,6 +124,12 @@ SELECT origin, COUNT(*) as count FROM feature_catalog GROUP BY origin;
 - **`train`**: Original dataset columns (e.g., Nitrogen, Phosphorous, Age, Sex)
 - **`generic`**: Domain-agnostic generated features (statistical_aggregations, polynomial_features, etc.)
 - **`custom`**: Domain-specific generated features (titanic_features, agricultural_indicators, etc.)
+
+**Auto-Registration Process:**
+All features are automatically registered during dataset import and feature generation:
+1. **Train Features**: Original columns automatically registered when dataset is imported
+2. **Generated Features**: Auto-registered during feature generation with appropriate origin classification
+3. **No Manual Management**: Feature catalog is maintained automatically without user intervention
 
 ### MCTS Integration Benefits
 - **Complete Feature Visibility**: MCTS can now see all available features (original + generated)

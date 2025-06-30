@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 14:45
-Compatible with commit: TBD
-Changes: Created comprehensive development guide for feature operations
+Last Updated: 2025-06-30 23:40
+Compatible with commit: bcc1217
+Changes: Added origin field and auto-registration API guide for developers
 -->
 
 # Features Development - Custom Operations Guide
@@ -19,6 +19,61 @@ Generic Operations          Custom Domain Operations
 Domain-agnostic            Competition-specific
 Reusable across datasets   Optimized for problem domain
 Statistical/Mathematical   Business logic/Domain knowledge
+```
+
+## 📋 Origin Field & Auto-Registration (Important for Developers)
+
+### Understanding Feature Origins
+
+All features in Minotaur are automatically classified by **origin** during generation:
+
+- **`origin='train'`**: Original dataset columns (handled automatically during dataset import)
+- **`origin='generic'`**: Your generic operations (domain-agnostic)
+- **`origin='custom'`**: Your custom operations (domain-specific)
+
+### Auto-Registration API
+
+**All feature operations inherit auto-registration functionality**:
+
+```python
+def generate_features(self, df: pd.DataFrame, 
+                     auto_register: bool = True, 
+                     origin: str = 'generic',
+                     **kwargs) -> Dict[str, pd.Series]:
+    """
+    Generate features with automatic catalog registration.
+    
+    Args:
+        df: Input dataframe
+        auto_register: Whether to register features in catalog
+        origin: Feature origin classification ('generic', 'custom', 'train')
+        **kwargs: Operation-specific parameters
+    """
+```
+
+**Developer Guidelines**:
+1. **Default Values**: Use `origin='generic'` for generic ops, `origin='custom'` for custom ops
+2. **Auto-Registration**: Enable by default (`auto_register=True`) for production use
+3. **Testing**: Disable auto-registration (`auto_register=False`) in unit tests
+4. **Feature Names**: Ensure unique, descriptive names for catalog clarity
+
+### Integration with Feature Catalog
+
+Your operations automatically integrate with the dynamic feature catalog:
+
+```python
+# Your operation is automatically registered
+operation_name = self.get_operation_name()  # e.g., "Graph Features"
+category = self._get_category()             # e.g., "graph_analysis"
+
+# Features are registered with metadata
+for feature_name, feature_series in features.items():
+    # Automatic registration includes:
+    # - feature_name: Your feature name
+    # - operation_name: Your operation name
+    # - category: Dynamic category mapping
+    # - origin: Specified origin type
+    # - description: Auto-generated or custom
 ```
 
 ## 🔧 Generic Feature Development

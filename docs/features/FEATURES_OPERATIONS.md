@@ -1,11 +1,42 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 14:25
-Compatible with commit: TBD
-Changes: Created comprehensive feature operations catalog with examples and usage
+Last Updated: 2025-06-30 23:40
+Compatible with commit: bcc1217
+Changes: Added origin field classification system and auto-registration API documentation
 -->
 
 # Feature Operations - Comprehensive Catalog
+
+## 📋 Feature Classification System
+
+All features in the Minotaur system are automatically classified by **origin** during generation:
+
+### Origin Types
+- **`origin='train'`**: Original dataset columns (automatically registered during dataset import)
+- **`origin='generic'`**: Domain-agnostic operations (statistical, polynomial, binning, ranking, etc.)
+- **`origin='custom'`**: Domain-specific operations (competition/problem-specific features)
+
+### Auto-Registration
+All feature operations support automatic registration in the feature catalog with:
+- **Origin classification** based on operation type
+- **Operation metadata** including name, category, and description
+- **Dynamic categorization** using database-driven category mapping
+
+```python
+# Example: Generic operation with auto-registration
+features = statistical_op.generate_features(
+    df, 
+    auto_register=True,     # Automatically add to feature catalog
+    origin='generic'        # Classify as generic features
+)
+
+# Example: Custom operation with auto-registration  
+features = titanic_op.generate_features(
+    df,
+    auto_register=True,     # Automatically add to feature catalog
+    origin='custom'         # Classify as custom features
+)
+```
 
 ## 🔧 Generic Feature Operations
 
