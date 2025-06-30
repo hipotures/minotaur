@@ -193,8 +193,17 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
         """Initialize operation-specific parameters."""
         pass
     
-    def generate_features(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
-        """Generate features with timing and auto-registration."""
+    def generate_features(self, df: pd.DataFrame, auto_register: bool = True, **kwargs) -> Dict[str, pd.Series]:
+        """Generate features with timing and optional auto-registration.
+        
+        Args:
+            df: Input dataframe
+            auto_register: Whether to auto-register features (default True, set False for test data)
+            **kwargs: Additional parameters for feature generation
+            
+        Returns:
+            Dictionary of feature name -> pandas Series
+        """
         self.reset_timings()
         
         if not self.validate_input(df):
@@ -205,8 +214,8 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             features = self._generate_features_impl(df, **kwargs)
             self.log_timing_summary(self.get_operation_name())
             
-            # Auto-register operation and features if enabled
-            if self._auto_registration_enabled and features:
+            # Auto-register operation and features if enabled and requested
+            if self._auto_registration_enabled and features and auto_register:
                 self._auto_register_operation_metadata(features, **kwargs)
             
             return features
@@ -455,8 +464,17 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
         self.domain_name = domain_name
         self._auto_registration_enabled = True  # Enable auto-registration by default
     
-    def generate_features(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
-        """Generate features with timing and auto-registration."""
+    def generate_features(self, df: pd.DataFrame, auto_register: bool = True, **kwargs) -> Dict[str, pd.Series]:
+        """Generate features with timing and optional auto-registration.
+        
+        Args:
+            df: Input dataframe
+            auto_register: Whether to auto-register features (default True, set False for test data)
+            **kwargs: Additional parameters for feature generation
+            
+        Returns:
+            Dictionary of feature name -> pandas Series
+        """
         self.reset_timings()
         
         if not self.validate_input(df):
@@ -467,8 +485,8 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             features = self._generate_features_impl(df, **kwargs)
             self.log_timing_summary(f"{self.domain_name} - {self.get_operation_name()}")
             
-            # Auto-register operation and features if enabled
-            if self._auto_registration_enabled and features:
+            # Auto-register operation and features if enabled and requested
+            if self._auto_registration_enabled and features and auto_register:
                 self._auto_register_custom_operation_metadata(features, **kwargs)
             
             return features
