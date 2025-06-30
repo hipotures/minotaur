@@ -1,14 +1,15 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 13:30
+Last Updated: 2025-06-30 13:35
 Compatible with commit: 02d53a5
-Changes: Added comprehensive MCTS validation framework, resolved all known issues, updated validation docs
+Changes: Refactored to focus only on data flow, removed duplicated content moved to other docs
 -->
 
-# MCTS Data Flow - Current Implementation (2025-06-30)
+# MCTS Data Flow - Phase-by-Phase Analysis
 
-## Phase 1: Dataset Registration (Pre-MCTS)
+## 📊 Phase 1: Dataset Registration (Pre-MCTS)
 
+### Raw Data Processing Flow
 ```
 Raw Dataset Files
 ├── train.csv (4.2M rows, 8 columns)
@@ -45,8 +46,36 @@ DuckDB Dataset (cache/dataset-name/dataset.duckdb)
 Ready for MCTS Search
 ```
 
-## Phase 2: MCTS Feature Selection
+### Feature Generation Examples
 
+**Statistical Aggregations**:
+```sql
+-- Input: Original columns [Nitrogen, Phosphorous, Potassium, Soil Type, Crop Type]
+-- Output: Aggregated features
+
+SELECT 
+    Soil_Type,
+    AVG(Nitrogen) as Nitrogen_mean_by_Soil_Type,
+    STDDEV(Nitrogen) as Nitrogen_std_by_Soil_Type,
+    AVG(Phosphorous) as Phosphorous_mean_by_Soil_Type,
+    STDDEV(Phosphorous) as Phosphorous_std_by_Soil_Type
+FROM train_data 
+GROUP BY Soil_Type;
+```
+
+**Custom Domain Features**:
+```python
+# NPK ratios and agricultural indicators
+df['NP_ratio'] = df['Nitrogen'] / (df['Phosphorous'] + 1e-6)
+df['PK_ratio'] = df['Phosphorous'] / (df['Potassium'] + 1e-6)
+df['NK_ratio'] = df['Nitrogen'] / (df['Potassium'] + 1e-6)
+df['nutrient_balance'] = (df['Nitrogen'] + df['Phosphorous'] + df['Potassium']) / 3
+df['moisture_stress'] = np.where(df['Moisture'] < 40, 1, 0)
+```
+
+## 🌳 Phase 2: MCTS Feature Selection
+
+### Tree Search Data Flow
 ```
 MCTS Tree Search
 ├── Root Node: Base columns only
@@ -81,9 +110,28 @@ Best Feature Combination Found
     └── Final Score: MAP@3 = 0.341 (vs baseline 0.320)
 ```
 
-## Key Data Structures
+### Node Evaluation Data Pipeline
+```
+Node Selection (UCB1)
+        ↓
+Feature Column Mapping
+        ↓
+DuckDB Query Execution
+        ↓
+DataFrame Preparation
+        ↓
+AutoGluon Training
+        ↓
+Performance Evaluation
+        ↓
+Tree Statistics Update
+        ↓
+Database Logging
+```
 
-### FeatureNode (Updated 2025-06-30)
+## 🗂️ Key Data Structures
+
+### FeatureNode (Core Data Structure)
 ```python
 @dataclass
 class FeatureNode:
@@ -98,203 +146,194 @@ class FeatureNode:
     features_before: List[str] = field(default_factory=list)
     features_after: List[str] = field(default_factory=list)
     
-    # MCTS statistics
-    visit_count: int = 42
-    total_reward: float = 14.322  # Sum of MAP@3 scores
-    evaluation_score: float = 0.341  # Latest MAP@3 score
-    depth: int = 0  # Tree depth from root
+    # MCTS statistics  
+    visit_count: int = 0
+    total_reward: float = 0.0
     
-    # Class-level counter for unique node IDs
-    _node_counter: ClassVar[int] = 0
+    # Evaluation results
+    evaluation_score: Optional[float] = None
+    evaluation_time: Optional[float] = None
+    operation_that_created_this: Optional[str] = None
+    depth: int = 0
 ```
 
 ### Feature Space Mapping
 ```python
-# Column selection logic
-operation_to_patterns = {
-    'statistical_aggregations': ['_mean_by_', '_std_by_', '_dev_from_'],
-    'polynomial_features': ['_squared', '_cubed', '_product'],
-    'binning_features': ['_binned', '_bin_'],
-    'ranking_features': ['_rank_', '_quartile', '_percentile'],
-    'custom_domain': [custom feature names from domain module]
+# Column mapping for different operations
+feature_mapping = {
+    'base': ['Nitrogen', 'Phosphorous', 'Potassium', 'Temperature', 'Humidity', 'Moisture', 'Soil Type', 'Crop Type'],
+    'statistical_aggregations': ['Nitrogen_mean_by_Soil_Type', 'Phosphorous_std_by_Crop_Type', ...],
+    'polynomial_features': ['Nitrogen_squared', 'NP_product', 'NK_product', ...],
+    'binning_features': ['Nitrogen_bin_1', 'Phosphorous_bin_2', ...],
+    'custom_domain': ['NP_ratio', 'PK_ratio', 'nutrient_balance', 'moisture_stress', ...]
 }
 ```
 
 ### DuckDB Query Examples
+
+**Feature Column Selection**:
 ```sql
--- Root evaluation (base features only)
-SELECT "Nitrogen", "Phosphorous", "Potassium", "Temperature", 
-       "Humidity", "Moisture", "Soil Type", "Crop Type"
+-- Root node evaluation (base features only)
+SELECT Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture, 
+       Soil_Type, Crop_Type, Fertilizer_Name
 FROM train_features 
 TABLESAMPLE(5%);
 
--- Statistical aggregations node
-SELECT "Nitrogen", "Phosphorous", ..., 
-       "Nitrogen_mean_by_Soil", "Phosphorous_std_by_Crop",
-       "Temperature_dev_from_Soil_mean", ...
+-- Node with statistical aggregations
+SELECT Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture,
+       Soil_Type, Crop_Type, Fertilizer_Name,
+       Nitrogen_mean_by_Soil_Type, Phosphorous_std_by_Crop_Type,
+       Potassium_max_by_Soil_Type, Temperature_min_by_Crop_Type
 FROM train_features 
 TABLESAMPLE(5%);
 
--- Combined operations node  
-SELECT "Nitrogen", "Phosphorous", ...,
-       "Nitrogen_mean_by_Soil", "Phosphorous_std_by_Crop",  -- statistical
-       "Nitrogen_squared", "NP_product",                     -- polynomial
-       "NP_ratio", "heat_stress", "nutrient_balance"         -- custom
+-- Node with statistical + custom domain features  
+SELECT Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture,
+       Soil_Type, Crop_Type, Fertilizer_Name,
+       Nitrogen_mean_by_Soil_Type, Phosphorous_std_by_Crop_Type,
+       NP_ratio, PK_ratio, NK_ratio, nutrient_balance, moisture_stress
 FROM train_features 
 TABLESAMPLE(5%);
 ```
 
-## Performance Characteristics
+## 🔍 Phase 3: MCTS Tree Persistence
 
-### Registration Phase (One-time)
-- **Duration**: 2-5 minutes for S5E6 dataset
-- **I/O**: Read CSV → Generate features → Write DuckDB
-- **Memory**: Peak ~8GB for full feature generation
-- **Output**: ~500MB DuckDB file with all features
-
-### MCTS Search Phase (Per run)
-- **Duration**: 30 seconds to 2 hours (depending on config)
-- **I/O**: Column-based SELECT queries only
-- **Memory**: ~1-2GB (only selected columns loaded)
-- **Throughput**: 50-200 evaluations per hour
-
-### Key Performance Gains
-1. **No feature I/O during search**: All features pre-cached in DuckDB
-2. **Column-based sampling**: Only load needed features + samples
-3. **Deterministic feature space**: No variation between runs
-4. **Rapid node evaluation**: ~5-30 seconds per AutoGluon evaluation
-
-## Memory Usage Patterns
-
+### Database Logging Flow
 ```
-Dataset Registration:
-├── CSV Loading: 2-3GB
-├── Feature Generation: 6-8GB peak
-├── DuckDB Writing: 1-2GB
-└── Final: 500MB on disk
-
-MCTS Search:
-├── Base Memory: 500MB
-├── Per Evaluation: +200-500MB (selected columns only)
-├── AutoGluon Training: +500-1GB temporary
-└── Steady State: 1-2GB total
+Node Evaluation Complete
+        ↓
+Extract Node Metadata
+        ↓
+Serialize Feature Lists (JSON)
+        ↓
+Log to exploration_history Table
+        ↓
+Update Session Statistics
+        ↓
+Session-Specific Log File
 ```
 
-## Phase 3: MCTS Tree Persistence (Added 2025-06-30)
+### Real Database Examples
 
-```
-Database Storage (exploration_history table)
-├── session_id: Unique session identifier
-├── iteration: MCTS iteration number (0=root, 1+=search)
-├── mcts_node_id: Internal MCTS node ID (auto-assigned)
-├── parent_node_id: Parent's mcts_node_id for tree structure
-├── operation_applied: Feature operation name
-├── features_before/after: JSON feature lists
-├── evaluation_score: AutoGluon score (MAP@3)
-├── node_visits: Visit count for UCB1 calculations
-├── mcts_ucb1_score: UCB1 score at selection time
-└── Tree structure preserved for analysis/resumption
-
-                    ↓ [Example database records]
-
-Real Database Example (session: 2af6ead3-5b84-4d2f-b2bd-532aa6810d34)
-┌───────────┬──────────────┬────────────────┬──────────────────────────┬──────────────────┐
-│ iteration │ mcts_node_id │ parent_node_id │    operation_applied     │ evaluation_score │
-├───────────┼──────────────┼────────────────┼──────────────────────────┼──────────────────┤
-│         1 │            3 │              2 │ statistical_aggregations │             0.77 │
-│         1 │            4 │              2 │ binning_features         │             0.79 │
-│         2 │            5 │              4 │ statistical_aggregations │             0.75 │
-│         3 │            6 │              3 │ binning_features         │             0.75 │
-└───────────┴──────────────┴────────────────┴──────────────────────────┴──────────────────┘
-
-Tree Structure Visualization:
-Root (node_id=2, iteration=0) [baseline - not in database yet]
-├── Node 3 (statistical_aggregations, score=0.77)
-│   └── Node 6 (+ binning_features, score=0.75)
-└── Node 4 (binning_features, score=0.79) [best so far]
-    └── Node 5 (+ statistical_aggregations, score=0.75)
+**Session Creation**:
+```sql
+INSERT INTO sessions (session_id, session_name, config_snapshot, dataset_hash)
+VALUES ('2af6ead3-5b84-4d2f-b2bd-532aa6810d34', 
+        'session_20250630_132513',
+        '{"mcts": {"exploration_weight": 1.4}, ...}',
+        'sha256:abc123...');
 ```
 
-## MCTS Validation and Monitoring
-
-```
-Validation Framework (scripts/mcts/)
-├── validate_mcts_correctness.py (NEW - Comprehensive validation)
-│   ├── Database Structure: ✅ PASS (exploration history complete)
-│   ├── Tree Structure: ✅ PASS (parent-child relationships valid)
-│   ├── MCTS Algorithm: ✅ PASS (scores/features consistent)
-│   ├── Log Consistency: ✅ PASS (database-log cross-validation)
-│   ├── UCB1 Logic: ✅ PASS (selection logic validation)
-│   ├── Backpropagation: ✅ PASS (visit/reward updates)
-│   └── Session Logging: ✅ PASS (session-specific logs in DEBUG)
-│       ├── File pattern: logs/mcts/session_YYYYMMDD_HHMMSS.log
-│       ├── DEBUG mode only creation
-│       └── Cross-validation with database records
-│
-├── validate_mcts.py (Legacy validation)
-├── visualize_tree.py → ASCII tree representation
-├── analyze_session.py → Performance metrics and insights  
-└── monitor_live.py → Real-time MCTS monitoring
-
-Usage:
-# Comprehensive validation (recommended)
-$ python scripts/mcts/validate_mcts_correctness.py --latest
-$ python scripts/mcts/validate_mcts_correctness.py --session SESSION_NAME
-$ python scripts/mcts/validate_mcts_correctness.py --all
-
-# Legacy tools
-$ python scripts/mcts/validate_mcts.py
-$ python scripts/mcts/visualize_tree.py SESSION_ID
+**Exploration Step Logging**:
+```sql
+INSERT INTO exploration_history (
+    session_id, iteration, mcts_node_id, parent_node_id,
+    operation_applied, features_before, features_after,
+    evaluation_score, target_metric, evaluation_time,
+    node_visits, memory_usage_mb
+) VALUES (
+    '2af6ead3-5b84-4d2f-b2bd-532aa6810d34',
+    1,  -- First MCTS iteration
+    3,  -- Node ID
+    2,  -- Parent node ID (root = 2)
+    'statistical_aggregations',
+    '["Nitrogen", "Phosphorous", "Potassium", ...]',  -- JSON array
+    '["Nitrogen", "Phosphorous", ..., "Nitrogen_mean_by_Soil_Type", ...]',
+    0.341,  -- MAP@3 score
+    'MAP@3',
+    45.2,   -- 45.2 seconds evaluation time
+    1,      -- First visit to this node
+    1248.5  -- Memory usage in MB
+);
 ```
 
-## Current Issues and Limitations (2025-06-30)
-
-### ✅ Resolved Issues (Fixed 2025-06-30)
-
-**Previously Known Issues** - All resolved:
-
-1. **✅ Missing Iteration 0 (Root Evaluation)** - FIXED:
-   - Root baseline evaluation now properly persisted to database
-   - Tree analysis complete with baseline reference
-   - Session resumption capabilities restored
-
-2. **✅ Visit Count Accumulation** - FIXED:
-   - Database correctly logs nodes with `node_visits = 1` (exploration tracking)
-   - Memory correctly maintains visit counts for UCB1 (algorithm state)
-   - Backpropagation working properly (validated via logs)
-
-3. **✅ Tree Structure** - FIXED:
-   - Complete parent-child relationships tracked
-   - Root node properly identified and stored
-   - Tree visualization now complete
-
-**✅ Implementation Status**: All core MCTS functionality verified via `validate_mcts_correctness.py`
-
-### Performance Characteristics (Updated)
-
-```
-Dataset Registration: [No changes - still 2-5 minutes]
-├── Duration: 2-5 minutes for S5E6 dataset
-├── I/O: Read CSV → Generate features → Write DuckDB  
-├── Memory: Peak ~8GB for full feature generation
-└── Output: ~500MB DuckDB file with all features
-
-MCTS Search: [Enhanced with persistence]
-├── Duration: 30 seconds to 2 hours (depending on config)
-├── I/O: Column-based SELECT + database logging + session-specific MCTS logging per iteration
-├── MCTS Logging: Session-specific log files (DEBUG mode only)
-│   ├── File Pattern: logs/mcts/session_YYYYMMDD_HHMMSS.log
-│   ├── Content: Detailed MCTS operation logging with session context
-│   └── Size: ~10-50KB per session depending on iterations
-├── Memory: ~1-2GB (selected columns + tree structure)
-├── Throughput: 50-200 evaluations per hour
-└── Database Growth: ~1KB per exploration step
-
-New Capabilities:
-├── Tree Structure Analysis: Complete parent-child mapping
-├── Session Resumption: Database-backed state recovery  
-├── Real-time Validation: Live MCTS health monitoring
-└── Historical Analysis: Cross-session performance comparison
+### Tree Reconstruction Query
+```sql
+-- Reconstruct full MCTS tree for a session
+WITH RECURSIVE mcts_tree AS (
+    -- Root nodes (iteration 0)
+    SELECT session_id, mcts_node_id, parent_node_id, operation_applied,
+           evaluation_score, 0 as level, 
+           CAST(mcts_node_id AS VARCHAR) as path
+    FROM exploration_history 
+    WHERE session_id = '2af6ead3-5b84-4d2f-b2bd-532aa6810d34' 
+      AND iteration = 0
+    
+    UNION ALL
+    
+    -- Child nodes
+    SELECT e.session_id, e.mcts_node_id, e.parent_node_id, e.operation_applied,
+           e.evaluation_score, t.level + 1,
+           t.path || '->' || CAST(e.mcts_node_id AS VARCHAR)
+    FROM exploration_history e
+    JOIN mcts_tree t ON e.parent_node_id = t.mcts_node_id
+    WHERE e.session_id = '2af6ead3-5b84-4d2f-b2bd-532aa6810d34'
+)
+SELECT * FROM mcts_tree ORDER BY level, path;
 ```
 
-This architecture achieves the key MCTS goal of exploring feature combinations while avoiding the computational bottleneck of generating features during search. The pre-built approach provides consistent, fast access to a rich feature space, now enhanced with comprehensive tree persistence and validation capabilities for production MCTS deployments.
+## 📈 Memory Usage Patterns
+
+### Data Loading Patterns
+```
+Dataset Registration (One-time):
+├── Peak Memory: ~8GB (full feature generation)
+├── Steady State: ~500MB (DuckDB file)
+└── Duration: 2-5 minutes
+
+MCTS Search (Per iteration):
+├── Peak Memory: ~2GB (AutoGluon training)
+├── Per-iteration: ~100-500MB (selected features only)
+└── Duration: 30 sec - 2 min per iteration
+```
+
+### Feature Selection Memory Impact
+```python
+# Memory efficient: Only load selected columns
+selected_columns = ['Nitrogen', 'NP_ratio', 'Nitrogen_mean_by_Soil_Type']  # 3 columns
+df = conn.execute(f"SELECT {','.join(selected_columns)} FROM train_features").df()
+# Memory usage: ~50MB for 100K rows x 3 columns
+
+# vs. Memory intensive: Load all features
+df = conn.execute("SELECT * FROM train_features").df()  
+# Memory usage: ~2GB for 100K rows x 250+ columns
+```
+
+## 🔄 Data Synchronization
+
+### Train/Test Consistency
+```python
+# Ensure column synchronization during registration
+train_columns = set(train_df.columns)
+test_columns = set(test_df.columns)
+
+# Remove columns that exist in only one dataset
+common_columns = train_columns.intersection(test_columns)
+train_features = train_df[common_columns]
+test_features = test_df[common_columns]
+
+# Log synchronization results
+logger.info(f"Train-only columns removed: {train_columns - common_columns}")
+logger.info(f"Test-only columns removed: {test_columns - common_columns}")
+logger.info(f"Final synchronized columns: {len(common_columns)}")
+```
+
+### No-Signal Feature Filtering
+```python
+# Remove features with no predictive signal
+def filter_no_signal_features(df):
+    features_to_remove = []
+    
+    for column in df.columns:
+        if df[column].nunique() <= 1:  # Constant or single value
+            features_to_remove.append(column)
+        elif df[column].isna().sum() / len(df) > 0.95:  # >95% missing
+            features_to_remove.append(column)
+    
+    return df.drop(columns=features_to_remove), features_to_remove
+```
+
+---
+
+*For validation and testing details, see [MCTS_VALIDATION.md](MCTS_VALIDATION.md)*  
+*For performance and configuration, see [MCTS_OPERATIONS.md](MCTS_OPERATIONS.md)*

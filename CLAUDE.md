@@ -67,6 +67,22 @@ This is an **independent MCTS-driven feature discovery system** for agricultural
 3. **Feature Pipeline**: Load from cache → Apply operations → Validate → Store results
 4. **Evaluation**: Prepare features → Train AutoGluon → Calculate MAP@3 → Update tree
 
+## Documentation Structure
+
+Comprehensive MCTS documentation is organized in `docs/mcts/`:
+
+- **📋 [MCTS_OVERVIEW.md](docs/mcts/MCTS_OVERVIEW.md)** - Executive summary, quick start, and key concepts
+- **🔧 [MCTS_IMPLEMENTATION.md](docs/mcts/MCTS_IMPLEMENTATION.md)** - Technical details, components, and APIs
+- **📊 [MCTS_DATA_FLOW.md](docs/mcts/MCTS_DATA_FLOW.md)** - Phase-by-phase data flow with examples
+- **✅ [MCTS_VALIDATION.md](docs/mcts/MCTS_VALIDATION.md)** - Validation framework and testing tools
+- **⚙️ [MCTS_OPERATIONS.md](docs/mcts/MCTS_OPERATIONS.md)** - Configuration, performance, and troubleshooting
+
+**Quick Navigation**:
+- **New Users**: Start with [MCTS_OVERVIEW.md](docs/mcts/MCTS_OVERVIEW.md)
+- **Developers**: See [MCTS_IMPLEMENTATION.md](docs/mcts/MCTS_IMPLEMENTATION.md) for technical details
+- **Operations**: Check [MCTS_OPERATIONS.md](docs/mcts/MCTS_OPERATIONS.md) for configuration
+- **QA/Testing**: Review [MCTS_VALIDATION.md](docs/mcts/MCTS_VALIDATION.md) for validation tools
+
 ## Key Commands
 
 ### Dataset Management (Required First Step)
