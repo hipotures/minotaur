@@ -49,8 +49,7 @@ class AutoGluonEvaluator:
         
         # Resolve dataset information
         dataset_info = self._resolve_dataset_configuration()
-        self.train_path = dataset_info['train_path']
-        self.test_path = dataset_info['test_path']
+        self.database_path = dataset_info['database_path']
         self.target_column = dataset_info['target_column']
         self.id_column = dataset_info['id_column']
         self.ignore_columns = self.autogluon_config.get('ignore_columns', []) or []
@@ -85,65 +84,40 @@ class AutoGluonEvaluator:
         logger.info(f"Initialized AutoGluonEvaluator for {self.target_metric}")
     
     def _resolve_dataset_configuration(self) -> Dict[str, str]:
-        """Resolve dataset configuration from registry or fallback to direct paths."""
-        try:
-            # Try new dataset_name system first
-            dataset_name = self.autogluon_config.get('dataset_name')
-            if dataset_name:
-                from .discovery_db import FeatureDiscoveryDB
-                
-                # Create temporary DB instance to access dataset registry
-                temp_db = FeatureDiscoveryDB(self.config)
-                
-                # Use the new database service API
-                dataset_repo = temp_db.db_service.dataset_repo
-                result = dataset_repo.find_by_name(dataset_name)
-                
-                if result:
-                    dataset_id, name, target_col, id_col = result.dataset_id, result.dataset_name, result.target_column, result.id_column
-                    
-                    # Build cache paths
-                    cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
-                    cache_db_path = cache_dir / 'dataset.duckdb'
-                    
-                    if cache_db_path.exists():
-                        logger.info(f"Using cached dataset: {dataset_name} from {cache_db_path}")
-                        return {
-                            'train_path': str(cache_db_path),
-                            'test_path': str(cache_db_path),  # Same DuckDB file contains both
-                            'target_column': target_col,
-                            'id_column': id_col or 'id',
-                            'dataset_name': dataset_name,
-                            'use_duckdb_cache': True
-                        }
-                    else:
-                        logger.warning(f"Cache not found for dataset {dataset_name}, falling back to direct paths")
-            
-            # Fallback to legacy direct path system
-            train_path = self.autogluon_config.get('train_path')
-            test_path = self.autogluon_config.get('test_path')
-            
-            if not train_path:
-                raise ValueError("Either 'dataset_name' or 'train_path' must be specified in autogluon configuration")
-            
-            return {
-                'train_path': train_path,
-                'test_path': test_path,
-                'target_column': self.autogluon_config.get('target_column', 'target'),
-                'id_column': self.autogluon_config.get('id_column', 'id'),
-                'use_duckdb_cache': False
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to resolve dataset configuration: {e}")
-            # Last resort fallback
-            return {
-                'train_path': self.autogluon_config.get('train_path', ''),
-                'test_path': self.autogluon_config.get('test_path', ''),
-                'target_column': self.autogluon_config.get('target_column', 'target'),
-                'id_column': self.autogluon_config.get('id_column', 'id'),
-                'use_duckdb_cache': False
-            }
+        """Resolve dataset configuration from registry - fail if dataset not found."""
+        dataset_name = self.autogluon_config.get('dataset_name')
+        if not dataset_name:
+            raise ValueError("dataset_name must be specified in autogluon configuration")
+        
+        from .discovery_db import FeatureDiscoveryDB
+        
+        # Create temporary DB instance to access dataset registry
+        temp_db = FeatureDiscoveryDB(self.config)
+        
+        # Use the new database service API
+        dataset_repo = temp_db.db_service.dataset_repo
+        result = dataset_repo.find_by_name(dataset_name)
+        
+        if not result:
+            raise ValueError(f"Dataset '{dataset_name}' not found in registry. Please register it first using: python manager.py datasets --register --dataset-name {dataset_name}")
+        
+        dataset_id, name, target_col, id_col = result.dataset_id, result.dataset_name, result.target_column, result.id_column
+        
+        # Build cache paths
+        cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
+        cache_db_path = cache_dir / 'dataset.duckdb'
+        
+        if not cache_db_path.exists():
+            raise FileNotFoundError(f"Dataset cache not found at {cache_db_path}. Please register the dataset properly.")
+        
+        logger.info(f"Using dataset: {dataset_name} from {cache_db_path}")
+        return {
+            'database_path': str(cache_db_path),
+            'target_column': target_col,
+            'id_column': id_col or 'id',
+            'dataset_name': dataset_name,
+            'use_duckdb_cache': True
+        }
     
     def _load_base_data(self) -> None:
         """Load and prepare base training/test data using configured backend."""
@@ -157,34 +131,16 @@ class AutoGluonEvaluator:
             # Initialize DuckDB data manager for persistent storage
             from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available
             
-            # Use pandas backend if explicitly configured or if DuckDB not available
-            if backend == 'pandas' or not is_duckdb_available():
-                if backend == 'duckdb' and not is_duckdb_available():
-                    logger.error("DuckDB not available, falling back to DataManager")
-                else:
-                    logger.info(f"Using pandas backend as configured")
-                    
-                # Fallback to original DataManager approach
-                from .data_utils import DataManager
-                data_manager = DataManager(self.config)
-                
-                logger.info(f"Loading training data from: {self.train_path}")
-                self.base_train_data = data_manager.load_dataset(self.train_path, 'train')
-                logger.info(f"Loading test data from: {self.test_path}")
-                self.base_test_data = data_manager.load_dataset(self.test_path, 'test')
-                self.duckdb_manager = None
-            else:
-                # Use DuckDB for persistent data storage and loading
+            # Use DuckDB for persistent data storage and loading (required for registered datasets)
+            if self.use_duckdb_cache:
                 self.duckdb_manager = DuckDBDataManager(self.config)
                 
-                logger.info(f"Loading training data from DuckDB database")
-                self.base_train_data = self.duckdb_manager.load_full_dataset(self.train_path)
-                
-                if self.test_path:
-                    logger.info(f"Loading test data from DuckDB database")
-                    self.base_test_data = self.duckdb_manager.load_full_dataset(self.test_path)
-                else:
-                    self.base_test_data = None
+                logger.info(f"Loading data from DuckDB database: {self.database_path}")
+                # Load train and test data from same database using SQL queries
+                self.base_train_data = self.duckdb_manager.execute_query("SELECT * FROM train_features")
+                self.base_test_data = self.duckdb_manager.execute_query("SELECT * FROM test_features")
+            else:
+                raise ValueError("Only registered datasets with DuckDB cache are supported. Please register your dataset first.")
             
             # Use full training data - AutoGluon will handle validation split internally via holdout_frac
             self.base_train_data = self.base_train_data.reset_index(drop=True)
@@ -232,6 +188,7 @@ class AutoGluonEvaluator:
         self.evaluation_count += 1
         
         logger.info(f"AutoGluon evaluation #{self.evaluation_count}: {len(feature_columns)} features")
+        logger.debug(f"🔍 DEBUG: evaluation_count={self.evaluation_count}, feature_columns={feature_columns}, iteration={iteration}")
         
         # Check cache first based on column names
         feature_hash = hashlib.md5(','.join(sorted(feature_columns)).encode()).hexdigest()
@@ -246,7 +203,13 @@ class AutoGluonEvaluator:
             logger.debug(f"Using evaluation config: {eval_config}")
             
             # Prepare data by selecting columns from DuckDB
-            train_data = self._prepare_autogluon_data_from_columns(feature_columns, eval_config)
+            # For first iteration (baseline), use original train/test tables
+            # For subsequent iterations, use train_features/test_features tables with generated features
+            if self.evaluation_count == 1:
+                logger.info("🚀 First iteration detected: using original train/test data for baseline")
+                train_data = self._prepare_autogluon_data_from_original_tables(eval_config)
+            else:
+                train_data = self._prepare_autogluon_data_from_columns(feature_columns, eval_config)
             
             # Create temporary model directory
             model_dir = self._create_temp_model_dir()
@@ -349,6 +312,51 @@ class AutoGluonEvaluator:
             # Note: Cleanup handled by main cleanup() method at end of session
             pass
     
+    def _prepare_autogluon_data_from_original_tables(self, eval_config: Dict[str, Any] = None) -> TabularDataset:
+        """
+        Prepare training data from original train/test tables (for first iteration baseline).
+        
+        Args:
+            eval_config: Optional evaluation configuration
+            
+        Returns:
+            TabularDataset: Training dataset with original features only
+        """
+        if eval_config is None:
+            eval_config = self.get_current_config()
+        
+        # Ensure we have DuckDB manager
+        if not hasattr(self, 'duckdb_manager') or self.duckdb_manager is None:
+            raise ValueError("DuckDB manager not available for baseline data loading")
+        
+        # Load original train data (all columns)
+        train_query = "SELECT * FROM train"
+        train_data = self.duckdb_manager.connection.execute(train_query).df()
+        
+        logger.info(f"📊 Loaded original dataset: {len(train_data)} rows, {len(train_data.columns)} columns")
+        logger.debug(f"Train Data Columns: {len(train_data.columns)}")
+        
+        # Apply train_size sampling if configured
+        train_size = eval_config.get('train_size')
+        if train_size is not None:
+            if isinstance(train_size, float) and 0 < train_size < 1:
+                sample_size = int(len(train_data) * train_size)
+                train_data = train_data.sample(n=sample_size, random_state=42).reset_index(drop=True)
+                logger.info(f"📉 Sampled to {len(train_data)} rows ({train_size*100:.1f}%)")
+            elif isinstance(train_size, int) and train_size < len(train_data):
+                train_data = train_data.sample(n=train_size, random_state=42).reset_index(drop=True)
+                logger.info(f"📉 Sampled to {len(train_data)} rows")
+        
+        # Debug dataset analysis and dumping  
+        self._debug_dataset_analysis(train_data, None)
+        
+        # Convert to TabularDataset
+        train_dataset = TabularDataset(train_data)
+        
+        logger.debug(f"Prepared baseline AutoGluon data: train={len(train_dataset)}")
+        
+        return train_dataset
+    
     def _prepare_autogluon_data_from_columns(self, feature_columns: List[str], eval_config: Dict[str, Any] = None) -> TabularDataset:
         """
         Prepare training and validation data by selecting specific columns from DuckDB.
@@ -450,7 +458,7 @@ class AutoGluonEvaluator:
                 try:
                     logger.info(f"🚀 Using DuckDB efficient sampling: train_size={train_size}")
                     train_data = self.duckdb_manager.sample_dataset(
-                        file_path=self.train_path,
+                        file_path=self.database_path,
                         train_size=train_size,
                         stratify_column=self.target_column
                     )
@@ -577,21 +585,21 @@ class AutoGluonEvaluator:
             predictor.fit(train_data, **fit_params)
             logger.info("AutoGluon training completed")
             
-            # Make predictions on validation set
-            val_data_for_pred = val_data.drop(columns=[self.target_column])
-            logger.debug(f"Making predictions on validation data: {val_data_for_pred.shape}")
-            val_predictions = predictor.predict_proba(val_data_for_pred)
-            val_true = val_data[self.target_column].values
+            # Use AutoGluon's built-in leaderboard to get validation score
+            logger.info(f"Getting validation score for metric: {self.target_metric}")
             
-            logger.debug(f"Predictions shape: {val_predictions.shape}, True labels: {len(val_true)}")
+            # Get leaderboard which contains validation scores
+            leaderboard = predictor.leaderboard(silent=True)
             
-            # Use AutoGluon's built-in evaluation for all metrics
-            logger.info(f"Evaluating with metric: {self.target_metric}")
-            
-            # Use AutoGluon's built-in metric evaluation
-            eval_result = predictor.evaluate(val_data, silent=True)
-            score = eval_result[self.target_metric]
-            logger.info(f"Calculated {self.target_metric} score: {score:.5f}")
+            # Get the best model's validation score
+            if len(leaderboard) > 0:
+                # AutoGluon uses score_val column for validation scores
+                score = leaderboard.iloc[0]['score_val']
+                logger.info(f"Best model validation {self.target_metric} score: {score:.5f}")
+                logger.debug(f"Best model: {leaderboard.iloc[0]['model']}")
+            else:
+                logger.error("No models in leaderboard!")
+                score = 0.0
             
             return score
             
@@ -796,12 +804,15 @@ class AutoGluonEvaluator:
             
             # Dump datasets to /tmp for manual inspection
             train_path = f"/tmp/{dataset_name}-train-{iteration:04d}.csv"
-            val_path = f"/tmp/{dataset_name}-val-{iteration:04d}.csv" 
-            
             train_df.to_csv(train_path, index=False)
-            val_df.to_csv(val_path, index=False)
             
-            logger.info(f"🔍 Debug: Dumped datasets to {train_path} and {val_path}")
+            # Only dump validation data if it exists
+            if val_df is not None:
+                val_path = f"/tmp/{dataset_name}-val-{iteration:04d}.csv" 
+                val_df.to_csv(val_path, index=False)
+                logger.info(f"🔍 Debug: Dumped datasets to {train_path} and {val_path}")
+            else:
+                logger.info(f"🔍 Debug: Dumped training dataset to {train_path} (no validation data)")
             
             
         except Exception as e:

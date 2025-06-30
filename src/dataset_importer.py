@@ -583,11 +583,9 @@ class DatasetImporter:
             if columns_to_remove:
                 dataset_logger.info(f"🧹 Removing {len(columns_to_remove)} no-signal columns from {table_name}")
                 
-                # Log first few removed columns
-                for i, col in enumerate(columns_to_remove[:10]):
+                # Log all removed columns
+                for col in columns_to_remove:
                     dataset_logger.debug(f"  Removing: {col}")
-                if len(columns_to_remove) > 10:
-                    dataset_logger.debug(f"  ... and {len(columns_to_remove) - 10} more")
                 
                 # Create new table without no-signal columns
                 column_list = ', '.join([f'"{col}"' for col in remaining_columns])
@@ -631,11 +629,9 @@ class DatasetImporter:
             if columns_to_remove:
                 dataset_logger.info(f"🔄 Aligning test_features with train: keeping {len(columns_to_keep)}, removing {len(columns_to_remove)} columns")
                 
-                # Log first few removed columns
-                for i, col in enumerate(columns_to_remove[:10]):
+                # Log all removed columns
+                for col in columns_to_remove:
                     dataset_logger.debug(f"  Removing from test: {col}")
-                if len(columns_to_remove) > 10:
-                    dataset_logger.debug(f"  ... and {len(columns_to_remove) - 10} more")
                 
                 # Create new table with only valid columns
                 column_list = ', '.join([f'"{col}"' for col in columns_to_keep])
@@ -704,10 +700,10 @@ class DatasetImporter:
             dataset_logger.error(f"  Test columns: {len(test_columns)}")
             
             if missing_in_test:
-                dataset_logger.error(f"  Missing in test ({len(missing_in_test)}): {sorted(list(missing_in_test))[:10]}{'...' if len(missing_in_test) > 10 else ''}")
+                dataset_logger.error(f"  Missing in test ({len(missing_in_test)}): {sorted(list(missing_in_test))}")
             
             if extra_in_test:
-                dataset_logger.error(f"  Extra in test ({len(extra_in_test)}): {sorted(list(extra_in_test))[:10]}{'...' if len(extra_in_test) > 10 else ''}")
+                dataset_logger.error(f"  Extra in test ({len(extra_in_test)}): {sorted(list(extra_in_test))}")
             
             raise ValueError(f"Feature columns must be identical between train and test! Train: {len(train_columns_no_target)}, Test: {len(test_columns)}")
             

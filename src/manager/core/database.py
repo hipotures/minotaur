@@ -40,15 +40,14 @@ class DatabaseConnection:
     def connect(self) -> 'duckdb.DuckDBPyConnection':
         """Establish database connection."""
         if self.connection is None:
-            # Apply settings
-            config_dict = {}
-            if 'max_memory' in self.settings:
-                config_dict['max_memory'] = self.settings['max_memory']
-            if 'threads' in self.settings:
-                config_dict['threads'] = self.settings['threads']
+            # Use consistent DuckDB connection (no config dict to avoid conflicts)
+            self.connection = duckdb.connect(str(self.db_path))
             
-            self.connection = duckdb.connect(str(self.db_path), config=config_dict)
-            # Note: DatabaseConnection doesn't have logger setup
+            # Apply performance settings manually after connection
+            if 'max_memory' in self.settings:
+                self.connection.execute(f"SET memory_limit = '{self.settings['max_memory']}'")
+            if 'threads' in self.settings:
+                self.connection.execute(f"SET threads = {self.settings['threads']}")
         
         return self.connection
     
