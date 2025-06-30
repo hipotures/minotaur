@@ -135,8 +135,8 @@ class DatabasePool:
         # Setup advanced logging with database context
         self.logger = self._setup_database_logging()
         
-        # Run migrations on first connection
-        self._ensure_migrations()
+        # Note: Migrations are now handled by manager.py to avoid duplicate runs
+        # self._ensure_migrations()
     
     def _setup_database_logging(self):
         """Setup advanced database logging with context."""

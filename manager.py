@@ -113,6 +113,21 @@ class ModularDuckDBManager:
         }
         self.conn_manager = DuckDBConnectionManager(main_config)
         
+        # Run migrations to ensure schema is up to date
+        try:
+            from src.db.migrations.migration_runner import MigrationRunner
+            migration_runner = MigrationRunner(self.conn_manager)
+            status = migration_runner.get_migration_status()
+            
+            if not status['is_up_to_date']:
+                logger = logging.getLogger(__name__)
+                logger.info(f"Running {status['pending_migrations']} pending migrations...")
+                applied = migration_runner.run_migrations()
+                if applied:
+                    logger.info(f"Applied {len(applied)} migrations successfully")
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Migration failed: {e}")
+        
         # Repositories will get connections from the pool as needed
         self.repositories = {
             'session': SessionRepository(self.db_pool),

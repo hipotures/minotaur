@@ -107,6 +107,4 @@ ADD COLUMN IF NOT EXISTS mcts_node_id INTEGER;
 -- Add comment explaining the column
 COMMENT ON COLUMN exploration_history.mcts_node_id IS 'References the MCTS internal node ID (not the database ID)';
 
--- Migration metadata
-INSERT INTO schema_migrations (version, name, applied_at, checksum, execution_time_ms) 
-VALUES (5, 'MCTS Tree Persistence', CURRENT_TIMESTAMP, 'manual_migration_005', 0);
+-- Migration metadata handled by MigrationRunner
