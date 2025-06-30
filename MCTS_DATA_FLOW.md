@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 12:49
-Compatible with commit: 1cca1d395753a978d77e160ce3d0424740631fc7
-Changes: Added MCTS tree persistence, node ID tracking, validation framework
+Last Updated: 2025-06-30 13:15
+Compatible with commit: aadac68
+Changes: Updated MCTS session-specific logging system, individual log files per session
 -->
 
 # MCTS Data Flow - Current Implementation (2025-06-30)
@@ -225,7 +225,10 @@ Validation Framework (scripts/mcts/)
 │   ├── Visit Count Accumulation: ❌ FAIL (no multiple visits)
 │   ├── Feature Evolution: ✅ PASS (operations change features)
 │   ├── Tree Growth: ✅ PASS (iterations 1-3)
-│   └── MCTS Logging: ✅ PASS (20 selection, 28 backprop phases)
+│   └── MCTS Logging: ✅ PASS (session-specific logging in DEBUG mode)
+│       ├── Session log files: logs/mcts/session_YYYYMMDD_HHMMSS.log
+│       ├── 20 selection phases logged with session context
+│       └── 28 backprop phases logged with session context
 │
 ├── visualize_tree.py → ASCII tree representation
 ├── analyze_session.py → Performance metrics and insights  
@@ -264,7 +267,11 @@ Dataset Registration: [No changes - still 2-5 minutes]
 
 MCTS Search: [Enhanced with persistence]
 ├── Duration: 30 seconds to 2 hours (depending on config)
-├── I/O: Column-based SELECT + database logging per iteration
+├── I/O: Column-based SELECT + database logging + session-specific MCTS logging per iteration
+├── MCTS Logging: Session-specific log files (DEBUG mode only)
+│   ├── File Pattern: logs/mcts/session_YYYYMMDD_HHMMSS.log
+│   ├── Content: Detailed MCTS operation logging with session context
+│   └── Size: ~10-50KB per session depending on iterations
 ├── Memory: ~1-2GB (selected columns + tree structure)
 ├── Throughput: 50-200 evaluations per hour
 └── Database Growth: ~1KB per exploration step

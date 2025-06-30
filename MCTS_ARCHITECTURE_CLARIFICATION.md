@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 12:49
-Compatible with commit: 1cca1d395753a978d77e160ce3d0424740631fc7
-Changes: Added MCTS node ID tracking, database persistence, validation framework
+Last Updated: 2025-06-30 13:15
+Compatible with commit: aadac68
+Changes: Updated MCTS session-specific logging system, individual log files per session
 -->
 
 # MCTS Architecture - How It Actually Works Now (2025-06-30)
@@ -83,6 +83,12 @@ FeatureNode.__post_init__()  # Auto-assigns node_id = ++_node_counter
 FeatureNode.add_child(child)  # Maintains parent-child relationships
 log_exploration_step(..., mcts_node_id=node.node_id)  # Database logging
 ```
+
+**Session-specific MCTS Logging** (Added 2025-06-30):
+- Individual session log files: `logs/mcts/session_YYYYMMDD_HHMMSS.log`
+- Only created when DEBUG logging level is enabled
+- Session context preserved in log entries for cross-session analysis
+- Replaces single `logs/mcts.log` file approach
 
 **Search process**:
 1. **Selection**: Navigate tree using UCB1 to find promising feature combinations
@@ -227,7 +233,10 @@ if operation_name == 'statistical_aggregations':
 3. **Visit Count Accumulation** - ❌ Needs improvement (backpropagation issue)
 4. **Feature Evolution** - ✅ Working (validates feature changes per operation)
 5. **Tree Growth** - ✅ Working (validates iteration progression)
-6. **MCTS Logging** - ✅ Working (validates dedicated MCTS logger functionality)
+6. **MCTS Logging** - ✅ Working (validates session-specific MCTS logger functionality)
+   - Individual session log files created in DEBUG mode
+   - Session context preserved in log entries
+   - Dedicated MCTS logging separate from main application logs
 
 **Usage**:
 ```bash
@@ -256,8 +265,9 @@ python scripts/mcts/analyze_session.py SESSION_ID
 ## Known Issues (2025-06-30)
 
 1. **Missing Iteration 0**: Root evaluation (baseline) not being logged to database
-   - MCTS shows "iteration 0" in logs but exploration_history starts from iteration 1
+   - MCTS shows "iteration 0" in session-specific logs but exploration_history starts from iteration 1
    - Root node evaluation happening but not persisted properly
+   - Session-specific log file: `logs/mcts/session_YYYYMMDD_HHMMSS.log` contains full details
    - Affects completeness of tree analysis
 
 2. **Visit Count Accumulation**: Nodes not getting multiple visits during backpropagation
