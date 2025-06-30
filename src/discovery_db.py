@@ -85,7 +85,9 @@ class FeatureDiscoveryDB:
                            autogluon_config: Dict,
                            ucb1_score: float = None,
                            parent_node_id: int = None,
-                           memory_usage_mb: float = None) -> int:
+                           memory_usage_mb: float = None,
+                           mcts_node_id: int = None,
+                           node_visits: int = 1) -> int:
         """Log a single MCTS exploration step."""
         return self.db_service.log_exploration_step(
             iteration=iteration,
@@ -97,7 +99,9 @@ class FeatureDiscoveryDB:
             autogluon_config=autogluon_config,
             ucb1_score=ucb1_score,
             parent_node_id=parent_node_id,
-            memory_usage_mb=memory_usage_mb
+            memory_usage_mb=memory_usage_mb,
+            mcts_node_id=mcts_node_id,
+            node_visits=node_visits
         )
     
     def register_feature(self,

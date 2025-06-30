@@ -193,7 +193,9 @@ class DatabaseService:
                            autogluon_config: Dict,
                            ucb1_score: float = None,
                            parent_node_id: int = None,
-                           memory_usage_mb: float = None) -> int:
+                           memory_usage_mb: float = None,
+                           mcts_node_id: int = None,
+                           node_visits: int = 1) -> int:
         """
         Log a single MCTS exploration step.
         
@@ -208,6 +210,8 @@ class DatabaseService:
             ucb1_score: UCB1 score for MCTS
             parent_node_id: Parent node ID in MCTS tree
             memory_usage_mb: Memory usage in MB
+            mcts_node_id: MCTS internal node ID
+            node_visits: Visit count after backpropagation
             
         Returns:
             Exploration step ID
@@ -230,7 +234,9 @@ class DatabaseService:
             evaluation_time=eval_time,
             autogluon_config=autogluon_config,
             mcts_ucb1_score=ucb1_score,
-            memory_usage_mb=memory_usage_mb
+            memory_usage_mb=memory_usage_mb,
+            mcts_node_id=mcts_node_id,
+            node_visits=node_visits
         )
         
         step = self.exploration_repo.log_exploration_step(step_data)

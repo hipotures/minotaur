@@ -48,7 +48,7 @@ class ExplorationRepository(BaseRepository[ExplorationStep]):
                 'operation_applied', 'features_before', 'features_after',
                 'evaluation_score', 'target_metric', 'evaluation_time',
                 'autogluon_config', 'mcts_ucb1_score', 'node_visits',
-                'is_best_so_far', 'memory_usage_mb', 'notes'
+                'is_best_so_far', 'memory_usage_mb', 'notes', 'mcts_node_id'
             ]
             data = dict(zip(columns, row))
         
@@ -102,7 +102,8 @@ class ExplorationRepository(BaseRepository[ExplorationStep]):
             'node_visits': model.node_visits,
             'is_best_so_far': model.is_best_so_far,
             'memory_usage_mb': model.memory_usage_mb,
-            'notes': model.notes
+            'notes': model.notes,
+            'mcts_node_id': model.mcts_node_id
         }
         
         # Include ID if it exists (for updates)
@@ -139,7 +140,9 @@ class ExplorationRepository(BaseRepository[ExplorationStep]):
             mcts_ucb1_score=step_data.mcts_ucb1_score,
             is_best_so_far=is_best,
             memory_usage_mb=step_data.memory_usage_mb,
-            notes=step_data.notes
+            notes=step_data.notes,
+            mcts_node_id=step_data.mcts_node_id,
+            node_visits=step_data.node_visits
         )
         
         saved_step = self.save(step)

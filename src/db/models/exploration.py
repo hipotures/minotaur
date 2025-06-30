@@ -21,7 +21,7 @@ class ExplorationStep(BaseModel):
     
     id: Optional[int] = Field(None, description="Database ID (auto-generated)")
     session_id: str = Field(..., description="Session this step belongs to")
-    iteration: int = Field(..., ge=1, description="Iteration number in session")
+    iteration: int = Field(..., ge=0, description="Iteration number in session (0=root, 1+=search)")
     timestamp: datetime = Field(default_factory=datetime.now, description="When step was executed")
     parent_node_id: Optional[int] = Field(None, description="Parent node ID in MCTS tree")
     operation_applied: str = Field(..., description="Feature operation that was applied")
@@ -36,6 +36,7 @@ class ExplorationStep(BaseModel):
     is_best_so_far: bool = Field(default=False, description="Whether this is best score so far")
     memory_usage_mb: Optional[float] = Field(None, ge=0, description="Memory usage in MB")
     notes: Optional[str] = Field(None, description="Additional notes about the step")
+    mcts_node_id: Optional[int] = Field(None, description="MCTS internal node ID")
     
     @field_validator('features_before', 'features_after')
     @classmethod
@@ -215,7 +216,7 @@ class ExplorationCreate(BaseModel):
     """
     
     session_id: str = Field(..., description="Session this step belongs to")
-    iteration: int = Field(..., ge=1, description="Iteration number in session")
+    iteration: int = Field(..., ge=0, description="Iteration number in session (0=root, 1+=search)")
     parent_node_id: Optional[int] = Field(None, description="Parent node ID in MCTS tree")
     operation_applied: str = Field(..., description="Feature operation that was applied")
     features_before: List[str] = Field(..., description="Feature list before operation")
@@ -227,6 +228,8 @@ class ExplorationCreate(BaseModel):
     mcts_ucb1_score: Optional[float] = Field(None, description="UCB1 score for node selection")
     memory_usage_mb: Optional[float] = Field(None, ge=0, description="Memory usage in MB")
     notes: Optional[str] = Field(None, description="Additional notes about the step")
+    mcts_node_id: Optional[int] = Field(None, description="MCTS internal node ID")
+    node_visits: int = Field(default=1, ge=1, description="Visit count after backpropagation")
 
 
 class ExplorationAnalysis(BaseModel):

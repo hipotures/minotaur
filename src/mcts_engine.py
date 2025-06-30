@@ -556,12 +556,22 @@ class MCTSEngine:
         
         evaluation_results = []
         for node in nodes_to_evaluate:
+            mcts_logger.debug(f"=== SIMULATION PHASE START ===")
+            mcts_logger.debug(f"Evaluating node {node.node_id} with operation '{node.operation_that_created_this or 'root'}'")
+            
             score, eval_time = self.simulation(node, evaluator, feature_space)
             node.evaluation_score = score
             evaluation_results.append((node, score, eval_time))
             
+            mcts_logger.debug(f"Node {node.node_id} evaluation completed: score={score:.5f}, time={eval_time:.2f}s")
+            
             # 4. BACKPROPAGATION
+            mcts_logger.debug(f"=== BACKPROPAGATION PHASE START ===")
+            mcts_logger.debug(f"Backpropagating score {score:.5f} from node {node.node_id} to root")
+            
             self.backpropagation(node, score, eval_time)
+            
+            mcts_logger.debug(f"Updated node {node.node_id}: visits={node.visit_count}, total_reward={node.total_reward:.5f}, avg={node.average_reward:.5f}")
             
             # Log to database
             if db:
@@ -577,7 +587,9 @@ class MCTSEngine:
                         autogluon_config=evaluator.get_current_config(),
                         ucb1_score=node.ucb1_score(self.exploration_weight),
                         parent_node_id=node.parent.node_id if node.parent else None,
-                        memory_usage_mb=node.memory_usage_mb
+                        memory_usage_mb=node.memory_usage_mb,
+                        mcts_node_id=node.node_id,
+                        node_visits=node.visit_count
                     )
                     
                     # Log feature impact if this is a feature operation (not root)
@@ -650,7 +662,9 @@ class MCTSEngine:
                     autogluon_config=evaluator.get_current_config(),
                     ucb1_score=0.0,
                     parent_node_id=None,
-                    memory_usage_mb=self._get_memory_usage()
+                    memory_usage_mb=self._get_memory_usage(),
+                    mcts_node_id=self.root.node_id,
+                    node_visits=self.root.visit_count
                 )
             except Exception as e:
                 logger.error(f"Failed to log root evaluation: {e}")

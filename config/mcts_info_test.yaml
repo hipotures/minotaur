@@ -1,0 +1,127 @@
+# MCTS Debug Configuration - For Analysis
+# Based on titanic test config with DEBUG logging
+
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
+# Session Management - Ultra-short runs
+session:
+  max_iterations: 3              # Very short for debugging
+  max_runtime_hours: 0.1         # 6 minutes max
+  checkpoint_interval: 1         # Save every iteration
+
+# MCTS - Minimal exploration
+mcts:
+  exploration_weight: 1.4        # Standard UCB1 exploration
+  max_tree_depth: 3             # Very shallow
+  expansion_threshold: 1        # Expand immediately
+  min_visits_for_best: 1        # Minimal visits
+  max_children_per_node: 3      # Few children
+  expansion_budget: 3           # Tiny budget
+  max_nodes_in_memory: 1000     # Minimal memory
+
+# AutoGluon - Ultra-fast evaluation with Titanic dataset
+autogluon:
+  # Titanic Dataset (registered in database)
+  dataset_name: 'titanic'
+  target_metric: 'accuracy'
+  
+  # Dataset-specific column configuration
+  ignore_columns: null                        # No columns to ignore
+  
+  # Core configuration - extreme speed focus
+  included_model_types: ['XGB']           # Only XGBoost
+  enable_gpu: true                        # GPU for speed
+  train_size: 100                         # Fixed 100 samples for ultra-fast testing
+  
+  # Model training settings
+  time_limit: 30                          # Very short time limit
+  presets: 'medium_quality'               # Fast preset
+  skip_final_evaluation: true             # Skip expensive final evaluation
+  holdout_frac: 0.2                       # Large holdout for speed
+  verbosity: 1                            # Reduce AutoGluon output
+  
+  # Ray GPU configuration - disable Ray completely
+  ag_args_fit:
+    num_cpus: 1
+    num_gpus: 1
+  ag_args_ensemble:
+    fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
+    enable_ray: false  # Force disable Ray
+
+# Feature Space - Domain operations are loaded automatically based on dataset name
+feature_space:
+  max_features_per_node: 20               # Very few features
+  feature_timeout: 30                     # Short timeout
+  max_cache_size_mb: 256                  # Tiny cache
+  
+  # Feature building limits for ultra-fast testing
+  max_features_to_build: 5                # Only build 5 features total
+  max_features_per_iteration: 2           # Max 2 features per MCTS iteration
+  feature_build_timeout: 30               # 30 seconds timeout per feature
+  cache_miss_limit: 5                     # Max 5 cache misses
+  
+  # Generic operations - minimal for debugging
+  generic_operations:
+    statistical_aggregations: true     # Keep simple aggregations
+    polynomial_features: false        # Disable expensive polynomial features
+    binning_features: true            # Keep simple binning
+    ranking_features: false           # Disable for simplicity
+  
+  # Generic operation parameters - minimal settings
+  generic_params:
+    binning_bins: 3                   # Fewer bins for speed
+    groupby_columns: ["Sex"]          # Single column for Titanic
+    aggregate_columns: ["Age"]        # Single numeric column for Titanic
+
+# Performance - Minimal resources
+resources:
+  max_memory_gb: 1                        # Very low memory
+  memory_check_interval: 1                
+  force_gc_interval: 5                    # Very frequent GC
+  max_cpu_cores: 2                        # Limit CPU cores
+  max_disk_usage_gb: 5                    # Minimal disk
+
+# Data - Use DuckDB backend for proper cache generation
+data:
+  backend: 'duckdb'                       # Use DuckDB for proper cache files
+  prefer_parquet: false                   # Stick to CSV for simplicity
+  auto_convert_csv: false                 # Don't auto-convert
+  memory_limit_mb: 256                    # Low memory limit
+  dtype_optimization: true                
+
+# Database - Use main database with registered datasets
+database:
+  path: 'data/minotaur.duckdb'            # Use main database with registered datasets
+  max_history_size: 1000                  # Tiny history
+  backup_interval: 10                     # Frequent backups
+  retention_days: 1                       # Very short retention
+
+# Logging - DEBUG for detailed analysis
+logging:
+  level: 'DEBUG'                          # Detailed logging
+  max_log_size_mb: 50                     # Larger logs for debug
+  progress_interval: 1                    # Report every iteration
+  log_autogluon_details: false           # Skip AG details
+  
+  # Additional debug logging
+  log_mcts_details: true                  # Log MCTS tree details
+  log_feature_generation: true            # Log feature generation
+  log_database_operations: true           # Log DB operations
+
+# Export - Minimal output
+export:
+  formats: []                             # No export for debug
+  include_documentation: false            
+  output_dir: 'outputs/debug_test'
+  export_on_improvement: false            
+  export_on_completion: false             # No export
+
+# Analytics - Skip for speed
+analytics:
+  generate_charts: false                  # No charts for speed
+  include_timing_analysis: true           # Include timing for analysis
+
+# Validation - Skip for speed
+validation:
+  validate_generated_features: false      # Skip validation

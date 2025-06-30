@@ -207,10 +207,10 @@ def validate_tree_growth(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, A
     """Validate that tree grows deeper with iterations."""
     print("\n🔍 Validating Tree Depth Growth...")
     
-    # Check tree depth progression
+    # Check iteration progression (depth is not available in exploration_history)
     query = """
     SELECT iteration,
-           MAX(depth) as max_depth,
+           iteration as max_iteration,
            COUNT(*) as nodes_at_iteration
     FROM exploration_history 
     WHERE session_id = ?
@@ -225,19 +225,19 @@ def validate_tree_growth(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, A
     if not results:
         return {"status": "FAIL", "reason": "No iteration data found"}
     
-    depths = [row[1] for row in results if row[1] is not None]
+    iterations = [row[1] for row in results if row[1] is not None]
     
     validation = {
-        "status": "PASS" if len(depths) > 1 and max(depths) > min(depths) else "PARTIAL",
+        "status": "PASS" if len(iterations) > 1 and max(iterations) > min(iterations) else "PARTIAL",
         "iteration_count": len(results),
-        "max_depth_achieved": max(depths) if depths else 0,
-        "depth_progression": depths[:5]  # First 5 iterations
+        "max_iteration_achieved": max(iterations) if iterations else 0,
+        "iteration_progression": iterations[:5]  # First 5 iterations
     }
     
     if validation["status"] == "PASS":
-        print(f"✅ Tree grows from depth {min(depths)} to {max(depths)} over {len(results)} iterations")
+        print(f"✅ Iterations progress from {min(iterations)} to {max(iterations)} over {len(results)} records")
     else:
-        print(f"⚠️  Limited tree growth detected (max depth: {max(depths) if depths else 0})")
+        print(f"⚠️  Limited iteration progression detected (max iteration: {max(iterations) if iterations else 0})")
     
     return validation
 

@@ -60,19 +60,12 @@ def setup_logging(config: Dict[str, Any]) -> None:
         handlers=[file_handler]
     )
     
-    # Setup dedicated MCTS logger
+    # Setup basic MCTS logger (session-specific handler will be added later)
     mcts_logger = logging.getLogger('mcts')
-    mcts_handler = RotatingFileHandler(
-        'logs/mcts.log',
-        maxBytes=log_config.get('mcts_log_size_mb', 50) * 1024 * 1024,
-        backupCount=log_config.get('mcts_backup_count', 3)
-    )
-    mcts_handler.setFormatter(logging.Formatter(
-        '%(asctime)s - [%(session_name)s] - MCTS - %(levelname)s - %(message)s'
-    ))
-    mcts_logger.addHandler(mcts_handler)
     mcts_logger.setLevel(logging.DEBUG)  # Always DEBUG for MCTS logger
-    mcts_logger.propagate = True  # Also log to main log file
+    mcts_logger.propagate = True  # Always propagate to main log file
+    
+    # Note: Session-specific MCTS log file will be configured after session creation
     
     # Reduce verbosity of some libraries
     logging.getLogger('autogluon').setLevel(logging.INFO)  # Show AutoGluon logs
@@ -83,7 +76,47 @@ def setup_logging(config: Dict[str, Any]) -> None:
     
     logger = logging.getLogger(__name__)
     logger.info("Logging configuration initialized")
-    logger.info(f"MCTS logger initialized at logs/mcts.log with DEBUG level")
+
+
+def setup_session_mcts_logging(session_name: str, config: Dict[str, Any]) -> None:
+    """Setup session-specific MCTS logging to logs/mcts/session_name.log."""
+    log_config = config['logging']
+    main_log_level = log_config['level'].upper()
+    
+    # Only create session-specific MCTS log file when DEBUG level is enabled
+    if main_log_level == 'DEBUG':
+        from pathlib import Path
+        from logging.handlers import RotatingFileHandler
+        from src.logging_utils import SessionFilter
+        
+        # Ensure logs/mcts directory exists
+        mcts_log_dir = Path('logs/mcts')
+        mcts_log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create session-specific log file
+        session_log_file = mcts_log_dir / f"{session_name}.log"
+        
+        mcts_logger = logging.getLogger('mcts')
+        
+        # Check if handler already exists to avoid duplicates
+        existing_handlers = [h for h in mcts_logger.handlers if hasattr(h, 'baseFilename') and session_log_file.as_posix() in h.baseFilename]
+        if not existing_handlers:
+            mcts_handler = RotatingFileHandler(
+                session_log_file,
+                maxBytes=log_config.get('mcts_log_size_mb', 50) * 1024 * 1024,
+                backupCount=log_config.get('mcts_backup_count', 3)
+            )
+            mcts_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - [%(session_name)s] - MCTS - %(levelname)s - %(message)s'
+            ))
+            mcts_handler.addFilter(SessionFilter())
+            mcts_logger.addHandler(mcts_handler)
+            
+            logger = logging.getLogger(__name__)
+            logger.info(f"MCTS session logging enabled: {session_log_file} (DEBUG mode)")
+    else:
+        logger = logging.getLogger(__name__)
+        logger.info(f"MCTS logging to main log only (level: {main_log_level})")
 
 class FeatureDiscoveryRunner:
     """Main runner for MCTS feature discovery system."""
@@ -162,6 +195,9 @@ class FeatureDiscoveryRunner:
             if self.db.session_name:
                 set_session_context(self.db.session_name)
                 logger.info(f"Session context set to: {self.db.session_name}")
+                
+                # Setup session-specific MCTS logging
+                setup_session_mcts_logging(self.db.session_name, self.config)
             
             # Initialize AutoGluon evaluator first (required for DuckDB manager)
             if not AUTOGLUON_AVAILABLE:
