@@ -360,7 +360,7 @@ class FeatureSpace:
         """
         # Import the metadata for dynamic pattern lookup
         try:
-            from .features.generic import detect_operation_from_feature_name, get_operation_metadata
+            from src.features.generic import detect_operation_from_feature_name, get_operation_metadata
             
             # Get all available columns from database or node
             all_columns = self._get_all_available_columns()
@@ -460,7 +460,7 @@ class FeatureSpace:
         all_columns = self._get_available_columns_from_db()
         
         try:
-            from .features.generic import get_operation_metadata
+            from src.features.generic import get_operation_metadata
             
             # Get operation metadata for pattern matching
             metadata = get_operation_metadata(operation_name)
@@ -611,7 +611,7 @@ class FeatureSpace:
         Replaces hardcoded patterns with dynamic lookup from OPERATION_METADATA.
         """
         try:
-            from .features.generic import detect_operation_from_feature_name, get_operation_metadata
+            from src.features.generic import detect_operation_from_feature_name, get_operation_metadata
             
             # Try dynamic detection first
             operation_name = detect_operation_from_feature_name(feature_name)

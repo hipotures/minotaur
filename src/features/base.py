@@ -224,8 +224,8 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
         """
         try:
             # Import database connection manager
-            from ...db.core.connection import DuckDBConnectionManager
-            from ...project_root import PROJECT_ROOT
+            from src.db.core.connection import DuckDBConnectionManager
+            from src.project_root import PROJECT_ROOT
             import os
             
             # Connect to the main database
@@ -238,7 +238,7 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             operation_name = self.get_operation_name()
             
             # Get operation metadata from generic registry
-            from ..generic import get_operation_metadata
+            from src.features.generic import get_operation_metadata
             metadata = get_operation_metadata(operation_name)
             
             if not metadata:
@@ -449,8 +449,8 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
         """
         try:
             # Import database connection manager
-            from ...db.core.connection import DuckDBConnectionManager
-            from ...project_root import PROJECT_ROOT
+            from src.db.core.connection import DuckDBConnectionManager
+            from src.project_root import PROJECT_ROOT
             import os
             
             # Connect to the main database
