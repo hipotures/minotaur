@@ -83,6 +83,20 @@ Comprehensive MCTS documentation is organized in `docs/mcts/`:
 - **Operations**: Check [MCTS_OPERATIONS.md](docs/mcts/MCTS_OPERATIONS.md) for configuration
 - **QA/Testing**: Review [MCTS_VALIDATION.md](docs/mcts/MCTS_VALIDATION.md) for validation tools
 
+Comprehensive Feature Engineering documentation is organized in `docs/features/`:
+
+- **📋 [FEATURES_OVERVIEW.md](docs/features/FEATURES_OVERVIEW.md)** - Executive summary, architecture, and quick start
+- **🔧 [FEATURES_OPERATIONS.md](docs/features/FEATURES_OPERATIONS.md)** - Complete catalog of all feature operations
+- **🔗 [FEATURES_INTEGRATION.md](docs/features/FEATURES_INTEGRATION.md)** - Pipeline integration and dataset management
+- **🛠️ [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md)** - Custom domain development guide
+- **⚡ [FEATURES_PERFORMANCE.md](docs/features/FEATURES_PERFORMANCE.md)** - Performance optimization and troubleshooting
+
+**Quick Navigation**:
+- **Data Scientists**: Start with [FEATURES_OVERVIEW.md](docs/features/FEATURES_OVERVIEW.md) for system overview
+- **ML Engineers**: Check [FEATURES_OPERATIONS.md](docs/features/FEATURES_OPERATIONS.md) for operation details
+- **Developers**: See [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md) for creating custom features
+- **DevOps**: Review [FEATURES_PERFORMANCE.md](docs/features/FEATURES_PERFORMANCE.md) for optimization
+
 ## Key Commands
 
 ### Dataset Management (Required First Step)
@@ -138,11 +152,18 @@ python manager.py sessions --details SESSION_ID
 python manager.py sessions --compare session1 session2
 python manager.py sessions --export SESSION_ID --format json
 
-# Feature analysis
-python manager.py features --top 10
-python manager.py features --search npk
-python manager.py features --category agricultural_domain
-python manager.py features --performance
+# Feature analysis and management
+python manager.py features --list                    # List all features with performance metrics
+python manager.py features --top 20                  # Top performing features
+python manager.py features --catalog                 # Feature catalog overview
+python manager.py features --impact FEATURE_NAME     # Detailed impact analysis
+python manager.py features --search "nitrogen"       # Search features by name
+python manager.py features --export csv              # Export feature data
+
+# Feature filtering options
+python manager.py features --list --category statistical_aggregations
+python manager.py features --list --dataset my-dataset
+python manager.py features --list --min-impact 0.01
 
 # Analytics and reporting
 python manager.py analytics --summary
