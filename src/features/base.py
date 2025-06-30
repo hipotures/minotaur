@@ -223,12 +223,12 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             **kwargs: Additional parameters passed to generate_features
         """
         try:
-            # Import database connection manager
-            from src.db.core.connection import DuckDBConnectionManager
+            # Try to use global database connection if available
+            import duckdb
             from src.project_root import PROJECT_ROOT
             import os
             
-            # Connect to the main database
+            # Connect to the main database directly
             db_path = os.path.join(PROJECT_ROOT, 'data', 'minotaur.duckdb')
             if not os.path.exists(db_path):
                 logger.debug("Database not found, skipping auto-registration")
@@ -239,16 +239,17 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             
             # Get operation metadata from generic registry
             from src.features.generic import get_operation_metadata
-            metadata = get_operation_metadata(operation_name)
+            
+            # Map human-readable names to metadata keys
+            operation_key = self._map_operation_name_to_key(operation_name)
+            metadata = get_operation_metadata(operation_key)
             
             if not metadata:
-                logger.debug(f"No metadata found for operation '{operation_name}', skipping auto-registration")
+                logger.debug(f"No metadata found for operation '{operation_key}' (from '{operation_name}'), skipping auto-registration")
                 return
             
-            # Create connection manager
-            conn_manager = DuckDBConnectionManager(db_path, pool_size=1, timeout=30.0)
-            
-            with conn_manager.get_connection() as conn:
+            # Connect directly to database for auto-registration
+            with duckdb.connect(db_path) as conn:
                 # Register or update operation category
                 conn.execute("""
                     INSERT INTO operation_categories (operation_name, category, description, is_generic, output_patterns)
@@ -257,8 +258,7 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         category = EXCLUDED.category,
                         description = EXCLUDED.description,
                         is_generic = EXCLUDED.is_generic,
-                        output_patterns = EXCLUDED.output_patterns,
-                        updated_at = CURRENT_TIMESTAMP
+                        output_patterns = EXCLUDED.output_patterns
                 """, [
                     operation_name,
                     metadata.get('category', 'unknown'),
@@ -303,6 +303,43 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                 return self.get_operation_name()
         
         return self.get_operation_name()  # Default to current operation
+    
+    def _map_operation_name_to_key(self, operation_name: str) -> str:
+        """
+        Map human-readable operation names to metadata keys.
+        
+        Args:
+            operation_name: Human-readable operation name (e.g., "Statistical Aggregations")
+            
+        Returns:
+            Metadata key (e.g., "statistical_aggregations")
+        """
+        # Create mapping from human-readable names to metadata keys
+        name_mapping = {
+            "Statistical Aggregations": "statistical_aggregations",
+            "Polynomial Features": "polynomial_features",
+            "Binning Features": "binning_features", 
+            "Ranking Features": "ranking_features",
+            "Temporal Features": "temporal_features",
+            "Text Features": "text_features",
+            "Categorical Features": "categorical_features",
+            "Interaction Features": "interaction_features",
+        }
+        
+        # Try exact match first
+        if operation_name in name_mapping:
+            return name_mapping[operation_name]
+        
+        # Try converting to lowercase with underscores
+        converted = operation_name.lower().replace(' ', '_').replace('-', '_')
+        
+        # Check if converted version exists in metadata
+        from src.features.generic import OPERATION_METADATA
+        if converted in OPERATION_METADATA:
+            return converted
+        
+        # Return original name as fallback
+        return operation_name
     
     @abstractmethod
     def _generate_features_impl(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
@@ -448,8 +485,8 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             **kwargs: Additional parameters passed to generate_features
         """
         try:
-            # Import database connection manager
-            from src.db.core.connection import DuckDBConnectionManager
+            # Connect to database directly for auto-registration
+            import duckdb
             from src.project_root import PROJECT_ROOT
             import os
             
@@ -465,10 +502,8 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             # Infer output patterns from generated features
             output_patterns = self._infer_output_patterns(features)
             
-            # Create connection manager
-            conn_manager = DuckDBConnectionManager(db_path, pool_size=1, timeout=30.0)
-            
-            with conn_manager.get_connection() as conn:
+            # Connect directly to database for auto-registration
+            with duckdb.connect(db_path) as conn:
                 # Register or update operation category
                 conn.execute("""
                     INSERT INTO operation_categories (operation_name, category, description, dataset_name, is_generic, output_patterns)
@@ -478,8 +513,7 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         description = EXCLUDED.description,
                         dataset_name = EXCLUDED.dataset_name,
                         is_generic = EXCLUDED.is_generic,
-                        output_patterns = EXCLUDED.output_patterns,
-                        updated_at = CURRENT_TIMESTAMP
+                        output_patterns = EXCLUDED.output_patterns
                 """, [
                     operation_name,
                     'custom_domain',  # category for custom operations
