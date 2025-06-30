@@ -332,6 +332,22 @@ class DatasetImporter:
             
             conn.close()
             
+            # Register original dataset features in the feature catalog
+            try:
+                from features.train_features import register_train_features
+                train_file = file_mappings.get('train')
+                if train_file and target_column:
+                    logger.info(f"🏷️ Registering original dataset features as 'train' origin...")
+                    register_train_features(
+                        dataset_name=self.dataset_name,
+                        train_path=train_file,
+                        target_column=target_column,
+                        id_column=id_column or 'passengerid'  # Fallback for datasets without ID
+                    )
+                    logger.info(f"✅ Original dataset features registered successfully")
+            except Exception as e:
+                logger.warning(f"Failed to register train features: {e}")
+            
             logger.info(f"✅ Successfully created DuckDB dataset: {duckdb_path}")
             return str(duckdb_path)
             
