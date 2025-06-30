@@ -72,18 +72,26 @@ class DatabaseService:
     def _run_migrations(self) -> None:
         """Run database migrations to ensure schema is up to date."""
         try:
+            self.logger.debug("🔄 Starting migration check...")
             migration_runner = MigrationRunner(self.connection_manager)
             status = migration_runner.get_migration_status()
             
+            self.logger.debug(f"Migration status: {status}")
+            
             if not status['is_up_to_date']:
                 self.logger.info(f"Running {status['pending_migrations']} pending migrations...")
+                self.logger.debug(f"Applied migrations: {status.get('applied_migrations', [])}")
+                self.logger.debug(f"Pending migrations: {status.get('pending_migration_files', [])}")
+                
                 applied = migration_runner.run_migrations()
                 self.logger.info(f"Applied {len(applied)} migrations successfully")
+                self.logger.debug(f"Successfully applied migrations: {applied}")
             else:
                 self.logger.debug("Database schema is up to date")
                 
         except Exception as e:
             self.logger.error(f"Migration failed: {e}")
+            self.logger.debug(f"Migration error details: {e}", exc_info=True)
             raise
     
     def initialize_session(self, session_mode: str = 'new', 

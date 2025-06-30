@@ -55,12 +55,17 @@ class MigrationRunner:
         self.conn_manager = connection_manager
         self.logger = logging.getLogger(f'db.{self.__class__.__name__.lower()}')
         
+        self.logger.debug(f"🔧 Initializing MigrationRunner")
+        
         # Migration directories
         self.migrations_dir = Path(__file__).parent
         self.migration_files_dir = self.migrations_dir
         
+        self.logger.debug(f"Migration directory: {self.migrations_dir}")
+        
         # Initialize migration tracking table
         self._init_migration_table()
+        self.logger.debug("✅ MigrationRunner initialized successfully")
     
     def _init_migration_table(self) -> None:
         """Initialize the migration tracking table."""
@@ -194,10 +199,14 @@ class MigrationRunner:
         Returns:
             List of applied migrations
         """
+        self.logger.debug(f"🔄 Getting pending migrations (target_version={target_version})")
         pending_migrations = self.get_pending_migrations()
+        
+        self.logger.debug(f"Found {len(pending_migrations)} pending migrations: {[str(m) for m in pending_migrations]}")
         
         if target_version is not None:
             pending_migrations = [m for m in pending_migrations if m.version <= target_version]
+            self.logger.debug(f"Filtered to {len(pending_migrations)} migrations for target version {target_version}")
         
         if not pending_migrations:
             self.logger.info("No pending migrations to run")
@@ -208,11 +217,14 @@ class MigrationRunner:
         for migration in pending_migrations:
             try:
                 self.logger.info(f"Applying migration: {migration}")
+                self.logger.debug(f"Migration SQL preview: {migration.up_sql[:200]}...")
                 self._apply_migration(migration)
                 applied_migrations.append(migration)
+                self.logger.debug(f"✅ Successfully applied migration {migration.version}")
                 
             except Exception as e:
                 self.logger.error(f"Failed to apply migration {migration}: {e}")
+                self.logger.debug(f"Migration failure details: {e}", exc_info=True)
                 # Stop on first failure to maintain consistency
                 break
         
@@ -231,12 +243,18 @@ class MigrationRunner:
         start_time = datetime.now()
         
         try:
+            self.logger.debug(f"🔄 Executing migration {migration.version}: {migration.name}")
             # Execute migration SQL
             if migration.up_sql:
+                self.logger.debug(f"Executing SQL for migration {migration.version}")
                 self.conn_manager.execute_script(migration.up_sql)
+                self.logger.debug(f"✅ SQL execution completed for migration {migration.version}")
+            else:
+                self.logger.warning(f"Migration {migration.version} has no SQL to execute")
             
             # Calculate execution time
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            self.logger.debug(f"Migration {migration.version} executed in {execution_time:.2f}ms")
             
             # Calculate checksum for integrity checking
             import hashlib
