@@ -5,6 +5,41 @@ Advanced automated feature engineering system using Monte Carlo Tree Search (MCT
 > **Primary Focus**: Kaggle competition "Predicting Optimal Fertilizers" (Playground Series S5E6)  
 > **Architecture**: Modern DuckDB-based system with repository pattern and connection pooling
 
+## 📚 Documentation
+
+### 🗂️ Complete System Documentation
+
+This system has comprehensive documentation organized by component:
+
+#### **🎯 MCTS System Documentation** (`docs/mcts/`)
+- **[MCTS_OVERVIEW.md](docs/mcts/MCTS_OVERVIEW.md)** - Executive summary and quick start guide
+- **[MCTS_IMPLEMENTATION.md](docs/mcts/MCTS_IMPLEMENTATION.md)** - Technical implementation details
+- **[MCTS_DATA_FLOW.md](docs/mcts/MCTS_DATA_FLOW.md)** - Phase-by-phase data flow
+- **[MCTS_VALIDATION.md](docs/mcts/MCTS_VALIDATION.md)** - Validation framework and testing
+- **[MCTS_OPERATIONS.md](docs/mcts/MCTS_OPERATIONS.md)** - Configuration and troubleshooting
+
+#### **⚙️ Feature Engineering Documentation** (`docs/features/`)
+- **[FEATURES_OVERVIEW.md](docs/features/FEATURES_OVERVIEW.md)** - System architecture and quick start
+- **[FEATURES_OPERATIONS.md](docs/features/FEATURES_OPERATIONS.md)** - Complete operations catalog
+- **[FEATURES_INTEGRATION.md](docs/features/FEATURES_INTEGRATION.md)** - Pipeline and dataset integration
+- **[FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md)** - Custom development guide
+- **[FEATURES_PERFORMANCE.md](docs/features/FEATURES_PERFORMANCE.md)** - Optimization and troubleshooting
+
+#### **🛠️ System Configuration**
+- **[AUTOGLUON_CONFIG_GUIDE.md](docs/AUTOGLUON_CONFIG_GUIDE.md)** - AutoGluon configuration reference
+- **[SYSTEM_COMPLETION_SUMMARY.md](docs/SYSTEM_COMPLETION_SUMMARY.md)** - System implementation status
+- **[CLAUDE.md](CLAUDE.md)** - Development guidelines and project instructions
+
+### 📖 Quick Navigation
+
+**New Users**: Start with [MCTS_OVERVIEW.md](docs/mcts/MCTS_OVERVIEW.md) and [FEATURES_OVERVIEW.md](docs/features/FEATURES_OVERVIEW.md)
+
+**Developers**: See implementation details in [MCTS_IMPLEMENTATION.md](docs/mcts/MCTS_IMPLEMENTATION.md) and [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md)
+
+**Data Scientists**: Check operation catalogs in [FEATURES_OPERATIONS.md](docs/features/FEATURES_OPERATIONS.md)
+
+**DevOps**: Review performance guides in [FEATURES_PERFORMANCE.md](docs/features/FEATURES_PERFORMANCE.md) and [MCTS_OPERATIONS.md](docs/mcts/MCTS_OPERATIONS.md)
+
 ## 🚀 Quick Start
 
 ### Environment Setup
@@ -72,21 +107,31 @@ python mcts.py --resume SESSION_ID
 
 ## 🏗️ Architecture
 
-### Modern Database System
+### **🎯 MCTS-Driven Feature Discovery System**
+- **Monte Carlo Tree Search**: UCB1 selection algorithm with configurable exploration
+- **Automated Feature Engineering**: 100+ domain operations with signal detection
+- **AutoGluon Integration**: Fast ML evaluation with MAP@3 optimization
+- **Performance**: 50% speedup with new pipeline, 4.2x faster data loading
+
+*📖 Detailed documentation: [MCTS_OVERVIEW.md](docs/mcts/MCTS_OVERVIEW.md)*
+
+### **⚙️ Feature Engineering Framework**
+- **Modular Architecture**: Generic + Custom domain operations
+- **Signal Detection**: Automatic filtering of low-signal features (50% performance boost)
+- **7 Generic Operations**: Statistical, polynomial, binning, ranking, temporal, text, categorical
+- **2 Custom Domains**: Fertilizer S5E6 (agricultural), Titanic (maritime)
+- **New Pipeline**: Lazy loading, memory optimization, parallel processing
+
+*📖 Detailed documentation: [FEATURES_OVERVIEW.md](docs/features/FEATURES_OVERVIEW.md)*
+
+### **🗄️ Enterprise Database System**
 - **Repository Pattern**: Clean separation between business logic and data access
 - **DuckDB-Only**: High-performance analytical database (no SQLite fallbacks)
 - **Connection Pooling**: Thread-safe connection management with automatic health checking
 - **Migration System**: Version-controlled schema updates with rollback support
 - **Type Safety**: Pydantic models for all database operations
 
-### MCTS-Driven Feature Discovery
-- **MCTSEngine**: Monte Carlo Tree Search with UCB1 selection algorithm
-- **FeatureSpace**: Domain-agnostic feature operations framework
-- **DomainModules**: Domain-specific feature operations (generic + fertilizer_s5e6 + titanic)
-- **AutoGluonEvaluator**: Fast ML model evaluation using AutoGluon TabularPredictor
-- **FeatureCacheManager**: MD5-based caching system for efficient feature storage
-
-### Dataset Management System
+### **📊 Dataset Management System**
 - **Centralized Registration**: Register datasets once, use everywhere
 - **Automatic Validation**: Hash-based integrity checking and metadata tracking
 - **Secure Access**: Controlled dataset access patterns with security layer
@@ -113,7 +158,20 @@ minotaur/
 │   │   ├── repositories/                 # Data access layer
 │   │   ├── migrations/                   # SQL migration files
 │   │   └── config/                       # Database configuration
-│   ├── domains/                          # Domain-specific feature operations
+│   ├── features/                         # Modern feature engineering system
+│   │   ├── base.py                       # Abstract base classes and timing
+│   │   ├── generic/                      # Domain-agnostic operations
+│   │   │   ├── statistical.py            # Statistical aggregations
+│   │   │   ├── polynomial.py             # Polynomial features
+│   │   │   ├── binning.py                # Quantile binning
+│   │   │   ├── ranking.py                # Rank transformations
+│   │   │   ├── temporal.py               # Time-based features
+│   │   │   ├── text.py                   # Text processing features
+│   │   │   └── categorical.py            # Categorical encoding
+│   │   └── custom/                       # Domain-specific operations
+│   │       ├── kaggle_s5e6.py            # Fertilizer competition features
+│   │       └── titanic.py                # Titanic dataset features
+│   ├── domains/                          # Legacy domain system (backward compatibility)
 │   │   ├── generic.py                    # Universal statistical operations
 │   │   ├── fertilizer_s5e6.py            # Agricultural NPK, stress indicators
 │   │   └── titanic.py                    # Maritime features for testing
@@ -139,6 +197,22 @@ minotaur/
 │   │   ├── selfcheck.py                  # System validation
 │   │   └── verification.py               # Data integrity verification
 │   └── examples/                         # Traditional ML models (001-009)
+│
+├── 📁 docs/             # Comprehensive documentation
+│   ├── mcts/                             # MCTS system documentation
+│   │   ├── MCTS_OVERVIEW.md              # Executive summary and quick start
+│   │   ├── MCTS_IMPLEMENTATION.md        # Technical implementation details
+│   │   ├── MCTS_DATA_FLOW.md             # Phase-by-phase data flow
+│   │   ├── MCTS_VALIDATION.md            # Validation framework and testing
+│   │   └── MCTS_OPERATIONS.md            # Configuration and troubleshooting
+│   ├── features/                         # Feature engineering documentation
+│   │   ├── FEATURES_OVERVIEW.md          # System architecture and quick start
+│   │   ├── FEATURES_OPERATIONS.md        # Complete operations catalog
+│   │   ├── FEATURES_INTEGRATION.md       # Pipeline and dataset integration
+│   │   ├── FEATURES_DEVELOPMENT.md       # Custom development guide
+│   │   └── FEATURES_PERFORMANCE.md       # Optimization and troubleshooting
+│   ├── AUTOGLUON_CONFIG_GUIDE.md         # AutoGluon configuration reference
+│   └── SYSTEM_COMPLETION_SUMMARY.md      # System implementation status
 │
 ├── 📁 tests/            # Comprehensive test suite
 │   ├── unit/                             # Unit tests
@@ -294,12 +368,23 @@ pytest --cov=src --cov-report=term       # Terminal coverage report
 4. **Service Integration**: Modify `src/db_service.py` for high-level operations
 5. **Testing**: Run database tests with `pytest -m duckdb`
 
-### Adding New Domain Features
-1. **Create Domain Module**: Add new file in `src/domains/` (e.g., `new_domain.py`)
-2. **Implement Operations**: Create feature operation classes with domain-specific methods
-3. **Register Operations**: Add to `FeatureSpace` configuration
-4. **Test Integration**: Create test configuration file in `config/`
-5. **Validate Results**: Run with fast config first, then real evaluation
+### Adding New Feature Operations
+
+#### **Generic Operations** (Domain-agnostic)
+1. **Create Module**: Add new file in `src/features/generic/` (e.g., `graph_features.py`)
+2. **Implement Class**: Extend `GenericFeatureOperation` with timing support
+3. **Register Operation**: Add to `__init__.py` and configuration
+4. **Test Integration**: Create unit tests and validate performance
+
+*📖 Detailed guide: [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md)*
+
+#### **Custom Domain Operations** (Problem-specific)
+1. **Create Domain**: Add new file in `src/features/custom/` (e.g., `ecommerce.py`)
+2. **Implement Operations**: Extend `BaseDomainFeatures` with domain knowledge
+3. **Add Auto-Detection**: Configure domain detection rules
+4. **Validate Results**: Test with representative datasets
+
+*📖 Detailed guide: [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md)*
 
 ## 🔒 Security Features
 
@@ -354,5 +439,26 @@ outputs/sessions/session_YYYYMMDD_HHMMSS/
 3. **Document Features**: Update CLAUDE.md for new capabilities
 4. **Security First**: Validate all inputs and secure data access
 5. **Performance Aware**: Consider impact on MCTS exploration speed
+
+## 📋 System Status
+
+### **Current Capabilities**
+- ✅ **MCTS Feature Discovery**: Production-ready with 0.33453 MAP@3 score
+- ✅ **Feature Engineering**: 100+ operations across 7 generic + 2 custom domains
+- ✅ **Database System**: Enterprise-grade DuckDB with repository pattern
+- ✅ **Performance Optimization**: 50% speedup with signal detection, 4.2x faster loading
+- ✅ **Comprehensive Documentation**: 5-document suites for MCTS and Features
+- ✅ **Testing Infrastructure**: Unit + integration tests with CI/CD
+
+### **Recent Major Updates** (2025-06-30)
+- 🆕 **New Feature Pipeline**: Modular `src/features/` system with lazy loading
+- 🆕 **Signal Detection**: Automatic filtering of low-signal features
+- 🆕 **Comprehensive Documentation**: Complete documentation suites for all systems
+- 🆕 **Performance Monitoring**: Real-time timing and memory usage tracking
+- 🆕 **Enhanced Testing**: Validation framework with timing and signal detection
+
+*📖 Complete status: [SYSTEM_COMPLETION_SUMMARY.md](docs/SYSTEM_COMPLETION_SUMMARY.md)*
+
+---
 
 The system is designed for competitive ML scenarios requiring rapid prototyping, automated feature discovery, and enterprise-grade data management with full auditability and reproducibility.

@@ -1,28 +1,90 @@
-# AutoGluon Configuration Guide for MCTS Feature Discovery
+<!-- 
+Documentation Status: CURRENT
+Last Updated: 2025-06-30 15:30
+Compatible with commit: TBD
+Changes: Updated with current system configuration and dataset integration
+-->
 
-## Overview
+# AutoGluon Configuration Guide
 
-This guide describes the enhanced AutoGluon configuration options for fast and efficient feature evaluation in the MCTS system.
+## 📋 Overview
+
+This guide provides comprehensive AutoGluon configuration for the Minotaur MCTS Feature Discovery System. It covers modern dataset integration, performance optimization, and phase-based evaluation strategies.
+
+### 🎯 Quick Navigation
+- **New Users**: Start with [Configuration Examples](#configuration-examples)
+- **Performance**: See [Performance Optimization](#performance-optimization-tips)
+- **Integration**: Check [Dataset Integration](#dataset-integration)
+- **Troubleshooting**: Review [Common Issues](#troubleshooting)
 
 ## Configuration Structure
 
 ```yaml
 autogluon:
+  # Dataset Integration (Modern Approach)
+  dataset_name: 'playground-series-s5e6-2025'  # Registered dataset
+  target_metric: 'MAP@3'                        # Competition metric
+  
   # Core AutoGluon configuration
-  included_model_types: ['XGB']           # Focus on specific algorithms
-  presets: 'medium_quality_faster_train'  # Training speed preset
-  enable_gpu: true                        # GPU acceleration
-  train_size: 0.1                         # Fraction of training data (0.0-1.0)
-  holdout_frac: 0.2                       # Validation split
-  time_limit: 30                          # Base time limit in seconds
+  included_model_types: ['XGB']                 # Focus on specific algorithms
+  presets: 'medium_quality_faster_train'       # Training speed preset
+  enable_gpu: true                              # GPU acceleration
+  train_size: 0.1                               # Fraction of training data (0.0-1.0)
+  holdout_frac: 0.2                             # Validation split
+  time_limit: 30                                # Base time limit in seconds
   
   # Phase-specific configurations
-  fast_eval: { ... }                      # Exploration phase settings
-  thorough_eval: { ... }                  # Exploitation phase settings
-  final_eval: { ... }                     # Final evaluation settings
+  fast_eval: { ... }                            # Exploration phase settings
+  thorough_eval: { ... }                        # Exploitation phase settings
+  final_eval: { ... }                           # Final evaluation settings
+  
+  # Advanced settings
+  adaptive_time_limit: true                     # Dynamic time adjustment
+  timeout_multiplier: 1.5                      # Increase when improving
+  thorough_eval_threshold: 0.6                 # Switch phase at 60%
 ```
 
-## Available Model Types
+## 🚀 Dataset Integration
+
+### Modern Dataset Configuration (Recommended)
+
+```yaml
+# Use registered dataset names
+autogluon:
+  dataset_name: 'playground-series-s5e6-2025'  # Centralized dataset management
+  target_metric: 'MAP@3'                        # Competition-specific metric
+  target_column: 'Fertilizer Type'              # Target prediction column
+  
+# Benefits:
+# - Automatic data loading and caching
+# - Consistent dataset versions across runs
+# - Built-in validation and integrity checking
+# - Performance optimizations (parquet caching)
+```
+
+### Legacy Path Configuration (Still Supported)
+
+```yaml
+# Direct file paths (backward compatibility)
+autogluon:
+  train_path: "/mnt/ml/competitions/2025/playground-series-s5e6/train.csv"
+  test_path: "/mnt/ml/competitions/2025/playground-series-s5e6/test.csv"
+  target_column: 'Fertilizer Type'
+```
+
+### Available Registered Datasets
+
+```bash
+# List all registered datasets
+python manager.py datasets --list
+
+# Common datasets:
+# - 'playground-series-s5e6-2025'  # Fertilizer prediction
+# - 'titanic'                      # Titanic survival (testing)
+# - 'house-prices'                 # House price regression
+```
+
+## 🎯 Available Model Types
 
 ```yaml
 # All available AutoGluon model types:
@@ -70,7 +132,11 @@ autogluon:
 ### 1. Ultra-Fast Development Configuration
 
 ```yaml
+# For rapid prototyping and testing
 autogluon:
+  dataset_name: 'playground-series-s5e6-2025'
+  target_metric: 'MAP@3'
+  
   included_model_types: ['XGB']
   presets: 'medium_quality_faster_train'
   enable_gpu: true
@@ -82,17 +148,28 @@ autogluon:
     time_limit: 10
     train_size: 0.02                      # Tiny dataset
     included_model_types: ['XGB']
+    
+# Expected performance: 30-60 seconds per evaluation
+# Use case: Feature operation testing, rapid iteration
 ```
 
 ### 2. Balanced Speed/Quality Configuration
 
 ```yaml
+# Production-ready with good performance balance
 autogluon:
+  dataset_name: 'playground-series-s5e6-2025'
+  target_metric: 'MAP@3'
+  
   included_model_types: ['XGB', 'GBM']
   presets: 'good_quality_faster_inference'
   enable_gpu: true
   train_size: 0.2                         # 20% of data
   time_limit: 60
+  
+  # Phase-based evaluation
+  thorough_eval_threshold: 0.6            # Switch at 60% iterations
+  adaptive_time_limit: true
   
   fast_eval:
     time_limit: 30
@@ -103,23 +180,48 @@ autogluon:
     time_limit: 120
     train_size: 0.2
     included_model_types: ['XGB', 'GBM']
+    
+# Expected performance: 2-5 minutes per evaluation
+# Use case: Standard MCTS feature discovery
 ```
 
 ### 3. Production Quality Configuration
 
 ```yaml
+# High-quality feature discovery for competition submission
 autogluon:
+  dataset_name: 'playground-series-s5e6-2025'
+  target_metric: 'MAP@3'
+  
   included_model_types: ['XGB', 'GBM', 'CAT']
   presets: 'good_quality'
   enable_gpu: true
   train_size: 0.5                         # Half the data
   time_limit: 300                         # 5 minutes
   
+  # Advanced phase management
+  thorough_eval_threshold: 0.4            # Earlier switch to quality
+  adaptive_time_limit: true
+  timeout_multiplier: 2.0                 # Longer time for good features
+  
+  fast_eval:
+    time_limit: 60
+    train_size: 0.1
+    included_model_types: ['XGB']
+    
+  thorough_eval:
+    time_limit: 300
+    train_size: 0.3
+    included_model_types: ['XGB', 'GBM']
+  
   final_eval:
     time_limit: 600                       # 10 minutes
     train_size: 1.0                       # Full dataset
     included_model_types: ['XGB', 'GBM', 'CAT', 'RF']
     presets: 'high_quality'
+    
+# Expected performance: 5-15 minutes per evaluation
+# Use case: Final competition runs, best feature validation
 ```
 
 ## GPU Configuration
@@ -268,31 +370,51 @@ data:
 | Balanced | 500MB | ⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Quality | 1GB | ⭐⭐ | ⭐⭐⭐⭐⭐ |
 
-## Integration with MCTS
+## 🔗 Integration with MCTS
 
-### Phase-Based Evaluation
+### Phase-Based Evaluation Strategy
 
 ```yaml
 # Automatic phase switching based on iteration progress
 autogluon:
   thorough_eval_threshold: 0.6            # Switch at 60% completion
+  adaptive_time_limit: true               # Dynamic time allocation
+  timeout_multiplier: 1.5                # Increase time for improvements
   
 # Example: 10 total iterations
-# Iterations 1-6: Use fast_eval settings
-# Iterations 7-10: Use thorough_eval settings
+# Iterations 1-6: Use fast_eval settings (exploration)
+# Iterations 7-10: Use thorough_eval settings (exploitation)
 ```
 
-### Feature Discovery Optimization
+### Feature Space Integration
 
 ```yaml
-# Optimize for feature discovery speed
+# Optimize for MCTS feature discovery
 feature_space:
   max_features_per_node: 150              # Limit feature count
+  use_new_pipeline: true                  # Modern feature system
+  check_signal: true                      # Filter low-signal features
   
 autogluon:
-  included_model_types: ['XGB']           # Single model for consistency
-  train_size: 0.1                         # Fast evaluation
-  adaptive_time_limit: true               # More time for promising features
+  dataset_name: 'playground-series-s5e6-2025'  # Centralized dataset
+  included_model_types: ['XGB']               # Single model for consistency
+  train_size: 0.1                             # Fast evaluation
+  adaptive_time_limit: true                   # More time for promising features
+```
+
+### Signal Detection Integration
+
+```yaml
+# Enhanced feature validation
+feature_space:
+  check_signal: true                      # Enable signal detection
+  min_signal_ratio: 0.01                  # 1% minimum unique values
+  signal_sample_size: 1000                # Sample for large datasets
+  
+# Benefits:
+# - 50% faster feature generation
+# - Automatic filtering of constant features
+# - Better AutoGluon evaluation quality
 ```
 
 ## Troubleshooting
@@ -326,15 +448,148 @@ autogluon:
      included_model_types: ['XGB', 'GBM'] # Multiple models
    ```
 
-## Best Practices
+4. **Dataset Registration Errors**
+   ```bash
+   # Solution: Check dataset status
+   python manager.py datasets --list
+   python manager.py datasets --show DATASET_NAME
+   
+   # Re-register if needed
+   python manager.py datasets --register --dataset-name NAME --auto
+   ```
 
-1. **Start Small, Scale Up**: Begin with ultra-fast settings for development
-2. **Use GPU When Available**: Significant speedups for XGB and CAT
-3. **Progressive Data Sizing**: Increase train_size for promising features
-4. **Monitor Memory Usage**: Use data limits to prevent OOM errors
-5. **Phase-Based Strategy**: Different settings for exploration vs exploitation
-6. **Cache Everything**: System automatically caches evaluations
+5. **Signal Detection Issues**
+   ```yaml
+   # Solution: Adjust signal detection settings
+   feature_space:
+     check_signal: true
+     min_signal_ratio: 0.005             # Lower threshold
+     signal_sample_size: 2000            # Larger sample
+   ```
 
-## Example Complete Configuration
+## 📈 Performance Metrics
 
-See `mcts_config_fast_real.yaml` for a complete working example optimized for speed and real AutoGluon evaluation.
+### AutoGluon Evaluation Performance
+
+| Configuration | Evaluation Time | Memory Usage | MAP@3 Score | Use Case |
+|--------------|----------------|--------------|-------------|----------|
+| **Ultra-Fast** | 30-60s | 50-100MB | 0.31-0.32 | Development |
+| **Fast** | 2-5min | 200-400MB | 0.32-0.33 | Validation |
+| **Balanced** | 5-10min | 500MB-1GB | 0.33-0.335 | Production |
+| **Quality** | 10-30min | 1-2GB | 0.335+ | Competition |
+
+### Dataset Loading Performance
+
+| Method | Load Time | Memory | Cache | Improvement |
+|--------|-----------|--------|-------|-------------|
+| **CSV Direct** | 0.25s | 157MB | No | Baseline |
+| **Parquet Cache** | 0.06s | 157MB | Yes | **4.2x faster** |
+| **Optimized Sample** | 0.01s | 0.2MB | Yes | **25x faster** |
+
+## 🎯 Best Practices
+
+### Development Workflow
+
+1. **Start with Dataset Registration**:
+   ```bash
+   python manager.py datasets --register --dataset-name my-dataset --auto
+   ```
+
+2. **Use Modern Configuration**:
+   ```yaml
+   autogluon:
+     dataset_name: 'my-dataset'  # Not file paths
+     target_metric: 'MAP@3'      # Competition metric
+   ```
+
+3. **Progressive Scaling**:
+   - Development: Ultra-fast config (30s evaluations)
+   - Validation: Fast config (2-5min evaluations)
+   - Production: Balanced config (5-10min evaluations)
+   - Competition: Quality config (10-30min evaluations)
+
+### Performance Optimization
+
+4. **Leverage GPU Acceleration**: Significant speedups for XGB and CAT models
+5. **Use Signal Detection**: Enable `check_signal: true` for 50% speedup
+6. **Monitor Memory Usage**: Use data limits and optimization to prevent OOM
+7. **Phase-Based Strategy**: Different settings for exploration vs exploitation
+8. **Enable Caching**: System automatically caches evaluations and datasets
+
+### Integration Best Practices
+
+9. **Feature Space Configuration**:
+   ```yaml
+   feature_space:
+     use_new_pipeline: true    # Modern feature system
+     check_signal: true        # Performance boost
+     max_features_per_node: 150  # Prevent overfitting
+   ```
+
+10. **MCTS Integration**:
+    ```yaml
+    mcts:
+      max_iterations: 10        # Start small
+      exploration_weight: 1.4   # UCB1 parameter
+    autogluon:
+      adaptive_time_limit: true # More time for good features
+    ```
+
+## 📁 Example Complete Configurations
+
+### Available Configuration Templates
+
+```bash
+# View available configurations
+ls config/mcts_config*.yaml
+
+# Key configurations:
+# - mcts_config_s5e6_fast_test.yaml     # Ultra-fast testing (30s)
+# - mcts_config_s5e6_fast_real.yaml     # Fast real evaluation (2-5min)
+# - mcts_config_s5e6_production.yaml    # Production quality (hours)
+# - mcts_config_titanic_test.yaml       # Titanic domain testing
+```
+
+### Complete Fast Real Configuration Example
+
+```yaml
+# config/mcts_config_s5e6_fast_real.yaml (excerpt)
+autogluon:
+  dataset_name: 'playground-series-s5e6-2025'
+  target_metric: 'MAP@3'
+  target_column: 'Fertilizer Type'
+  
+  included_model_types: ['XGB']
+  presets: 'medium_quality_faster_train'
+  enable_gpu: true
+  train_size: 0.1
+  time_limit: 60
+  
+  thorough_eval_threshold: 0.6
+  adaptive_time_limit: true
+  
+  fast_eval:
+    time_limit: 30
+    train_size: 0.05
+  
+  thorough_eval:
+    time_limit: 120
+    train_size: 0.1
+
+feature_space:
+  use_new_pipeline: true
+  check_signal: true
+  enabled_categories:
+    - 'statistical_aggregations'
+    - 'polynomial_features'
+    - 'kaggle_s5e6_domain'
+
+mcts:
+  max_iterations: 5
+  exploration_weight: 1.4
+```
+
+---
+
+*For MCTS configuration details, see [MCTS_OPERATIONS.md](mcts/MCTS_OPERATIONS.md)*  
+*For feature configuration details, see [FEATURES_INTEGRATION.md](features/FEATURES_INTEGRATION.md)*
