@@ -44,4 +44,39 @@ Minotaur currently has two separate feature filtering systems that create mainte
 
 ## 📋 Other Tasks
 
+### Feature Generation Configuration Refactoring
+
+**Problem Description:**
+The current feature generation code has hardcoded parameters that should be moved to configuration:
+
+```python
+generic_features(test_df, check_signal=False, target_column=None, id_column=id_column, auto_register=False)
+```
+
+**Issues:**
+- Parameters like `check_signal`, `target_column`, `id_column`, and `auto_register` are hardcoded
+- Different behavior for train vs test data is scattered in code rather than configured
+- Makes it difficult to adjust behavior without modifying source code
+
+**Proposed Solution:**
+1. Create a configuration section for feature generation parameters
+2. Support different profiles for train/test data generation
+3. Move all hardcoded parameters to YAML configuration
+4. Example configuration structure:
+   ```yaml
+   feature_generation:
+     train_profile:
+       check_signal: true
+       auto_register: true
+       use_target_column: true
+     test_profile:
+       check_signal: false
+       auto_register: false
+       use_target_column: false
+   ```
+
+**Priority:** Medium
+**Estimated Effort:** 1-2 hours
+**Impact:** Improved maintainability and flexibility
+
 (Future TODO items can be added here)

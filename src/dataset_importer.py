@@ -559,7 +559,7 @@ class DatasetImporter:
                 # OLD PIPELINE PATH for test data
                 # 1. Generate GENERIC features for test (without signal checking and auto-registration)
                 dataset_logger.info("🔧 Generating GENERIC features for test...")
-                test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False, target_column=None, id_column=id_column, auto_register=False)
+                test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False, target_column=None, id_column=id_column, auto_register=False, origin='generic')
                 dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
                 
                 # Save test_generic table
@@ -571,7 +571,7 @@ class DatasetImporter:
                 
                 # 2. Generate CUSTOM features for test (without signal checking and auto-registration)
                 dataset_logger.info("🎯 Generating CUSTOM domain features for test...")
-                test_custom_df = feature_space.generate_custom_features(test_df, dataset_name, check_signal=False, auto_register=False)
+                test_custom_df = feature_space.generate_custom_features(test_df, dataset_name, check_signal=False, auto_register=False, origin='custom')
                 dataset_logger.info(f"Generated {len(test_custom_df.columns)} custom columns for test")
                 
                 # Save test_custom table

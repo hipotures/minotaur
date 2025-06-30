@@ -39,11 +39,14 @@ Slow, inconsistent            Fast, deterministic
 
 ## 📋 Key Concepts & Terminology
 
-### Feature Categories
-- **Generic Features**: Domain-agnostic operations (statistical, polynomial, binning, ranking, temporal, text, categorical)
-- **Custom Features**: Domain-specific operations (agricultural indicators, market sentiment, etc.)
-- **Base Features**: Original dataset columns
-- **Derived Features**: Generated from existing features
+### Feature Categories (Origin Types)
+- **Train Features** (`origin='train'`): Original dataset columns (Nitrogen, Phosphorous, Potassium, etc.)
+- **Generic Features** (`origin='generic'`): Domain-agnostic operations (statistical, polynomial, binning, ranking, temporal, text, categorical)
+- **Custom Features** (`origin='custom'`): Domain-specific operations (agricultural indicators, market sentiment, etc.)
+
+### Feature Classification
+- **Base Features**: Original dataset columns (train origin)
+- **Derived Features**: Generated from existing features (generic/custom origin)
 
 ### Signal Detection
 - **Signal**: Features with discriminative value (nunique() > 1)
@@ -104,6 +107,34 @@ python manager.py features --export csv
 
 # Show feature catalog overview
 python manager.py features --catalog
+```
+
+## 🗄️ Feature Catalog and Origin System
+
+### Feature Origin Classification
+The system now tracks feature origin to enable comprehensive feature management:
+
+```sql
+-- Complete feature catalog with origins
+SELECT origin, COUNT(*) as count FROM feature_catalog GROUP BY origin;
+-- Result: train (10), generic (427), custom (varies)
+```
+
+**Origin Types:**
+- **`train`**: Original dataset columns (e.g., Nitrogen, Phosphorous, Age, Sex)
+- **`generic`**: Domain-agnostic generated features (statistical_aggregations, polynomial_features, etc.)
+- **`custom`**: Domain-specific generated features (titanic_features, agricultural_indicators, etc.)
+
+### MCTS Integration Benefits
+- **Complete Feature Visibility**: MCTS can now see all available features (original + generated)
+- **Origin-Based Selection**: Can prioritize certain feature types during exploration
+- **Unified Interface**: Single catalog for all feature management operations
+
+```python
+# Example: Get features by origin
+train_features = get_features_by_origin('train')      # Original columns
+generic_features = get_features_by_origin('generic')  # Generated features
+custom_features = get_features_by_origin('custom')    # Domain-specific features
 ```
 
 ## 📊 Feature Operations Catalog
