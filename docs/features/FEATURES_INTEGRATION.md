@@ -103,6 +103,62 @@ dataset_registration:
   cache_intermediate: true
 ```
 
+### Column Configuration Priority Logic
+
+**Target and ID Column Detection**:
+
+The system uses a three-tier priority logic for determining target and ID columns during dataset registration:
+
+**Priority Order**: `Config File → CLI Parameters → Auto-detection`
+
+```python
+# Priority Logic Implementation
+target_column = config.get('target_column') or None
+if CLI_target_provided:
+    target_column = CLI_target_value  # CLI overrides config
+    
+if target_column is None:
+    target_column = auto_detection()
+    if target_column is None:
+        ERROR + STOP  # Target is required
+```
+
+**Target Column Logic**:
+1. **Config File**: Load from `config/mcts_config.yaml`
+2. **CLI Override**: `--target-column Survived` overrides config
+3. **Auto-detection**: If both missing, attempt auto-detection
+4. **Error Handling**: **ERROR + STOP** if target cannot be determined
+
+**ID Column Logic**:
+1. **Config File**: Load from `config/mcts_config.yaml`
+2. **CLI Override**: `--id-column PassengerId` overrides config  
+3. **Auto-detection**: If both missing, attempt auto-detection
+4. **Error Handling**: **WARNING + CONTINUE** if ID cannot be determined (optional)
+
+**Example Configuration**:
+```yaml
+# config/mcts_config.yaml
+autogluon:
+  target_column: 'Survived'    # Base configuration
+  id_column: 'PassengerId'     # Base configuration
+  ignore_columns: []           # Additional columns to ignore
+```
+
+**Example CLI Override**:
+```bash
+# CLI parameters override config values
+python manager.py datasets --register \
+  --dataset-name titanic \
+  --dataset-path datasets/Titanic \
+  --target-column Survived \      # Overrides config
+  --id-column PassengerId         # Overrides config
+```
+
+**Column Name Normalization**:
+- All column names are automatically converted to lowercase for database consistency
+- Original case is preserved in logs for clarity
+- Feature generation respects database column names (lowercase)
+
 ## 🔄 Pipeline Types & Migration
 
 ### Legacy Pipeline (Pre-2025)

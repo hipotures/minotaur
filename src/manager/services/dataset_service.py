@@ -262,8 +262,8 @@ class DatasetService:
         Args:
             name: Dataset name
             path: Path to dataset directory
-            target_column: Target column name
-            id_column: ID column name
+            target_column: Target column name (CLI parameter)
+            id_column: ID column name (CLI parameter)
             competition_name: Competition name
             description: Dataset description
             
@@ -299,18 +299,47 @@ class DatasetService:
                     'error': 'No training file found in directory'
                 }
             
-            # Auto-detect target column if not provided
-            if not target_column:
-                target_column = importer.detect_target_column(file_mappings['train'])
-                if not target_column:
+            # Load config file values (if exists)
+            config_target_column = None
+            config_id_column = None
+            try:
+                import yaml
+                config_path = src_dir / 'config' / 'mcts_config.yaml'
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = yaml.safe_load(f)
+                    config_target_column = config.get('autogluon', {}).get('target_column')
+                    config_id_column = config.get('autogluon', {}).get('id_column')
+            except Exception:
+                pass  # Config loading optional
+            
+            # Priority logic: Config → CLI → Auto-detection
+            
+            # TARGET COLUMN
+            final_target_column = config_target_column  # Start with config
+            if target_column:  # CLI overrides config
+                final_target_column = target_column
+            if not final_target_column:  # Auto-detect if both missing
+                final_target_column = importer.detect_target_column(file_mappings['train'])
+                if not final_target_column:
                     return {
                         'success': False,
-                        'error': 'Could not auto-detect target column. Please specify --target-column'
+                        'error': 'Could not auto-detect target column. Please specify --target-column or add target_column to config file'
                     }
             
-            # Auto-detect ID column if not provided
-            if not id_column:
-                id_column = importer.detect_id_column(file_mappings['train'])
+            # ID COLUMN  
+            final_id_column = config_id_column  # Start with config
+            if id_column:  # CLI overrides config
+                final_id_column = id_column
+            if not final_id_column:  # Auto-detect if both missing
+                final_id_column = importer.detect_id_column(file_mappings['train'])
+                # ID column is optional - just log warning if not found
+                if not final_id_column:
+                    print(f"⚠️  WARNING: Could not auto-detect ID column. Continuing without ID column.")
+            
+            # Update variables for rest of function (lowercase to match database)
+            target_column = final_target_column.lower() if final_target_column else None
+            id_column = final_id_column.lower() if final_id_column else None
             
             # Analyze files for metadata
             metadata = {}

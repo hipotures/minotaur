@@ -317,23 +317,18 @@ class DatasetImporter:
                 columns = conn.execute("DESCRIBE train").fetchall()
                 column_names = [col[0] for col in columns]
                 
-                # Convert target and ID columns to lowercase for comparison
-                target_column_lower = target_column.lower() if target_column else None
-                id_column_lower = id_column.lower() if id_column else None
-                
-                if target_column_lower and target_column_lower not in column_names:
-                    logger.warning(f"Target column '{target_column_lower}' not found in train table")
+                # Check if target and ID columns exist in database (parameters already lowercase)
+                if target_column and target_column not in column_names:
+                    logger.warning(f"Target column '{target_column}' not found in train table")
                     logger.info(f"Available columns: {', '.join(column_names)}")
                 
-                if id_column_lower and id_column_lower not in column_names:
-                    logger.warning(f"ID column '{id_column_lower}' not found in train table")
+                if id_column and id_column not in column_names:
+                    logger.warning(f"ID column '{id_column}' not found in train table")
             
             # Generate features for train and test tables
             logger.info("Generating features for dataset...")
-            # Pass lowercase versions of target and ID columns
-            target_column_lower = target_column.lower() if target_column else None
-            id_column_lower = id_column.lower() if id_column else None
-            self._generate_and_save_features(conn, self.dataset_name, target_column_lower, id_column_lower)
+            # Pass target and ID columns (already lowercase from earlier conversion)
+            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column)
             
             conn.close()
             
@@ -379,9 +374,16 @@ class DatasetImporter:
         # Override dataset name in autogluon config
         config['autogluon']['dataset_name'] = dataset_name
         
-        # Add target and ID column information for feature filtering
-        config['autogluon']['target_column'] = target_column
-        config['autogluon']['id_column'] = id_column
+        # Add target and ID column information for feature filtering (lowercase to match database)
+        config['autogluon']['target_column'] = target_column.lower() if target_column else None
+        config['autogluon']['id_column'] = id_column.lower() if id_column else None
+        
+        # Lowercase ignore_columns if they exist
+        existing_ignore = config['autogluon'].get('ignore_columns', []) or []
+        config['autogluon']['ignore_columns'] = [col.lower() if isinstance(col, str) else col for col in existing_ignore]
+        
+        # Log dataset configuration
+        dataset_logger.info(f"📊 Dataset configuration: target='{config['autogluon']['target_column']}', id='{config['autogluon']['id_column']}', ignore={config['autogluon']['ignore_columns']}")
         
         # Auto-detect custom domain module based on dataset name
         dataset_name_clean = dataset_name.lower().replace('-', '_').replace(' ', '_')
@@ -511,7 +513,7 @@ class DatasetImporter:
                 dataset_logger.info(f"✅ Created 'train_features' table with {result[0]} columns")
                 
                 # Filter out no-signal columns from train_features and get valid column list
-                valid_train_columns = self._filter_no_signal_columns(conn, 'train_features', target_column, dataset_logger)
+                valid_train_columns = self._filter_no_signal_columns(conn, 'train_features', target_column, id_column, dataset_logger)
         
         # Process test data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").fetchone():
@@ -558,75 +560,75 @@ class DatasetImporter:
                 # 1. Generate GENERIC features for test (without signal checking)
                 dataset_logger.info("🔧 Generating GENERIC features for test...")
                 test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False)
-            dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
-            
-            # Save test_generic table
-            conn.execute("DROP TABLE IF EXISTS test_generic")
-            conn.register('test_generic_df', test_generic_df)
-            conn.execute("CREATE TABLE test_generic AS SELECT * FROM test_generic_df")
-            conn.unregister('test_generic_df')
-            dataset_logger.info(f"✅ Created 'test_generic' table with {len(test_generic_df.columns)} columns")
-            
-            # 2. Generate CUSTOM features for test (without signal checking)
-            dataset_logger.info("🎯 Generating CUSTOM domain features for test...")
-            test_custom_df = feature_space.generate_custom_features(test_df, dataset_name, check_signal=False)
-            dataset_logger.info(f"Generated {len(test_custom_df.columns)} custom columns for test")
-            
-            # Save test_custom table
-            conn.execute("DROP TABLE IF EXISTS test_custom")
-            conn.register('test_custom_df', test_custom_df)
-            conn.execute("CREATE TABLE test_custom AS SELECT * FROM test_custom_df")
-            conn.unregister('test_custom_df')
-            dataset_logger.info(f"✅ Created 'test_custom' table with {len(test_custom_df.columns)} columns")
-            
-            # 3. Create test_features by column concatenation in DuckDB
-            dataset_logger.info("🔗 Creating test_features (test + test_generic + test_custom)...")
-            
-            # Get column names from each table to handle duplicates
-            test_cols = conn.execute("SELECT name FROM pragma_table_info('test')").fetchall()
-            test_generic_cols = conn.execute("SELECT name FROM pragma_table_info('test_generic')").fetchall()
-            test_custom_cols = conn.execute("SELECT name FROM pragma_table_info('test_custom')").fetchall()
-            
-            # Build deduplicated column list
-            seen_columns = set()
-            select_parts = []
-            
-            # Add all columns from test table
-            for col in test_cols:
-                col_name = col[0]
-                select_parts.append(f't."{col_name}"')
-                seen_columns.add(col_name)
-            
-            # Add non-duplicate columns from generic table
-            for col in test_generic_cols:
-                col_name = col[0]
-                if col_name not in seen_columns:
-                    select_parts.append(f'g."{col_name}"')
+                dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
+                
+                # Save test_generic table
+                conn.execute("DROP TABLE IF EXISTS test_generic")
+                conn.register('test_generic_df', test_generic_df)
+                conn.execute("CREATE TABLE test_generic AS SELECT * FROM test_generic_df")
+                conn.unregister('test_generic_df')
+                dataset_logger.info(f"✅ Created 'test_generic' table with {len(test_generic_df.columns)} columns")
+                
+                # 2. Generate CUSTOM features for test (without signal checking)
+                dataset_logger.info("🎯 Generating CUSTOM domain features for test...")
+                test_custom_df = feature_space.generate_custom_features(test_df, dataset_name, check_signal=False)
+                dataset_logger.info(f"Generated {len(test_custom_df.columns)} custom columns for test")
+                
+                # Save test_custom table
+                conn.execute("DROP TABLE IF EXISTS test_custom")
+                conn.register('test_custom_df', test_custom_df)
+                conn.execute("CREATE TABLE test_custom AS SELECT * FROM test_custom_df")
+                conn.unregister('test_custom_df')
+                dataset_logger.info(f"✅ Created 'test_custom' table with {len(test_custom_df.columns)} columns")
+                
+                # 3. Create test_features by column concatenation in DuckDB
+                dataset_logger.info("🔗 Creating test_features (test + test_generic + test_custom)...")
+                
+                # Get column names from each table to handle duplicates
+                test_cols = conn.execute("SELECT name FROM pragma_table_info('test')").fetchall()
+                test_generic_cols = conn.execute("SELECT name FROM pragma_table_info('test_generic')").fetchall()
+                test_custom_cols = conn.execute("SELECT name FROM pragma_table_info('test_custom')").fetchall()
+                
+                # Build deduplicated column list
+                seen_columns = set()
+                select_parts = []
+                
+                # Add all columns from test table
+                for col in test_cols:
+                    col_name = col[0]
+                    select_parts.append(f't."{col_name}"')
                     seen_columns.add(col_name)
-            
-            # Add non-duplicate columns from custom table
-            for col in test_custom_cols:
-                col_name = col[0]
-                if col_name not in seen_columns:
-                    select_parts.append(f'c."{col_name}"')
-                    seen_columns.add(col_name)
-            
-            # Build the SELECT statement
-            select_clause = ", ".join(select_parts)
-            
-            conn.execute(f"""
-                DROP TABLE IF EXISTS test_features;
-                CREATE TABLE test_features AS 
-                SELECT {select_clause}
-                FROM test t, test_generic g, test_custom c 
-                WHERE t.rowid = g.rowid AND g.rowid = c.rowid
-            """)
-            
-            result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('test_features')").fetchone()
-            dataset_logger.info(f"✅ Created 'test_features' table with {result[0]} columns")
-            
-            # Filter test_features to match valid train columns (don't remove based on test signal)
-            self._align_test_features_with_train(conn, 'test_features', valid_train_columns, target_column, dataset_logger)
+                
+                # Add non-duplicate columns from generic table
+                for col in test_generic_cols:
+                    col_name = col[0]
+                    if col_name not in seen_columns:
+                        select_parts.append(f'g."{col_name}"')
+                        seen_columns.add(col_name)
+                
+                # Add non-duplicate columns from custom table
+                for col in test_custom_cols:
+                    col_name = col[0]
+                    if col_name not in seen_columns:
+                        select_parts.append(f'c."{col_name}"')
+                        seen_columns.add(col_name)
+                
+                # Build the SELECT statement
+                select_clause = ", ".join(select_parts)
+                
+                conn.execute(f"""
+                    DROP TABLE IF EXISTS test_features;
+                    CREATE TABLE test_features AS 
+                    SELECT {select_clause}
+                    FROM test t, test_generic g, test_custom c 
+                    WHERE t.rowid = g.rowid AND g.rowid = c.rowid
+                """)
+                
+                result = conn.execute("SELECT COUNT(*) FROM pragma_table_info('test_features')").fetchone()
+                dataset_logger.info(f"✅ Created 'test_features' table with {result[0]} columns")
+                
+                # Filter test_features to match valid train columns (don't remove based on test signal)
+                self._align_test_features_with_train(conn, 'test_features', valid_train_columns, target_column, dataset_logger)
         
         # PART 5: Validate train/test feature column synchronization
         if (conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train_features'").fetchone() and
@@ -637,7 +639,7 @@ class DatasetImporter:
             if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
                 self._save_debug_dumps(conn, dataset_name, dataset_logger)
     
-    def _filter_no_signal_columns(self, conn, table_name: str, target_column: str, dataset_logger) -> list:
+    def _filter_no_signal_columns(self, conn, table_name: str, target_column: str, id_column: str, dataset_logger) -> list:
         """Remove columns with no signal (constant values) from feature table. Returns list of remaining columns."""
         try:
             # Get all columns
@@ -713,6 +715,11 @@ class DatasetImporter:
                 # Log all removed columns
                 for col in columns_to_remove:
                     dataset_logger.debug(f"  Removing from test: {col}")
+                
+                # Check if we have columns to keep
+                if not columns_to_keep:
+                    dataset_logger.error("❌ No columns to keep after alignment - this should not happen")
+                    raise ValueError("No valid columns remain after test feature alignment")
                 
                 # Create new table with only valid columns
                 column_list = ', '.join([f'"{col}"' for col in columns_to_keep])
