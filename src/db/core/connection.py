@@ -34,11 +34,12 @@ class ConnectionPool:
     health checking, and resource management.
     """
     
-    def __init__(self, db_path: str, pool_size: int, timeout: float, logger: logging.Logger):
+    def __init__(self, db_path: str, pool_size: int, timeout: float, logger: logging.Logger, read_only: bool = False):
         self.db_path = db_path
         self.pool_size = pool_size
         self.timeout = timeout
         self.logger = logger
+        self.read_only = read_only
         
         # Thread-safe connection pool
         self._pool = Queue(maxsize=pool_size)
@@ -98,7 +99,7 @@ class ConnectionPool:
                 import os
                 abs_path = os.path.abspath(self.db_path)
                 self.logger.debug(f"Absolute path: {abs_path}, exists: {os.path.exists(abs_path)}")
-                conn = duckdb.connect(database=self.db_path)
+                conn = duckdb.connect(database=self.db_path, read_only=self.read_only)
                 
                 # Apply performance optimizations
                 self._configure_connection(conn)
@@ -299,17 +300,19 @@ class DuckDBConnectionManager:
     provides connection pooling, transaction management, and performance monitoring.
     """
     
-    def __init__(self, main_config: Dict[str, Any]):
+    def __init__(self, main_config: Dict[str, Any], read_only: bool = False):
         """
         Initialize connection manager with configuration.
         
         Args:
             main_config: Main MCTS configuration dictionary
+            read_only: If True, opens database in read-only mode for concurrent access
         """
         if not DUCKDB_AVAILABLE:
             raise ImportError("DuckDB is not installed. Please install with: pip install duckdb")
         
         self.main_config = main_config
+        self.read_only = read_only
         self.db_config = get_duckdb_config()
         
         # Validate configuration
@@ -336,7 +339,8 @@ class DuckDBConnectionManager:
             db_path=self.db_path,
             pool_size=conn_config['pool_size'],
             timeout=conn_config['timeout'],
-            logger=self.logger.logger
+            logger=self.logger.logger,
+            read_only=self.read_only
         )
         
         # Performance tracking

@@ -26,6 +26,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.discovery_db import FeatureDiscoveryDB
 
 
+def calculate_tree_depth(db: FeatureDiscoveryDB, session_id: str) -> int:
+    """Calculate actual tree depth from parent-child relationships."""
+    query = """
+    WITH RECURSIVE tree_depth AS (
+        -- Base case: root nodes (no parent)
+        SELECT mcts_node_id, 0 as depth
+        FROM exploration_history 
+        WHERE session_id = ? AND parent_node_id IS NULL
+        
+        UNION ALL
+        
+        -- Recursive case: children nodes
+        SELECT eh.mcts_node_id, td.depth + 1
+        FROM exploration_history eh
+        JOIN tree_depth td ON eh.parent_node_id = td.mcts_node_id
+        WHERE eh.session_id = ?
+    )
+    SELECT MAX(depth) as max_depth FROM tree_depth
+    """
+    result = db.db_service.connection_manager.execute_query(query, params=(session_id, session_id), fetch='one')
+    return result[0] if result and result[0] is not None else 0
+
+
 def load_default_config() -> Dict[str, Any]:
     """Load default configuration from base config file."""
     config_path = Path(__file__).parent.parent.parent / 'config' / 'mcts_config.yaml'
@@ -51,7 +74,7 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
            status, config_snapshot
     FROM sessions WHERE session_id = ?
     """
-    session_info = db.db_service.connection_manager.connection.execute(session_query, [session_id]).fetchone()
+    session_info = db.db_service.connection_manager.execute_query(session_query, params=(session_id,), fetch='one')
     
     if not session_info:
         return {"error": "Session not found"}
@@ -62,13 +85,15 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
            COUNT(DISTINCT mcts_node_id) as unique_nodes,
            MIN(iteration) as first_iteration,
            MAX(iteration) as last_iteration,
-           MAX(tree_depth) as max_depth,
-           AVG(score) as avg_score,
-           MAX(score) as best_score_seen,
-           SUM(eval_time) as total_eval_time
+           AVG(evaluation_score) as avg_score,
+           MAX(evaluation_score) as best_score_seen,
+           SUM(evaluation_time) as total_eval_time
     FROM exploration_history WHERE session_id = ?
     """
-    exploration_stats = db.db_service.connection_manager.connection.execute(exploration_query, [session_id]).fetchone()
+    exploration_stats = db.db_service.connection_manager.execute_query(exploration_query, params=(session_id,), fetch='one')
+    
+    # Calculate actual tree depth
+    max_tree_depth = calculate_tree_depth(db, session_id)
     
     overview = {
         "session_id": session_info[0],
@@ -80,34 +105,100 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
         "exploration_records": exploration_stats[0] if exploration_stats else 0,
         "unique_nodes": exploration_stats[1] if exploration_stats else 0,
         "iteration_range": f"{exploration_stats[2]}-{exploration_stats[3]}" if exploration_stats and exploration_stats[2] else "N/A",
-        "max_tree_depth": exploration_stats[4] if exploration_stats else 0,
-        "avg_score": round(exploration_stats[5], 5) if exploration_stats and exploration_stats[5] else 0,
-        "best_score_observed": round(exploration_stats[6], 5) if exploration_stats and exploration_stats[6] else 0,
-        "total_evaluation_time": round(exploration_stats[7], 2) if exploration_stats and exploration_stats[7] else 0
+        "max_tree_depth": max_tree_depth,
+        "avg_score": round(exploration_stats[4], 5) if exploration_stats and exploration_stats[4] else 0,
+        "best_score_observed": round(exploration_stats[5], 5) if exploration_stats and exploration_stats[5] else 0,
+        "total_evaluation_time": round(exploration_stats[6], 2) if exploration_stats and exploration_stats[6] else 0
     }
     
     return overview
+
+
+def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
+    """Draw ASCII tree structure showing MCTS exploration."""
+    # Get tree data
+    query = """
+    SELECT mcts_node_id, operation_applied, parent_node_id, 
+           evaluation_score, node_visits, mcts_ucb1_score
+    FROM exploration_history 
+    WHERE session_id = ?
+    ORDER BY iteration
+    """
+    records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
+    
+    if not records:
+        return "❌ No tree data found"
+    
+    # Build node structure
+    nodes = {}
+    children = {}
+    root_id = None
+    
+    for record in records:
+        node_id, operation, parent_id, score, visits, ucb1 = record
+        if node_id is None:
+            continue
+            
+        nodes[node_id] = {
+            'operation': operation or 'root',
+            'parent': parent_id,
+            'score': score or 0,
+            'visits': visits or 0,
+            'ucb1': ucb1 or 0
+        }
+        
+        if parent_id is None:
+            root_id = node_id
+        else:
+            if parent_id not in children:
+                children[parent_id] = []
+            children[parent_id].append(node_id)
+    
+    if root_id is None:
+        return "❌ No root node found"
+    
+    # Recursive function to draw tree
+    def draw_node(node_id, prefix="", is_last=True):
+        node = nodes[node_id]
+        connector = "└── " if is_last else "├── "
+        
+        # Node info with score and visits
+        node_info = f"{node['operation']} (ID:{node_id})"
+        stats = f"[score:{node['score']:.5f}, visits:{node['visits']}]"
+        
+        lines = [f"{prefix}{connector}{node_info} {stats}"]
+        
+        # Draw children
+        node_children = children.get(node_id, [])
+        for i, child_id in enumerate(node_children):
+            is_child_last = (i == len(node_children) - 1)
+            child_prefix = prefix + ("    " if is_last else "│   ")
+            lines.extend(draw_node(child_id, child_prefix, is_child_last))
+        
+        return lines
+    
+    tree_lines = draw_node(root_id)
+    return "\n".join(tree_lines)
 
 
 def analyze_convergence_pattern(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, Any]:
     """Analyze convergence and improvement patterns."""
     
     query = """
-    SELECT iteration, score, tree_depth, eval_time
+    SELECT iteration, evaluation_score, evaluation_time
     FROM exploration_history 
-    WHERE session_id = ? AND score IS NOT NULL
+    WHERE session_id = ? AND evaluation_score IS NOT NULL
     ORDER BY iteration
     """
     
-    records = db.db_service.connection_manager.connection.execute(query, [session_id]).fetchall()
+    records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
     
     if not records:
         return {"error": "No score data found"}
     
     scores = [r[1] for r in records]
     iterations = [r[0] for r in records]
-    depths = [r[2] for r in records]
-    eval_times = [r[3] for r in records]
+    eval_times = [r[2] for r in records]
     
     # Track best score over time
     best_scores = []
@@ -132,8 +223,8 @@ def analyze_convergence_pattern(db: FeatureDiscoveryDB, session_id: str) -> Dict
         "last_improvement_iteration": max(improvements) if improvements else 0,
         "iterations_since_improvement": max(iterations) - max(improvements) if improvements else 0,
         "depth_progression": {
-            "max_depth": max(depths) if depths else 0,
-            "avg_depth": round(statistics.mean(depths) if depths else 0, 2)
+            "max_depth": 0,  # Depth info not available in current schema
+            "avg_depth": 0   # Depth info not available in current schema
         },
         "evaluation_times": {
             "avg_time": round(statistics.mean(eval_times) if eval_times else 0, 2),
@@ -148,28 +239,26 @@ def analyze_operation_performance(db: FeatureDiscoveryDB, session_id: str) -> Di
     """Analyze performance of different operations."""
     
     query = """
-    SELECT operation, COUNT(*) as usage_count,
-           AVG(score) as avg_score,
-           MAX(score) as best_score,
-           AVG(eval_time) as avg_eval_time,
-           AVG(tree_depth) as avg_depth
+    SELECT operation_applied, COUNT(*) as usage_count,
+           AVG(evaluation_score) as avg_score,
+           MAX(evaluation_score) as best_score,
+           AVG(evaluation_time) as avg_eval_time
     FROM exploration_history 
-    WHERE session_id = ? AND operation != 'root'
-    GROUP BY operation
+    WHERE session_id = ? AND operation_applied != 'root'
+    GROUP BY operation_applied
     ORDER BY avg_score DESC
     """
     
-    records = db.db_service.connection_manager.connection.execute(query, [session_id]).fetchall()
+    records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
     
     operations = {}
     for record in records:
-        op_name, count, avg_score, best_score, avg_time, avg_depth = record
+        op_name, count, avg_score, best_score, avg_time = record
         operations[op_name] = {
             "usage_count": count,
             "avg_score": round(avg_score, 5) if avg_score else 0,
             "best_score": round(best_score, 5) if best_score else 0,
             "avg_eval_time": round(avg_time, 2) if avg_time else 0,
-            "avg_depth": round(avg_depth, 2) if avg_depth else 0,
             "efficiency": round(avg_score / avg_time, 5) if avg_time and avg_score else 0
         }
     
@@ -187,7 +276,7 @@ def analyze_mcts_behavior(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     GROUP BY mcts_node_id
     """
     
-    visit_records = db.db_service.connection_manager.connection.execute(visit_query, [session_id]).fetchall()
+    visit_records = db.db_service.connection_manager.execute_query(visit_query, params=(session_id,), fetch='all')
     
     if not visit_records:
         return {"error": "No node visit data found"}
@@ -196,13 +285,13 @@ def analyze_mcts_behavior(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     
     # UCB1 score analysis
     ucb1_query = """
-    SELECT ucb1_score, score, tree_depth
+    SELECT mcts_ucb1_score, evaluation_score
     FROM exploration_history 
-    WHERE session_id = ? AND ucb1_score IS NOT NULL
+    WHERE session_id = ? AND mcts_ucb1_score IS NOT NULL
     ORDER BY iteration
     """
     
-    ucb1_records = db.db_service.connection_manager.connection.execute(ucb1_query, [session_id]).fetchall()
+    ucb1_records = db.db_service.connection_manager.execute_query(ucb1_query, params=(session_id,), fetch='all')
     
     behavior = {
         "node_statistics": {
@@ -233,31 +322,31 @@ def analyze_feature_impact(db: FeatureDiscoveryDB, session_id: str) -> Dict[str,
     
     # Feature count changes
     feature_query = """
-    SELECT operation, 
+    SELECT operation_applied, 
            AVG(LENGTH(features_after) - LENGTH(features_before)) as avg_feature_change,
            COUNT(*) as operation_count
     FROM exploration_history 
-    WHERE session_id = ? AND operation != 'root'
-    GROUP BY operation
+    WHERE session_id = ? AND operation_applied != 'root'
+    GROUP BY operation_applied
     ORDER BY avg_feature_change DESC
     """
     
-    feature_records = db.db_service.connection_manager.connection.execute(feature_query, [session_id]).fetchall()
+    feature_records = db.db_service.connection_manager.execute_query(feature_query, params=(session_id,), fetch='all')
     
     # Score improvements by operation
     improvement_query = """
-    SELECT eh1.operation,
+    SELECT eh1.operation_applied,
            COUNT(*) as instances,
-           AVG(eh1.score - eh2.score) as avg_improvement
+           AVG(eh1.evaluation_score - eh2.evaluation_score) as avg_improvement
     FROM exploration_history eh1
     JOIN exploration_history eh2 ON eh1.parent_node_id = eh2.mcts_node_id
     WHERE eh1.session_id = ? AND eh2.session_id = ?
-    AND eh1.operation != 'root'
-    GROUP BY eh1.operation
+    AND eh1.operation_applied != 'root'
+    GROUP BY eh1.operation_applied
     ORDER BY avg_improvement DESC
     """
     
-    improvement_records = db.db_service.connection_manager.connection.execute(improvement_query, [session_id, session_id]).fetchall()
+    improvement_records = db.db_service.connection_manager.execute_query(improvement_query, params=(session_id, session_id), fetch='all')
     
     feature_impact = {
         "feature_generation": {},
@@ -285,23 +374,22 @@ def get_session_timeline(db: FeatureDiscoveryDB, session_id: str, limit: int = 2
     """Get timeline of key events in the session."""
     
     query = """
-    SELECT iteration, operation, score, tree_depth, eval_time, mcts_node_id
+    SELECT iteration, operation_applied, evaluation_score, evaluation_time, mcts_node_id
     FROM exploration_history 
     WHERE session_id = ?
     ORDER BY iteration
     LIMIT ?
     """
     
-    records = db.db_service.connection_manager.connection.execute(query, [session_id, limit]).fetchall()
+    records = db.db_service.connection_manager.execute_query(query, params=(session_id, limit), fetch='all')
     
     timeline = []
     for record in records:
-        iteration, operation, score, depth, eval_time, node_id = record
+        iteration, operation, score, eval_time, node_id = record
         timeline.append({
             "iteration": iteration,
             "operation": operation or "root",
             "score": round(score, 5) if score else 0,
-            "depth": depth or 0,
             "eval_time": round(eval_time, 2) if eval_time else 0,
             "node_id": node_id
         })
@@ -312,7 +400,7 @@ def get_session_timeline(db: FeatureDiscoveryDB, session_id: str, limit: int = 2
 def get_latest_session_id(db: FeatureDiscoveryDB) -> Optional[str]:
     """Get the latest session ID."""
     query = "SELECT session_id FROM sessions ORDER BY start_time DESC LIMIT 1"
-    result = db.db_service.connection_manager.connection.execute(query).fetchone()
+    result = db.db_service.connection_manager.execute_query(query, fetch='one')
     return result[0] if result else None
 
 
@@ -379,7 +467,7 @@ def print_analysis_summary(analysis: Dict[str, Any]):
         print(f"\n⏱️  Session Timeline (first 5 iterations):")
         for event in timeline[:5]:
             print(f"  Iter {event.get('iteration', 0)}: {event.get('operation', 'N/A')} "
-                  f"(score: {event.get('score', 0)}, depth: {event.get('depth', 0)})")
+                  f"(score: {event.get('score', 0)})")
 
 
 def main():
@@ -389,6 +477,7 @@ def main():
     parser.add_argument("--latest", action="store_true", help="Analyze latest session")
     parser.add_argument("--detailed", action="store_true", help="Include detailed analysis")
     parser.add_argument("--export", action="store_true", help="Export analysis to JSON")
+    parser.add_argument("--tree", action="store_true", help="Show tree structure in console")
     parser.add_argument("--timeline-limit", type=int, default=20, help="Timeline events to show")
     
     args = parser.parse_args()
@@ -433,6 +522,14 @@ def main():
         
         # Print summary
         print_analysis_summary(analysis)
+        
+        # Show tree structure if requested
+        if args.tree:
+            print("\n" + "="*60)
+            print("🌳 MCTS TREE STRUCTURE")
+            print("="*60)
+            tree_display = draw_tree_structure(db, session_id)
+            print(tree_display)
         
         # Export if requested
         if args.export:

@@ -7,7 +7,7 @@ timing visualization, and MCTS exploration insights.
 
 import json
 import logging
-import sqlite3
+import duckdb
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 import pandas as pd
@@ -134,7 +134,7 @@ class AnalyticsGenerator:
                 conn = duckdb.connect(db_path)
                 db_type = 'duckdb'
             else:
-                conn = sqlite3.connect(db_path)
+                conn = duckdb.connect(db_path)
                 db_type = 'sqlite'
             
             # Get session info

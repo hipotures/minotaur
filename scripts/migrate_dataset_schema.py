@@ -26,8 +26,8 @@ try:
     import duckdb
     DB_TYPE = 'duckdb'
 except ImportError:
-    import sqlite3
-    DB_TYPE = 'sqlite3'
+    import duckdb
+    DB_TYPE = 'duckdb'
     print("Warning: DuckDB not available, falling back to SQLite")
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class DatasetSchemaMigrator:
         if self.db_type == 'duckdb':
             return duckdb.connect(str(self.db_path))
         else:
-            return sqlite3.connect(str(self.db_path))
+            return duckdb.connect(str(self.db_path))
     
     def create_backup(self) -> bool:
         """Create backup of existing database."""
@@ -164,7 +164,7 @@ class DatasetSchemaMigrator:
                 # Ensure target_column is not NULL
                 cursor.execute("UPDATE datasets SET target_column = 'unknown' WHERE target_column IS NULL")
                 
-                if self.db_type == 'sqlite3':
+                if self.db_type == 'duckdb':
                     conn.commit()
                 
                 logger.info("Schema migration completed successfully")

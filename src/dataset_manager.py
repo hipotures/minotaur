@@ -23,11 +23,12 @@ logger = logging.getLogger(__name__)
 class DatasetManager:
     """Centralized manager for registered datasets."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], db_service=None):
         """Initialize dataset manager with configuration."""
         self.config = config
         self.base_data_dir = Path("data")
         self._dataset_cache = {}
+        self.db_service = db_service  # Reuse existing database connection
         
     def get_dataset_from_config(self) -> Dict[str, Any]:
         """Get dataset information from configuration.
@@ -55,11 +56,11 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            # Create temporary DB connection to lookup dataset (read-only mode)
-            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
-            
-            # Use the new database service API
-            dataset_repo = temp_db.db_service.dataset_repo
+            # Use existing DB connection or raise error
+            if self.db_service:
+                dataset_repo = self.db_service.dataset_repo
+            else:
+                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
             result = dataset_repo.get_by_name(dataset_name)
             
             if not result:
@@ -207,10 +208,11 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
-            
-            # Use the new database service API
-            dataset_repo = temp_db.db_service.dataset_repo
+            # Use existing DB connection or raise error
+            if self.db_service:
+                dataset_repo = self.db_service.dataset_repo
+            else:
+                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
             results = dataset_repo.list_all()
             
             datasets = {}
@@ -234,10 +236,11 @@ class DatasetManager:
         try:
             from .discovery_db import FeatureDiscoveryDB
             
-            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
-            
-            # Use the new database service API - first find dataset by name
-            dataset_repo = temp_db.db_service.dataset_repo
+            # Use existing DB connection or raise error
+            if self.db_service:
+                dataset_repo = self.db_service.dataset_repo
+            else:
+                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
             dataset = dataset_repo.find_by_name(dataset_name)
             
             if dataset:

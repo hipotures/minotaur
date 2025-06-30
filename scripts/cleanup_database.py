@@ -20,8 +20,8 @@ try:
     import duckdb
     DB_TYPE = 'duckdb'
 except ImportError:
-    import sqlite3
-    DB_TYPE = 'sqlite3'
+    import duckdb
+    DB_TYPE = 'duckdb'
     print("Warning: DuckDB not available, falling back to SQLite")
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class DatabaseCleaner:
         if self.db_type == 'duckdb':
             return duckdb.connect(str(self.db_path))
         else:
-            return sqlite3.connect(str(self.db_path))
+            return duckdb.connect(str(self.db_path))
     
     def create_backup(self) -> bool:
         """Create backup of existing database."""
@@ -131,7 +131,7 @@ class DatabaseCleaner:
                         except Exception as e:
                             logger.warning(f"⚠️ Could not reset sequence {seq}: {e}")
                 
-                if self.db_type == 'sqlite3':
+                if self.db_type == 'duckdb':
                     conn.commit()
                 
                 logger.info("Database cleanup completed successfully")
@@ -182,7 +182,7 @@ class DatabaseCleaner:
                         else:
                             raise e
                 
-                if self.db_type == 'sqlite3':
+                if self.db_type == 'duckdb':
                     conn.commit()
                 
                 return True

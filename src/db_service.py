@@ -44,7 +44,8 @@ class DatabaseService:
         self.logger = logging.getLogger(__name__)
         
         # Initialize connection manager
-        self.connection_manager = DuckDBConnectionManager(config)
+        self.logger.info(f"🔧 Creating DuckDBConnectionManager with read_only={read_only}")
+        self.connection_manager = DuckDBConnectionManager(config, read_only=read_only)
         
         # Initialize repositories
         self.session_repo = SessionRepository(self.connection_manager)
@@ -54,8 +55,9 @@ class DatabaseService:
         self.operation_perf_repo = OperationPerformanceRepository(self.connection_manager)
         self.dataset_repo = DatasetRepository(self.connection_manager)
         
-        # Run migrations to ensure schema is up to date
-        self._run_migrations()
+        # Run migrations to ensure schema is up to date (only for read-write connections)
+        if not read_only:
+            self._run_migrations()
         
         # Initialize current session
         self.current_session_id = None

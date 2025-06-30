@@ -91,15 +91,15 @@ def load_tree_from_database(db: FeatureDiscoveryDB, session_id: str, max_depth: 
     
     # Get all exploration records for the session
     query = """
-    SELECT mcts_node_id, operation, parent_node_id, tree_depth,
-           node_visits, total_reward, ucb1_score, score,
-           features_before, features_after, eval_time
+    SELECT mcts_node_id, operation_applied, parent_node_id,
+           node_visits, mcts_ucb1_score, evaluation_score,
+           features_before, features_after, evaluation_time
     FROM exploration_history 
     WHERE session_id = ?
     ORDER BY iteration
     """
     
-    records = db.db_service.connection_manager.connection.execute(query, [session_id]).fetchall()
+    records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
     
     if not records:
         return None
@@ -109,8 +109,8 @@ def load_tree_from_database(db: FeatureDiscoveryDB, session_id: str, max_depth: 
     root = None
     
     for record in records:
-        (node_id, operation, parent_id, depth, visits, total_reward, 
-         ucb1_score, eval_score, features_before, features_after, eval_time) = record
+        (node_id, operation, parent_id, visits, ucb1_score, eval_score, 
+         features_before, features_after, eval_time) = record
         
         if node_id is None:
             continue  # Skip records without node IDs
@@ -123,10 +123,10 @@ def load_tree_from_database(db: FeatureDiscoveryDB, session_id: str, max_depth: 
         
         # Update node statistics (keep the latest values)
         node.visits = visits or 0
-        node.total_reward = total_reward or 0.0
-        node.avg_reward = node.total_reward / node.visits if node.visits > 0 else 0.0
+        node.total_reward = 0.0  # Not available in current schema
+        node.avg_reward = 0.0    # Not available in current schema
         node.ucb1_score = ucb1_score or 0.0
-        node.depth = depth or 0
+        node.depth = 0  # Not available in current schema
         node.evaluation_score = eval_score or 0.0
         node.evaluation_time = eval_time or 0.0
         
@@ -266,7 +266,7 @@ def find_best_path(node: MCTSTreeNode) -> List[MCTSTreeNode]:
 def get_latest_session_id(db: FeatureDiscoveryDB) -> Optional[str]:
     """Get the latest session ID."""
     query = "SELECT session_id FROM sessions ORDER BY start_time DESC LIMIT 1"
-    result = db.db_service.connection_manager.connection.execute(query).fetchone()
+    result = db.db_service.connection_manager.execute_query(query, fetch='one')
     return result[0] if result else None
 
 

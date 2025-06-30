@@ -115,8 +115,10 @@ class FeatureSpace:
     
     def _load_generic_operations(self):
         """Load generic operations from src/features/generic/."""
+        logger.debug(f"Loading generic operations with config: {self.generic_operations_config}")
         try:
             from .features.generic import statistical, polynomial, binning, ranking
+            logger.debug("Successfully imported generic feature modules")
             
             # Statistical aggregations
             if self.generic_operations_config.get('statistical_aggregations', True):
@@ -166,11 +168,16 @@ class FeatureSpace:
             
         except ImportError as e:
             logger.warning(f"Could not load generic operations: {e}")
+            import traceback
+            logger.warning(f"Import traceback: {traceback.format_exc()}")
         except Exception as e:
             logger.error(f"Error loading generic operations: {e}")
+            import traceback
+            logger.error(f"Error traceback: {traceback.format_exc()}")
     
     def _load_custom_operations(self):
         """Load custom operations based on dataset name."""
+        logger.debug(f"Loading custom operations for dataset: {self.dataset_name}")
         if not self.dataset_name or self.dataset_name == 'unknown':
             logger.info("No dataset name specified, skipping custom operations")
             return
@@ -185,8 +192,10 @@ class FeatureSpace:
             module_file = f"{dataset_name_clean}.py"
             
             module_name = None
+            logger.debug(f"Looking for custom module: {custom_modules_dir / module_file}")
             if (custom_modules_dir / module_file).exists():
                 module_name = module_file[:-3]  # Remove .py extension
+                logger.debug(f"Found custom module: {module_name}")
             
             if not module_name:
                 logger.info(f"No custom domain module found for dataset '{self.dataset_name}', skipping custom operations")
@@ -255,17 +264,33 @@ class FeatureSpace:
         
         available_ops = []
         
+        logger.debug(f"Total operations loaded: {len(self.operations)}")
+        logger.debug(f"Current features for node: {current_features}")
+        
         for op_name, operation in self.operations.items():
+            logger.debug(f"Checking operation {op_name} (category: {operation.category})")
             # Check if operation can be applied
             if operation.can_apply(current_features):
+                logger.debug(f"  ✓ Can apply {op_name}")
                 # Check if already applied in this path
                 if op_name not in getattr(node, 'applied_operations', []):
+                    logger.debug(f"  ✓ Not already applied {op_name}")
                     # Apply category filtering
                     if not self.enabled_categories or operation.category in self.enabled_categories:
+                        logger.debug(f"  ✓ Category filter passed {op_name}")
                         # Apply category weighting
                         weight = self.category_weights.get(operation.category, 1.0)
                         if weight > 0:
+                            logger.debug(f"  ✓ Added to available: {op_name}")
                             available_ops.append(op_name)
+                        else:
+                            logger.debug(f"  ✗ Weight is 0: {op_name}")
+                    else:
+                        logger.debug(f"  ✗ Category filter failed: {op_name}")
+                else:
+                    logger.debug(f"  ✗ Already applied: {op_name}")
+            else:
+                logger.debug(f"  ✗ Cannot apply {op_name} (dependencies: {operation.dependencies})")
         
         # Sort by category weight and computational cost
         available_ops.sort(

@@ -66,7 +66,7 @@ class MCTSMonitor:
         SELECT status, start_time, end_time, total_iterations, best_score
         FROM sessions WHERE session_id = ?
         """
-        result = self.db.db_service.connection_manager.connection.execute(query, [self.session_id]).fetchone()
+        result = self.db.db_service.connection_manager.execute_query(query, params=(self.session_id,), fetch='one')
         
         if not result:
             return {"error": "Session not found"}
@@ -85,22 +85,21 @@ class MCTSMonitor:
         SELECT MAX(iteration) as latest_iteration,
                COUNT(*) as total_records,
                COUNT(DISTINCT mcts_node_id) as unique_nodes,
-               MAX(tree_depth) as max_depth,
-               MAX(score) as current_best_score,
-               AVG(eval_time) as avg_eval_time,
-               SUM(eval_time) as total_eval_time
+               MAX(evaluation_score) as current_best_score,
+               AVG(evaluation_time) as avg_eval_time,
+               SUM(evaluation_time) as total_eval_time
         FROM exploration_history 
         WHERE session_id = ?
         """
         
-        result = self.db.db_service.connection_manager.connection.execute(query, [self.session_id]).fetchone()
+        result = self.db.db_service.connection_manager.execute_query(query, params=(self.session_id,), fetch='one')
         
         if not result or result[0] is None:
             return {"error": "No activity found"}
         
         # Get recent activity (last 10 iterations)
         recent_query = """
-        SELECT iteration, operation, score, tree_depth, eval_time
+        SELECT iteration, operation_applied, evaluation_score, evaluation_time
         FROM exploration_history 
         WHERE session_id = ? AND iteration >= ?
         ORDER BY iteration DESC
@@ -108,23 +107,22 @@ class MCTSMonitor:
         """
         
         recent_iteration = max(0, result[0] - 9)
-        recent_records = self.db.db_service.connection_manager.connection.execute(recent_query, [self.session_id, recent_iteration]).fetchall()
+        recent_records = self.db.db_service.connection_manager.execute_query(recent_query, params=(self.session_id, recent_iteration), fetch='all')
         
         return {
             "latest_iteration": result[0],
             "total_records": result[1],
             "unique_nodes": result[2],
-            "max_depth": result[3],
-            "current_best_score": result[4] or 0,
-            "avg_eval_time": round(result[5] or 0, 2),
-            "total_eval_time": round(result[6] or 0, 2),
+            "max_depth": 0,  # Not available in current schema
+            "current_best_score": result[3] or 0,
+            "avg_eval_time": round(result[4] or 0, 2),
+            "total_eval_time": round(result[5] or 0, 2),
             "recent_activity": [
                 {
                     "iteration": r[0],
                     "operation": r[1] or "root",
                     "score": round(r[2] or 0, 5),
-                    "depth": r[3] or 0,
-                    "eval_time": round(r[4] or 0, 2)
+                    "eval_time": round(r[3] or 0, 2)
                 }
                 for r in recent_records
             ]
@@ -133,18 +131,18 @@ class MCTSMonitor:
     def get_operation_stats(self) -> Dict[str, Any]:
         """Get operation usage statistics."""
         query = """
-        SELECT operation, 
+        SELECT operation_applied, 
                COUNT(*) as count,
-               AVG(score) as avg_score,
-               MAX(score) as best_score
+               AVG(evaluation_score) as avg_score,
+               MAX(evaluation_score) as best_score
         FROM exploration_history 
-        WHERE session_id = ? AND operation != 'root'
-        GROUP BY operation
+        WHERE session_id = ? AND operation_applied != 'root'
+        GROUP BY operation_applied
         ORDER BY avg_score DESC
         LIMIT 5
         """
         
-        records = self.db.db_service.connection_manager.connection.execute(query, [self.session_id]).fetchall()
+        records = self.db.db_service.connection_manager.execute_query(query, params=(self.session_id,), fetch='all')
         
         return {
             operation: {
@@ -158,14 +156,12 @@ class MCTSMonitor:
     def get_tree_growth_stats(self) -> Dict[str, Any]:
         """Get tree growth statistics."""
         query = """
-        SELECT tree_depth, COUNT(*) as node_count
+        SELECT 1 as tree_depth, COUNT(*) as node_count
         FROM exploration_history 
         WHERE session_id = ?
-        GROUP BY tree_depth
-        ORDER BY tree_depth
         """
         
-        records = self.db.db_service.connection_manager.connection.execute(query, [self.session_id]).fetchall()
+        records = self.db.db_service.connection_manager.execute_query(query, params=(self.session_id,), fetch='all')
         
         depth_distribution = {depth: count for depth, count in records}
         
@@ -308,7 +304,7 @@ class MCTSMonitor:
             print(f"\n📈 Recent Activity (last 5):")
             for event in activity["recent_activity"][:5]:
                 print(f"  Iter {event['iteration']}: {event['operation']} "
-                      f"(score: {event['score']}, depth: {event['depth']})")
+                      f"(score: {event['score']})")
         
         # Log Activity
         if "error" not in log_activity:
@@ -350,7 +346,7 @@ class MCTSMonitor:
 def get_latest_session_id(db: FeatureDiscoveryDB) -> Optional[str]:
     """Get the latest session ID."""
     query = "SELECT session_id FROM sessions ORDER BY start_time DESC LIMIT 1"
-    result = db.connection.execute(query).fetchone()
+    result = db.db_service.connection_manager.execute_query(query, fetch='one')
     return result[0] if result else None
 
 

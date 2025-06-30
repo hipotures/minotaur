@@ -21,7 +21,7 @@ try:
     import duckdb
     DUCKDB_AVAILABLE = True
 except ImportError:
-    import sqlite3
+    import duckdb
     DUCKDB_AVAILABLE = False
     print("Warning: DuckDB not available, falling back to SQLite")
 
@@ -62,7 +62,7 @@ def main():
             conn = duckdb.connect(str(db_path))
             db_type = 'DuckDB'
         else:
-            conn = sqlite3.connect(str(db_path))
+            conn = duckdb.connect(str(db_path))
             db_type = 'SQLite'
         
         print(f"✅ Connected to {db_type}")

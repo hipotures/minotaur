@@ -37,12 +37,13 @@ class AutoGluonEvaluator:
     Manages model directories and caching for efficient repeated evaluations.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], db_service=None):
         """Initialize AutoGluon evaluator with configuration."""
         self.config = config
         self.autogluon_config = config['autogluon']
         self.session_config = config['session']
         self.resource_config = config['resources']
+        self.db_service = db_service  # Reuse existing database connection
         
         # Dataset configuration - support both old and new systems
         self.target_metric = self.autogluon_config['target_metric']
@@ -89,13 +90,15 @@ class AutoGluonEvaluator:
         if not dataset_name:
             raise ValueError("dataset_name must be specified in autogluon configuration")
         
-        from .discovery_db import FeatureDiscoveryDB
+        # Use existing database service if provided, otherwise create temporary read-only connection
+        if self.db_service:
+            dataset_repo = self.db_service.dataset_repo
+        else:
+            from .discovery_db import FeatureDiscoveryDB
+            # Create temporary DB instance to access dataset registry (read-only mode)
+            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
+            dataset_repo = temp_db.db_service.dataset_repo
         
-        # Create temporary DB instance to access dataset registry (read-only mode)
-        temp_db = FeatureDiscoveryDB(self.config, read_only=True)
-        
-        # Use the new database service API
-        dataset_repo = temp_db.db_service.dataset_repo
         result = dataset_repo.find_by_name(dataset_name)
         
         if not result:

@@ -81,6 +81,7 @@ feature_space:
     - 'statistical_aggregations'
     - 'feature_transformations'
     - 'feature_selection'
+    - 'custom_domain'
   
   # Generic operations from src/domains/generic.py (can be disabled individually)
   generic_operations:

@@ -180,16 +180,16 @@ class FeatureDiscoveryRunner:
             logger.info("Initializing timing system...")
             self.timing_collector = initialize_timing(self.config)
             
-            # Initialize dataset manager
+            # Initialize database first
+            logger.info("Initializing database...")
+            self.db = FeatureDiscoveryDB(self.config)
+            
+            # Initialize dataset manager with database connection
             logger.info("Initializing dataset manager...")
-            self.dataset_manager = DatasetManager(self.config)
+            self.dataset_manager = DatasetManager(self.config, self.db.db_service)
             
             # Validate dataset registration
             self._validate_dataset_configuration()
-            
-            # Initialize database
-            logger.info("Initializing database...")
-            self.db = FeatureDiscoveryDB(self.config)
             
             # Set session context for logging after DB initialization
             if self.db.session_name:
@@ -215,7 +215,7 @@ class FeatureDiscoveryRunner:
                 logger.info("✅ AutoGluon available (version unknown)")
                 
             logger.info("Initializing AutoGluon evaluator...")
-            self.evaluator = AutoGluonEvaluator(self.config)
+            self.evaluator = AutoGluonEvaluator(self.config, db_service=self.db.db_service)
             
             # Initialize feature space with DuckDB manager from evaluator
             logger.info("Initializing feature space...")
@@ -298,22 +298,43 @@ class FeatureDiscoveryRunner:
             sys.exit(0)
     
     def _get_initial_features(self) -> set:
-        """Get initial feature set for MCTS tree."""
-        # Basic features that should always be available
-        base_features = {
-            'Nitrogen', 'Phosphorous', 'Potassium', 
-            'Temperature', 'Humidity', 'Moisture',
-            'Soil Type', 'Crop Type'
-        }
+        """Get initial feature set for MCTS tree based on configured dataset."""
+        dataset_name = self.config['autogluon'].get('dataset_name')
         
-        # Add derived basic features
-        derived_features = {
-            'NP_ratio', 'NK_ratio', 'PK_ratio',
-            'soil_crop', 'nutrient_balance', 'moisture_stress',
-            'low_Nitrogen', 'low_Phosphorous', 'low_Potassium'
-        }
+        if not dataset_name:
+            raise ValueError("dataset_name not specified in autogluon config")
         
-        return base_features.union(derived_features)
+        # Load dataset configuration from database
+        dataset_info = self.db.db_service.connection_manager.execute_query(
+            "SELECT train_path, target_column, id_column FROM datasets WHERE dataset_name = ?",
+            params=(dataset_name,),
+            fetch='one'
+        )
+        
+        if not dataset_info:
+            raise ValueError(f"Dataset '{dataset_name}' not found in database registry")
+        
+        train_path, target_column, id_column = dataset_info
+        
+        # Load actual CSV file to get column names
+        try:
+            df = pd.read_csv(train_path, nrows=1)  # Read only header
+            all_columns = set(df.columns)
+            
+            # Remove target and ID columns from features
+            features = all_columns.copy()
+            if target_column and target_column in features:
+                features.remove(target_column)
+            if id_column and id_column in features:
+                features.remove(id_column)
+            
+            logger = logging.getLogger(__name__)
+            logger.info(f"Loaded {len(features)} initial features from {dataset_name}: {sorted(features)}")
+            
+            return features
+            
+        except Exception as e:
+            raise ValueError(f"Failed to load features from {train_path}: {e}")
     
     def run_discovery(self) -> Dict[str, Any]:
         """Run the complete feature discovery process."""
@@ -742,8 +763,8 @@ def list_sessions(config_path: str, limit: int = 10) -> None:
             return
         
         # Connect to database
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        import duckdb
+        conn = duckdb.connect(db_path)
         cursor = conn.cursor()
         
         # Query recent sessions
@@ -859,8 +880,8 @@ def get_session_to_continue(config_path: str, session_id: str = None) -> str:
             return None
         
         # Connect to database
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        import duckdb
+        conn = duckdb.connect(db_path)
         cursor = conn.cursor()
         
         if session_id:

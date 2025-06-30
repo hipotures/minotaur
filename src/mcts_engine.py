@@ -278,6 +278,7 @@ class MCTSEngine:
         # Memory management
         self.max_nodes_in_memory = self.mcts_config.get('max_nodes_in_memory', 1000)
         self.prune_threshold = self.mcts_config.get('prune_threshold', 0.01)
+        self.last_gc_iteration = 0  # Track when garbage collection was last performed
         
     @property
     def iteration_count(self) -> int:
@@ -545,14 +546,21 @@ class MCTSEngine:
         
         # 2. EXPANSION  
         available_operations = feature_space.get_available_operations(selected_node)
+        mcts_logger.debug(f"Node {selected_node.node_id} has {len(available_operations)} available operations: {available_operations}")
         expanded_children = self.expansion(selected_node, available_operations)
         
         # 3. SIMULATION & EVALUATION
         # Evaluate the selected node if it hasn't been evaluated yet
         if selected_node.evaluation_score is None:
             nodes_to_evaluate = [selected_node]
+            mcts_logger.debug(f"Will evaluate selected_node {selected_node.node_id} (no score yet)")
         else:
             nodes_to_evaluate = expanded_children
+            mcts_logger.debug(f"Will evaluate {len(expanded_children)} expanded children: {[n.node_id for n in expanded_children]}")
+        
+        if not nodes_to_evaluate:
+            mcts_logger.debug(f"No nodes to evaluate - selected_node {selected_node.node_id} already has score and no children expanded")
+            return {}
         
         evaluation_results = []
         for node in nodes_to_evaluate:
@@ -577,6 +585,9 @@ class MCTSEngine:
             if db:
                 try:
                     # Log to exploration_history table
+                    import uuid
+                    call_id = str(uuid.uuid4())[:8]
+                    mcts_logger.debug(f"🔍 MCTS calling log_exploration_step for node {node.node_id} (call_id: {call_id})")
                     db.log_exploration_step(
                         iteration=self.current_iteration,
                         operation=node.operation_that_created_this or 'root',
@@ -797,6 +808,10 @@ class MCTSEngine:
     
     def _should_terminate(self) -> bool:
         """Check if search should terminate based on configured conditions."""
+        # Iteration limit
+        if self.current_iteration >= self.max_iterations:
+            return True
+            
         # Time limit
         runtime_hours = (time.time() - self.start_time) / 3600
         if runtime_hours >= self.max_runtime_hours:
