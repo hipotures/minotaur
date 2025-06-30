@@ -176,15 +176,21 @@ class FeatureSpace:
             return
         
         try:
-            # Map dataset names to custom modules
-            dataset_module_map = {
-                'titanic': 'titanic',
-                'playground-series-s5e6-2025': 'kaggle_s5e6',
-                'fertilizer': 'kaggle_s5e6',
-                'kaggle_s5e6': 'kaggle_s5e6'
-            }
+            # Auto-detect custom domain module based on dataset name
+            dataset_name_clean = self.dataset_name.lower().replace('-', '_').replace(' ', '_')
             
-            module_name = dataset_module_map.get(self.dataset_name, self.dataset_name)
+            # Check if custom domain module exists for this dataset
+            from pathlib import Path
+            custom_modules_dir = Path(__file__).parent / 'features' / 'custom'
+            module_file = f"{dataset_name_clean}.py"
+            
+            module_name = None
+            if (custom_modules_dir / module_file).exists():
+                module_name = module_file[:-3]  # Remove .py extension
+            
+            if not module_name:
+                logger.info(f"No custom domain module found for dataset '{self.dataset_name}', skipping custom operations")
+                return
             
             # Import custom module
             custom_module = importlib.import_module(f'.features.custom.{module_name}', package='src')
@@ -689,15 +695,21 @@ class FeatureSpace:
         result_features = {}
         
         try:
-            # Map dataset names to custom modules
-            dataset_module_map = {
-                'titanic': 'titanic',
-                'playground-series-s5e6-2025': 'kaggle_s5e6',
-                'fertilizer': 'kaggle_s5e6',
-                'kaggle_s5e6': 'kaggle_s5e6'
-            }
+            # Auto-detect custom domain module based on dataset name
+            dataset_name_clean = dataset_name.lower().replace('-', '_').replace(' ', '_')
             
-            module_name = dataset_module_map.get(dataset_name, dataset_name)
+            # Check if custom domain module exists for this dataset
+            from pathlib import Path
+            custom_modules_dir = Path(__file__).parent / 'features' / 'custom'
+            module_file = f"{dataset_name_clean}.py"
+            
+            module_name = None
+            if (custom_modules_dir / module_file).exists():
+                module_name = module_file[:-3]  # Remove .py extension
+            
+            if not module_name:
+                logger.info(f"No custom domain module found for dataset '{dataset_name}', skipping custom operations")
+                return pd.DataFrame()
             
             # Import custom module
             custom_module = importlib.import_module(f'.features.custom.{module_name}', package='src')

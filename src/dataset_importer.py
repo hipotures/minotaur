@@ -184,8 +184,8 @@ class DatasetImporter:
             for pattern in target_patterns:
                 for col in df.columns:
                     if re.search(pattern, col.lower()):
-                        logger.info(f"Detected target column: {col}")
-                        return col
+                        logger.info(f"Detected target column: {col.lower()}")
+                        return col.lower()
             
             # If no pattern match, look for columns with limited unique values
             # (likely categorical targets)
@@ -197,8 +197,8 @@ class DatasetImporter:
             if categorical_candidates:
                 # Return column with fewest unique values
                 best_candidate = min(categorical_candidates, key=lambda x: x[1])
-                logger.info(f"Detected likely target column: {best_candidate[0]} ({best_candidate[1]} unique values)")
-                return best_candidate[0]
+                logger.info(f"Detected likely target column: {best_candidate[0].lower()} ({best_candidate[1]} unique values)")
+                return best_candidate[0].lower()
             
             logger.warning("Could not auto-detect target column")
             return None
@@ -219,19 +219,14 @@ class DatasetImporter:
         try:
             df = pd.read_csv(file_path, nrows=100)
             
-            # ID column patterns
-            id_patterns = [
-                r'^id$', r'^index$', r'^row_id$', r'^sample_id$',
-                r'.*_id$', r'.*id$', r'^id_.*'
-            ]
-            
-            for pattern in id_patterns:
-                for col in df.columns:
-                    if re.search(pattern, col.lower()):
-                        # Verify it looks like an ID (unique, numeric or string)
-                        if df[col].nunique() == len(df):  # All unique values
-                            logger.info(f"Detected ID column: {col}")
-                            return col
+            # ID column patterns - case insensitive, ends with 'id' or starts with 'id'
+            for col in df.columns:
+                col_lower = col.lower()
+                if re.search(r'.*id$', col_lower) or re.search(r'^id.*', col_lower):
+                    # Verify it looks like an ID (unique, numeric or string)
+                    if df[col].nunique() == len(df):  # All unique values
+                        logger.info(f"Detected ID column: {col.lower()}")
+                        return col.lower()
             
             # Look for first column if it's unique and looks like an index
             first_col = df.columns[0]
@@ -239,8 +234,8 @@ class DatasetImporter:
                 df[first_col].dtype in ['int64', 'object'] and 
                 str(df[first_col].iloc[0]).isdigit()
             ):
-                logger.info(f"Detected ID column (first column): {first_col}")
-                return first_col
+                logger.info(f"Detected ID column (first column): {first_col.lower()}")
+                return first_col.lower()
             
             logger.info("No ID column detected")
             return None
@@ -289,11 +284,27 @@ class DatasetImporter:
                     logger.warning(f"File not found, skipping: {file_path}")
                     continue
                 
-                # Create table from file
+                # Create table from file with lowercase column names
                 if file_path_obj.suffix.lower() == '.parquet':
-                    conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}')")
+                    # First create temp table, then create final table with lowercase columns
+                    conn.execute(f"CREATE TABLE {table_name}_temp AS SELECT * FROM read_parquet('{file_path}')")
                 else:
-                    conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_csv_auto('{file_path}')")
+                    conn.execute(f"CREATE TABLE {table_name}_temp AS SELECT * FROM read_csv_auto('{file_path}')")
+                
+                # Get column names and create lowercase versions
+                temp_columns = conn.execute(f"DESCRIBE {table_name}_temp").fetchall()
+                column_mappings = []
+                for col_info in temp_columns:
+                    original_name = col_info[0]
+                    lowercase_name = original_name.lower()
+                    column_mappings.append(f'"{original_name}" AS "{lowercase_name}"')
+                
+                # Create final table with lowercase column names
+                select_clause = ", ".join(column_mappings)
+                conn.execute(f"CREATE TABLE {table_name} AS SELECT {select_clause} FROM {table_name}_temp")
+                
+                # Drop temporary table
+                conn.execute(f"DROP TABLE {table_name}_temp")
                 
                 # Get record count
                 result = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
@@ -301,21 +312,28 @@ class DatasetImporter:
                 
                 logger.info(f"✅ Imported {record_count:,} records to table '{table_name}'")
             
-            # Verify target column exists in train table
+            # Verify target column exists in train table (now with lowercase names)
             if 'train' in file_mappings:
                 columns = conn.execute("DESCRIBE train").fetchall()
                 column_names = [col[0] for col in columns]
                 
-                if target_column not in column_names:
-                    logger.warning(f"Target column '{target_column}' not found in train table")
+                # Convert target and ID columns to lowercase for comparison
+                target_column_lower = target_column.lower() if target_column else None
+                id_column_lower = id_column.lower() if id_column else None
+                
+                if target_column_lower and target_column_lower not in column_names:
+                    logger.warning(f"Target column '{target_column_lower}' not found in train table")
                     logger.info(f"Available columns: {', '.join(column_names)}")
                 
-                if id_column and id_column not in column_names:
-                    logger.warning(f"ID column '{id_column}' not found in train table")
+                if id_column_lower and id_column_lower not in column_names:
+                    logger.warning(f"ID column '{id_column_lower}' not found in train table")
             
             # Generate features for train and test tables
             logger.info("Generating features for dataset...")
-            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column)
+            # Pass lowercase versions of target and ID columns
+            target_column_lower = target_column.lower() if target_column else None
+            id_column_lower = id_column.lower() if id_column else None
+            self._generate_and_save_features(conn, self.dataset_name, target_column_lower, id_column_lower)
             
             conn.close()
             
@@ -365,18 +383,19 @@ class DatasetImporter:
         config['autogluon']['target_column'] = target_column
         config['autogluon']['id_column'] = id_column
         
-        # Determine custom domain module based on dataset name
-        domain_mapping = {
-            's5e6': 'kaggle_s5e6',
-            'fertilizer': 'kaggle_s5e6',
-            'titanic': 'titanic',
-        }
+        # Auto-detect custom domain module based on dataset name
+        dataset_name_clean = dataset_name.lower().replace('-', '_').replace(' ', '_')
         
-        for key, domain in domain_mapping.items():
-            if key in dataset_name.lower():
-                config['feature_space']['custom_domain_module'] = domain
-                dataset_logger.info(f"Using custom domain module: {domain}")
-                break
+        # Check if custom domain module exists for this dataset
+        custom_modules_dir = Path(__file__).parent / 'features' / 'custom'
+        module_file = f"{dataset_name_clean}.py"
+        
+        if (custom_modules_dir / module_file).exists():
+            module_name = module_file[:-3]  # Remove .py extension
+            config['feature_space']['custom_domain_module'] = module_name
+            dataset_logger.info(f"Auto-detected custom domain module: {module_name}")
+        else:
+            dataset_logger.info("No custom domain module found, using generic features only")
         
         # Initialize FeatureSpace
         feature_space = FeatureSpace(config)
@@ -629,8 +648,8 @@ class DatasetImporter:
             columns_to_remove = []
             
             for col in all_columns:
-                # Skip target and ID columns
-                if col == target_column or col == 'PassengerId':
+                # Skip target and ID columns (use passed id_column parameter)
+                if col == target_column or (id_column and col == id_column):
                     continue
                 
                 # Check if column has signal (more than 1 unique value)

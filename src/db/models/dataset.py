@@ -157,17 +157,17 @@ class Dataset(BaseModel):
         json_schema_extra = {
             "example": {
                 "dataset_id": "abc123def456789012345678901234",
-                "dataset_name": "Titanic Survival Prediction",
+                "dataset_name": "House Price Prediction",
                 "train_path": "/path/to/train.csv",
                 "test_path": "/path/to/test.csv",
-                "target_column": "Survived",
-                "id_column": "PassengerId",
-                "competition_name": "titanic",
-                "description": "Predict survival on the Titanic",
-                "train_records": 891,
-                "train_columns": 12,
-                "test_records": 418,
-                "test_columns": 11,
+                "target_column": "price",
+                "id_column": "property_id",
+                "competition_name": "house_prices",
+                "description": "Predict house prices based on features",
+                "train_records": 1460,
+                "train_columns": 81,
+                "test_records": 1459,
+                "test_columns": 80,
                 "train_format": "csv",
                 "test_format": "csv"
             }
@@ -283,9 +283,9 @@ class DatasetAnalysis(BaseModel):
                 "datasets_with_validation": 1,
                 "avg_train_size": 15000.0,
                 "total_data_size_gb": 2.5,
-                "most_used_datasets": ["Titanic", "Fertilizer S5E6"],
+                "most_used_datasets": ["HousePrice", "NewYorkTaxi"],
                 "file_format_distribution": {"csv": 4, "parquet": 1},
-                "competition_distribution": {"titanic": 1, "playground-series-s5e6": 1}
+                "competition_distribution": {"house_prices": 1, "taxi_fare": 1}
             }
         }
 
@@ -330,9 +330,9 @@ class DatasetFileInfo(BaseModel):
                 "file_size_mb": 0.8,
                 "record_count": 891,
                 "column_count": 12,
-                "column_names": ["PassengerId", "Survived", "Pclass", "Name"],
-                "column_types": {"PassengerId": "int64", "Survived": "int64", "Name": "object"},
-                "missing_values": {"Age": 177, "Cabin": 687, "Embarked": 2},
-                "sample_data": {"PassengerId": [1, 2, 3], "Survived": [0, 1, 1]}
+                "column_names": ["property_id", "price", "bedrooms", "location"],
+                "column_types": {"property_id": "int64", "price": "float64", "location": "object"},
+                "missing_values": {"garage": 45, "basement": 120, "pool": 5},
+                "sample_data": {"property_id": [1, 2, 3], "price": [250000, 315000, 180000]}
             }
         }

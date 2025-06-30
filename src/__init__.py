@@ -2,7 +2,7 @@
 MCTS-Driven Automated Feature Engineering System
 
 This package implements Monte Carlo Tree Search for automated feature discovery
-in the fertilizer prediction domain, using AutoGluon for fast evaluation.
+for automated feature discovery across domains, using AutoGluon for fast evaluation.
 
 Components:
 - mcts_engine: Core MCTS algorithm implementation
@@ -30,8 +30,7 @@ from .timing import TimingCollector, initialize_timing, get_timing_collector, ti
 from .analytics import AnalyticsGenerator, generate_quick_report
 from .data_utils import DataManager, prepare_training_data
 from .feature_cache import FeatureCacheManager
-# Import from new feature system
-from .features.custom.kaggle_s5e6 import CustomFeatureOperations as FertilizerS5E6Operations
+# Note: Custom feature operations are now auto-imported when needed
 
 # Create backward compatibility wrapper for GenericFeatureOperations
 class GenericFeatureOperations:
@@ -82,7 +81,6 @@ __all__ = [
     'prepare_training_data',
     'FeatureCacheManager',
     'GenericFeatureOperations',
-    'FertilizerS5E6Operations',
     'setup_session_logging',
     'set_session_context',
     'clear_session_context',

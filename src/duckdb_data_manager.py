@@ -115,12 +115,14 @@ class DuckDBDataManager:
         """Build flexible mapping - use all available columns dynamically."""
         mapping = {}
         
-        # Always try to find an ID column
-        id_variants = ['id', 'Id', 'ID', 'index', 'PassengerId', 'passenger_id']
+        # Always try to find an ID column using case-insensitive regex patterns
+        import re
         id_column = None
-        for variant in id_variants:
-            if variant in available_columns:
-                id_column = variant
+        for col in available_columns:
+            col_lower = col.lower()
+            # Check patterns: ends with 'id' or starts with 'id'
+            if re.search(r'.*id$', col_lower) or re.search(r'^id.*', col_lower):
+                id_column = col
                 break
         mapping['id'] = id_column
         
@@ -499,8 +501,8 @@ class DuckDBDataManager:
                 if col == 'id':
                     continue
                     
-                # Check if column contains string keywords
-                if any(keyword in col.lower() for keyword in ['name', 'fertilizer', 'type', 'category']):
+                # Check if column likely contains categorical/string data based on common patterns
+                if any(keyword in col.lower() for keyword in ['name', 'type', 'category', 'class', 'label']):
                     df[col] = df[col].astype(str)
                     df[col] = df[col].replace('None', 'Unknown').fillna('Unknown')
                 else:
@@ -1131,8 +1133,10 @@ class DuckDBDataManager:
         excluded_columns = feature_space_config.get('excluded_columns', [])
         generic_operations = feature_space_config.get('generic_operations', {})
         
-        # Always keep basic columns (non-feature columns)
-        basic_cols = ['PassengerId', 'Survived', 'id', 'ID', 'target', 'label']
+        # Always keep basic columns (non-feature columns) - use config or detect from context
+        target_column = self.autogluon_config.get('target_column', 'target')
+        id_column = self.autogluon_config.get('id_column', 'id')
+        basic_cols = [id_column, target_column, 'id', 'target', 'label'] if target_column and id_column else ['id', 'target', 'label']
         
         for col in df.columns:
             # Skip excluded columns
