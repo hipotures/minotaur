@@ -306,9 +306,99 @@ class FeatureSpace:
     def get_feature_columns_for_node(self, node) -> List[str]:
         """
         Get list of feature column names for a given MCTS node.
-        Uses actual columns available in train_features table.
+        Uses dynamic database lookup to resolve operation features.
+        
+        CRITICAL FIX: Uses operation_that_created_this instead of applied_operations
+        to ensure each node gets different feature sets for proper MCTS evaluation.
         """
-        # Get all available columns from train_features table
+        # Get the current operation for this node (FIX THE CORE BUG)
+        current_operation = getattr(node, 'operation_that_created_this', None)
+        
+        # For root node, return base features
+        if current_operation is None or current_operation == 'root':
+            base_features = list(getattr(node, 'base_features', []))
+            logger.debug(f"Root node - returning {len(base_features)} base features")
+            return base_features
+        
+        # Get features for the current operation from database
+        if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+            try:
+                # Use dynamic database query to get features for this operation
+                query = """
+                    SELECT feature_name 
+                    FROM feature_catalog 
+                    WHERE operation_name = ?
+                """
+                result = self.duckdb_manager.connection.execute(query, [current_operation]).fetchall()
+                operation_features = [row[0] for row in result]
+                
+                if operation_features:
+                    logger.debug(f"Node operation '{current_operation}' - found {len(operation_features)} features from database")
+                    
+                    # Remove forbidden columns
+                    forbidden = [self.id_column, self.target_column] + self.ignore_columns
+                    selected_columns = [col for col in operation_features if col not in forbidden]
+                    
+                    return selected_columns
+                else:
+                    logger.warning(f"No features found in database for operation '{current_operation}' - falling back to pattern matching")
+                    # Fallback to pattern-based detection if no database entries
+                    return self._get_features_by_pattern_fallback(current_operation, node)
+                    
+            except Exception as e:
+                logger.error(f"Database query failed for operation '{current_operation}': {e}")
+                # Fallback to pattern-based detection
+                return self._get_features_by_pattern_fallback(current_operation, node)
+        else:
+            logger.warning("No DuckDB connection available - using pattern fallback")
+            return self._get_features_by_pattern_fallback(current_operation, node)
+    
+    def _get_features_by_pattern_fallback(self, operation_name: str, node) -> List[str]:
+        """
+        Fallback method using dynamic pattern detection from OPERATION_METADATA.
+        Used when database lookup fails or returns no results.
+        """
+        # Import the metadata for dynamic pattern lookup
+        try:
+            from .features.generic import detect_operation_from_feature_name, get_operation_metadata
+            
+            # Get all available columns from database or node
+            all_columns = self._get_all_available_columns()
+            if not all_columns:
+                logger.warning("No columns available for pattern matching")
+                return list(getattr(node, 'base_features', []))
+            
+            # Get operation metadata for pattern matching
+            metadata = get_operation_metadata(operation_name)
+            if metadata and 'output_patterns' in metadata:
+                patterns = metadata['output_patterns']
+                logger.debug(f"Using {len(patterns)} patterns for operation '{operation_name}': {patterns}")
+            else:
+                # Fallback to legacy hardcoded patterns
+                patterns = self._get_legacy_patterns_for_operation(operation_name)
+                logger.debug(f"Using legacy patterns for operation '{operation_name}': {patterns}")
+            
+            # Find columns matching the operation's patterns
+            selected_columns = []
+            for col in all_columns:
+                col_lower = col.lower()
+                if any(pattern.lower() in col_lower for pattern in patterns):
+                    selected_columns.append(col)
+            
+            # Remove forbidden columns
+            forbidden = [self.id_column, self.target_column] + self.ignore_columns
+            selected_columns = [col for col in selected_columns if col not in forbidden]
+            
+            logger.debug(f"Pattern matching for '{operation_name}' found {len(selected_columns)} features")
+            return selected_columns
+            
+        except Exception as e:
+            logger.error(f"Pattern fallback failed for operation '{operation_name}': {e}")
+            # Final fallback to base features
+            return list(getattr(node, 'base_features', []))
+    
+    def _get_all_available_columns(self) -> List[str]:
+        """Get all available columns from the database."""
         if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
             try:
                 # Get all column names from train_features
@@ -317,66 +407,36 @@ class FeatureSpace:
                     FROM information_schema.columns 
                     WHERE table_name = 'train_features'
                 """).fetchall()
-                all_columns = [col[0] for col in result]
+                return [col[0] for col in result]
             except:
-                # Fallback to getting columns from pragma_table_info
-                result = self.duckdb_manager.connection.execute("""
-                    SELECT name FROM pragma_table_info('train_features')
-                """).fetchall()
-                all_columns = [col[0] for col in result]
-        else:
-            # If no DuckDB connection, return base features only
-            return list(getattr(node, 'base_features', [])) if hasattr(node, 'base_features') else []
+                try:
+                    # Fallback to getting columns from pragma_table_info
+                    result = self.duckdb_manager.connection.execute("""
+                        SELECT name FROM pragma_table_info('train_features')
+                    """).fetchall()
+                    return [col[0] for col in result]
+                except Exception as e:
+                    logger.debug(f"Could not get columns from database: {e}")
         
-        # Start with base features
-        base_features = list(getattr(node, 'base_features', [])) if hasattr(node, 'base_features') else []
-        selected_columns = base_features.copy()
+        return []
+    
+    def _get_legacy_patterns_for_operation(self, operation_name: str) -> List[str]:
+        """
+        Legacy hardcoded patterns as final fallback.
+        This should be removed once all operations are properly registered in database.
+        """
+        legacy_patterns = {
+            'statistical_aggregations': ['_mean_by_', '_std_by_', '_dev_from_', '_count_by_', '_min_by_', '_max_by_', '_norm_by_'],
+            'polynomial_features': ['_squared', '_cubed', '_sqrt', '_log', '_exp'],
+            'binning_features': ['_bin_', '_binned', '_qbin_', '_quantile_'],
+            'ranking_features': ['_rank', '_percentile', '_quartile', '_decile'],
+            'interaction_features': ['_interaction_', '_cross_', '_ratio_'],
+            'categorical_features': ['_encoded', '_frequency', '_target_mean'],
+            'temporal_features': ['_year', '_month', '_day', '_hour', '_dayofweek'],
+            'text_features': ['_length', '_word_count', '_char_count', '_upper_ratio'],
+        }
         
-        # For each applied operation, add columns that match expected patterns
-        for operation_name in getattr(node, 'applied_operations', []):
-            if operation_name == 'statistical_aggregations':
-                # Add columns matching statistical patterns
-                stat_patterns = ['_mean_by_', '_std_by_', '_dev_from_', '_count_by_', 
-                               '_min_by_', '_max_by_', '_norm_by_']
-                for col in all_columns:
-                    if any(pattern in col for pattern in stat_patterns):
-                        selected_columns.append(col)
-                        
-            elif operation_name == 'polynomial_features':
-                # Add polynomial features
-                poly_suffixes = ['_squared', '_cubed', '_sqrt', '_log']
-                for col in all_columns:
-                    if any(col.endswith(suffix) for suffix in poly_suffixes):
-                        selected_columns.append(col)
-                        
-            elif operation_name == 'binning_features':
-                # Add binning features
-                for col in all_columns:
-                    if '_binned' in col or col.endswith('_bin') or '_qbin_' in col:
-                        selected_columns.append(col)
-                        
-            elif operation_name == 'ranking_features':
-                # Add ranking features
-                rank_patterns = ['_rank', '_percentile', '_quartile', '_decile']
-                for col in all_columns:
-                    if any(pattern in col for pattern in rank_patterns):
-                        selected_columns.append(col)
-            
-            else:
-                # For custom operations, add columns that might be generated
-                # This is a heuristic - we add columns that contain the operation name
-                for col in all_columns:
-                    if operation_name.replace('_', '') in col.replace('_', '').lower():
-                        selected_columns.append(col)
-        
-        # Remove duplicates and ensure we don't include forbidden columns
-        selected_columns = list(set(selected_columns))
-        
-        # Remove forbidden columns (ID, target, etc.) - they will be added back by evaluator
-        forbidden = [self.id_column, self.target_column] + self.ignore_columns
-        selected_columns = [col for col in selected_columns if col not in forbidden]
-        
-        return selected_columns
+        return legacy_patterns.get(operation_name, [operation_name.replace('_', '')])  # Default: use operation name itself
     
     def _get_available_columns_from_db(self) -> Set[str]:
         """Get available columns from the database."""
@@ -393,20 +453,35 @@ class FeatureSpace:
         return set()
     
     def _get_operation_output_columns(self, operation_name: str) -> Set[str]:
-        """Get expected output columns for an operation (heuristic)."""
-        # This is a simplified heuristic - in practice, we'd need to know
-        # what columns each operation actually produces
+        """
+        Get expected output columns for an operation using dynamic pattern matching.
+        Replaces hardcoded patterns with dynamic lookup from OPERATION_METADATA.
+        """
         all_columns = self._get_available_columns_from_db()
         
-        if operation_name == 'statistical_aggregations':
-            return {col for col in all_columns if any(pattern in col for pattern in ['_mean_by_', '_std_by_'])}
-        elif operation_name == 'polynomial_features':
-            return {col for col in all_columns if any(col.endswith(suffix) for suffix in ['_squared', '_log'])}
-        elif operation_name == 'binning_features':
-            return {col for col in all_columns if '_binned' in col or '_qbin_' in col}
-        elif operation_name == 'ranking_features':
-            return {col for col in all_columns if any(pattern in col for pattern in ['_rank', '_percentile'])}
-        else:
+        try:
+            from .features.generic import get_operation_metadata
+            
+            # Get operation metadata for pattern matching
+            metadata = get_operation_metadata(operation_name)
+            if metadata and 'output_patterns' in metadata:
+                patterns = metadata['output_patterns']
+            else:
+                # Fallback to legacy patterns
+                patterns = self._get_legacy_patterns_for_operation(operation_name)
+            
+            # Find columns matching the operation's patterns
+            matching_columns = set()
+            for col in all_columns:
+                col_lower = col.lower()
+                if any(pattern.lower() in col_lower for pattern in patterns):
+                    matching_columns.add(col)
+            
+            return matching_columns
+            
+        except Exception as e:
+            logger.debug(f"Dynamic pattern matching failed for operation '{operation_name}': {e}")
+            # Return empty set if all fails
             return set()
     
     def generate_features_for_node(self, node) -> pd.DataFrame:
@@ -531,19 +606,37 @@ class FeatureSpace:
             stats['total_improvement'] += improvement
     
     def _get_feature_category(self, feature_name: str) -> str:
-        """Determine feature category from name patterns."""
-        feature_lower = feature_name.lower()
-        
-        if any(suffix in feature_lower for suffix in ['_squared', '_cubed', '_log', '_sqrt', '_reciprocal', '_x_']):
-            return 'polynomial'
-        elif any(pattern in feature_lower for pattern in ['_mean_by_', '_std_by_', '_count_by_', '_min_by_', '_max_by_']):
-            return 'statistical_aggregations'  
-        elif any(pattern in feature_lower for pattern in ['_binned', '_bin', '_qbin_']):
-            return 'binning'
-        elif any(pattern in feature_lower for pattern in ['_rank', '_percentile', '_quartile', '_decile']):
-            return 'ranking'
-        else:
-            return 'custom_domain'
+        """
+        Determine feature category from name patterns using dynamic pattern matching.
+        Replaces hardcoded patterns with dynamic lookup from OPERATION_METADATA.
+        """
+        try:
+            from .features.generic import detect_operation_from_feature_name, get_operation_metadata
+            
+            # Try dynamic detection first
+            operation_name = detect_operation_from_feature_name(feature_name)
+            if operation_name:
+                metadata = get_operation_metadata(operation_name)
+                if metadata and 'category' in metadata:
+                    return metadata['category']
+            
+            # Fallback to legacy pattern matching
+            feature_lower = feature_name.lower()
+            
+            if any(suffix in feature_lower for suffix in ['_squared', '_cubed', '_log', '_sqrt', '_reciprocal', '_x_']):
+                return 'polynomial'
+            elif any(pattern in feature_lower for pattern in ['_mean_by_', '_std_by_', '_count_by_', '_min_by_', '_max_by_']):
+                return 'statistical_aggregations'  
+            elif any(pattern in feature_lower for pattern in ['_binned', '_bin', '_qbin_']):
+                return 'binning'
+            elif any(pattern in feature_lower for pattern in ['_rank', '_percentile', '_quartile', '_decile']):
+                return 'ranking'
+            else:
+                return 'custom_domain'
+                
+        except Exception as e:
+            logger.debug(f"Feature category detection failed for '{feature_name}': {e}")
+            return 'unknown'
     
     def get_feature_stats(self) -> Dict[str, Dict[str, Any]]:
         """Get performance statistics for individual features."""
