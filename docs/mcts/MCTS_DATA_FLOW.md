@@ -34,16 +34,16 @@ Auto-Registration Process (100% data)
                     ↓ [Feature Catalog Registration & Validation]
 
 DuckDB Dataset (cache/dataset-name/dataset.duckdb)
-├── train (original 8 columns, origin='train')
-├── test (original 7 columns, origin='train')
-├── train_generic (~200 columns, origin='generic')
-├── train_custom (~50 columns, origin='custom')
-├── test_generic (~200 columns, origin='generic')
-├── test_custom (~50 columns, origin='custom')
-├── feature_catalog (all features with origin classification)
-├── operation_categories (dynamic category mappings)
-├── train_features (8 + ~250 columns = ~258 total)
-└── test_features (7 + ~250 columns = ~257 total)
+├── train (original columns, origin='train')
+├── test (original columns, origin='train')  
+├── train_generic (generic features, origin='generic')
+├── train_custom (domain features, origin='custom')
+├── test_generic (generic features, origin='generic')
+├── test_custom (domain features, origin='custom')
+├── train_features (original + generated features)
+└── test_features (original + generated features)
+
+Note: Feature catalog and database schema details are documented in docs/features/
     
                     ↓ [No-signal filtering & synchronization]
 
