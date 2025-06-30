@@ -732,9 +732,7 @@ class DuckDBDataManager:
             # Convert columns to proper data types
             result_df = self._convert_dataframe_types(result_df)
             
-            # Apply feature filtering if using feature tables
-            if self.use_cached_dataset and table_name in ['train_features', 'test_features']:
-                result_df = self._filter_features_by_config(result_df)
+            # Skip feature filtering - MCTS uses all pre-built features from dataset registration
             
             query_time = time.time() - start_time
             self.total_query_time += query_time
@@ -910,9 +908,7 @@ class DuckDBDataManager:
             # Convert columns to proper data types
             result_df = self._convert_dataframe_types(result_df)
             
-            # Apply feature filtering if using feature tables
-            if self.use_cached_dataset and table_name in ['train_features', 'test_features']:
-                result_df = self._filter_features_by_config(result_df)
+            # Skip feature filtering - MCTS uses all pre-built features from dataset registration
             
             query_time = time.time() - start_time
             self.total_query_time += query_time

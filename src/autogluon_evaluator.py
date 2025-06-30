@@ -186,37 +186,12 @@ class AutoGluonEvaluator:
                 else:
                     self.base_test_data = None
             
-            # Create validation split for faster evaluation
-            try:
-                # Try stratified split if target column exists and has valid values
-                if self.target_column and self.target_column in self.base_train_data.columns:
-                    train_data, val_data = train_test_split(
-                        self.base_train_data,
-                        test_size=0.2,
-                        stratify=self.base_train_data[self.target_column],
-                        random_state=42
-                    )
-                else:
-                    # Fallback to random split
-                    logger.warning(f"Target column '{self.target_column}' not found, using random split")
-                    train_data, val_data = train_test_split(
-                        self.base_train_data,
-                        test_size=0.2,
-                        random_state=42
-                    )
-            except Exception as e:
-                logger.warning(f"Stratified split failed: {e}, using random split")
-                train_data, val_data = train_test_split(
-                    self.base_train_data,
-                    test_size=0.2,
-                    random_state=42
-                )
-            
-            self.base_train_data = train_data.reset_index(drop=True)
-            self.validation_data = val_data.reset_index(drop=True)
+            # Use full training data - AutoGluon will handle validation split internally via holdout_frac
+            self.base_train_data = self.base_train_data.reset_index(drop=True)
+            self.validation_data = None  # AutoGluon handles validation internally
             
             logger.info(f"Data loaded: train={len(self.base_train_data)}, "
-                       f"val={len(self.validation_data)}, test={len(self.base_test_data) if self.base_test_data is not None else 0}")
+                       f"test={len(self.base_test_data) if self.base_test_data is not None else 0}")
             
         except Exception as e:
             logger.error(f"Failed to load base data: {e}")
@@ -271,14 +246,14 @@ class AutoGluonEvaluator:
             logger.debug(f"Using evaluation config: {eval_config}")
             
             # Prepare data by selecting columns from DuckDB
-            train_data, val_data = self._prepare_autogluon_data_from_columns(feature_columns, eval_config)
+            train_data = self._prepare_autogluon_data_from_columns(feature_columns, eval_config)
             
             # Create temporary model directory
             model_dir = self._create_temp_model_dir()
             logger.debug(f"Created model directory: {model_dir}")
             
             # Train and evaluate  
-            score = self._train_and_evaluate(train_data, val_data, eval_config, model_dir)
+            score = self._train_and_evaluate(train_data, eval_config, model_dir)
             
             # Cache the result
             self.evaluation_cache[feature_hash] = score
@@ -295,8 +270,8 @@ class AutoGluonEvaluator:
             raise
         
         finally:
-            # Cleanup model directory
-            self._cleanup_temp_dirs()
+            # Note: Cleanup handled by main cleanup() method at end of session
+            pass
     
     @timed("autogluon.evaluate_features", include_memory=True)
     def evaluate_features(self, 
@@ -335,8 +310,8 @@ class AutoGluonEvaluator:
             
             # Prepare data for AutoGluon with config
             logger.debug("Preparing AutoGluon data...")
-            train_data, val_data = self._prepare_autogluon_data(features_df, eval_config)
-            logger.info(f"Prepared data: train={len(train_data)}, val={len(val_data)}")
+            train_data = self._prepare_autogluon_data(features_df, eval_config)
+            logger.info(f"Prepared data: train={len(train_data)}")
             
             # Create temporary model directory
             model_dir = self._create_temp_model_dir()
@@ -347,7 +322,7 @@ class AutoGluonEvaluator:
             
             # Train and evaluate
             logger.info("Starting AutoGluon training and evaluation...")
-            score = self._train_and_evaluate(train_data, val_data, eval_config, model_dir)
+            score = self._train_and_evaluate(train_data, eval_config, model_dir)
             logger.info(f"AutoGluon evaluation completed: score={score:.5f}")
             
             # Cache result
@@ -371,10 +346,10 @@ class AutoGluonEvaluator:
             return 0.0
         
         finally:
-            # Cleanup model directory
-            self._cleanup_temp_dirs()
+            # Note: Cleanup handled by main cleanup() method at end of session
+            pass
     
-    def _prepare_autogluon_data_from_columns(self, feature_columns: List[str], eval_config: Dict[str, Any] = None) -> Tuple[TabularDataset, TabularDataset]:
+    def _prepare_autogluon_data_from_columns(self, feature_columns: List[str], eval_config: Dict[str, Any] = None) -> TabularDataset:
         """
         Prepare training and validation data by selecting specific columns from DuckDB.
         
@@ -445,30 +420,21 @@ class AutoGluonEvaluator:
                         random_state=42
                     )
         
-        # Split into train/validation
-        from sklearn.model_selection import train_test_split
-        train_final, val_final = train_test_split(
-            train_data,
-            test_size=0.2,
-            stratify=train_data[self.target_column],
-            random_state=42
-        )
+        # Use full training data - AutoGluon handles validation split internally via holdout_frac
+        train_final = train_data
         
         # Debug dataset analysis and dumping
-        self._debug_dataset_analysis(train_final, val_final)
+        self._debug_dataset_analysis(train_final, None)
         
-        # Filter useless features before passing to AutoGluon
-        train_final, val_final = self._filter_useless_features(train_final, val_final)
         
         # Convert to TabularDataset
         train_dataset = TabularDataset(train_final)
-        val_dataset = TabularDataset(val_final)
         
-        logger.debug(f"Prepared AutoGluon data: train={len(train_dataset)}, val={len(val_dataset)}")
+        logger.debug(f"Prepared AutoGluon data: train={len(train_dataset)}")
         
-        return train_dataset, val_dataset
+        return train_dataset
     
-    def _prepare_autogluon_data(self, features_df: pd.DataFrame, eval_config: Dict[str, Any] = None) -> Tuple[TabularDataset, TabularDataset]:
+    def _prepare_autogluon_data(self, features_df: pd.DataFrame, eval_config: Dict[str, Any] = None) -> TabularDataset:
         """Prepare training and validation data for AutoGluon with DuckDB sampling support."""
         
         # Get current configuration if not provided
@@ -511,45 +477,35 @@ class AutoGluonEvaluator:
         # Merge features with base data using index-based approach
         # Reset indexes to ensure proper alignment
         train_data_indexed = train_data.reset_index(drop=True)
-        val_data_indexed = self.validation_data.reset_index(drop=True)
         features_indexed = features_df.reset_index(drop=True)
         
         # Ensure same number of rows for concatenation
-        if len(features_indexed) != len(train_data_indexed) + len(val_data_indexed):
-            # Features were generated on full dataset, split appropriately
-            train_size = len(train_data_indexed)
-            train_features = features_indexed.iloc[:train_size].reset_index(drop=True)
-            val_features = features_indexed.iloc[train_size:train_size + len(val_data_indexed)].reset_index(drop=True)
-        else:
-            # Features match exact split, use directly
+        if len(features_indexed) != len(train_data_indexed):
+            # Features were generated on full dataset, sample appropriately
             train_features = features_indexed.iloc[:len(train_data_indexed)].reset_index(drop=True)
-            val_features = features_indexed.iloc[len(train_data_indexed):].reset_index(drop=True)
+        else:
+            # Features match train data size, use directly
+            train_features = features_indexed
         
         # Concatenate features with base data (index-based alignment)
         train_final = pd.concat([train_data_indexed, train_features], axis=1)
-        val_final = pd.concat([val_data_indexed, val_features], axis=1)
         
         # Remove duplicate columns (keep first occurrence)
         train_final = train_final.loc[:, ~train_final.columns.duplicated()]
-        val_final = val_final.loc[:, ~val_final.columns.duplicated()]
         
-        # Debug dataset analysis and dumping
-        self._debug_dataset_analysis(train_final, val_final)
+        # Debug dataset analysis and dumping  
+        self._debug_dataset_analysis(train_final, None)
         
-        # Filter useless features before passing to AutoGluon
-        train_final, val_final = self._filter_useless_features(train_final, val_final)
         
         # Convert to TabularDataset
         train_dataset = TabularDataset(train_final)
-        val_dataset = TabularDataset(val_final)
         
-        logger.debug(f"Prepared AutoGluon data: train={len(train_dataset)}, val={len(val_dataset)}")
+        logger.debug(f"Prepared AutoGluon data: train={len(train_dataset)}")
         
-        return train_dataset, val_dataset
+        return train_dataset
     
     def _train_and_evaluate(self, 
-                           train_data: TabularDataset, 
-                           val_data: TabularDataset,
+                           train_data: TabularDataset,
                            eval_config: Dict[str, Any],
                            model_dir: str) -> float:
         """Train AutoGluon model and evaluate on validation set."""
@@ -632,18 +588,10 @@ class AutoGluonEvaluator:
             # Use AutoGluon's built-in evaluation for all metrics
             logger.info(f"Evaluating with metric: {self.target_metric}")
             
-            # Special handling for MAP@3 which isn't built-in to AutoGluon
-            if self.target_metric.lower() in ['map@3', 'map_at_3', 'map3']:
-                logger.debug(f"Val predictions columns: {val_predictions.columns.tolist()}")
-                logger.debug(f"Val true labels sample: {val_true[:5]}")
-                logger.debug(f"Val predictions sample: {val_predictions.values[:3]}")
-                score = self._calculate_map3(val_true, val_predictions)
-                logger.info(f"Calculated MAP@3 score: {score:.5f}")
-            else:
-                # Use AutoGluon's evaluate method for all other metrics
-                eval_result = predictor.evaluate(val_data, silent=True)
-                score = eval_result[self.target_metric]
-                logger.info(f"Calculated {self.target_metric} score: {score:.5f}")
+            # Use AutoGluon's built-in metric evaluation
+            eval_result = predictor.evaluate(val_data, silent=True)
+            score = eval_result[self.target_metric]
+            logger.info(f"Calculated {self.target_metric} score: {score:.5f}")
             
             return score
             
@@ -651,41 +599,6 @@ class AutoGluonEvaluator:
             logger.error(f"AutoGluon training/evaluation failed: {e}")
             return 0.0
     
-    def _calculate_map3(self, y_true: np.ndarray, y_pred_proba_df: pd.DataFrame) -> float:
-        """Calculate MAP@3 metric for multi-class classification."""
-        
-        if len(y_pred_proba_df.shape) != 2:
-            logger.error(f"Invalid prediction shape: {y_pred_proba_df.shape}")
-            return 0.0
-        
-        # Get class labels from prediction DataFrame columns
-        class_names = y_pred_proba_df.columns.tolist()
-        y_pred_proba = y_pred_proba_df.values
-        
-        map_score = 0.0
-        n_samples = len(y_true)
-        
-        for i, true_label in enumerate(y_true):
-            # Get top 3 predictions for this sample
-            sample_probs = y_pred_proba[i]
-            top3_indices = np.argsort(sample_probs)[::-1][:3]
-            
-            # Convert indices to class names
-            top3_classes = [class_names[idx] for idx in top3_indices]
-            
-            try:
-                # Calculate score for this sample
-                for rank, predicted_class in enumerate(top3_classes):
-                    if str(predicted_class) == str(true_label):
-                        map_score += 1.0 / (rank + 1)
-                        logger.debug(f"Sample {i}: True={true_label}, Predicted={predicted_class} at rank {rank+1}")
-                        break
-                        
-            except Exception as e:
-                logger.debug(f"Label matching issue for sample {i}: {e}")
-                continue
-        
-        return map_score / n_samples if n_samples > 0 else 0.0
     
     def evaluate_final_features(self, features_df: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -818,23 +731,6 @@ class AutoGluonEvaluator:
         self.model_dirs.append(model_dir)
         return model_dir
     
-    def _cleanup_temp_dirs(self, keep_recent: int = 3) -> None:
-        """Cleanup old temporary model directories."""
-        if len(self.model_dirs) <= keep_recent:
-            return
-        
-        # Remove old directories (keep most recent ones)
-        dirs_to_remove = self.model_dirs[:-keep_recent]
-        for model_dir in dirs_to_remove:
-            try:
-                if os.path.exists(model_dir):
-                    shutil.rmtree(model_dir)
-                    logger.debug(f"Cleaned up model directory: {model_dir}")
-            except Exception as e:
-                logger.warning(f"Failed to cleanup {model_dir}: {e}")
-        
-        # Update list
-        self.model_dirs = self.model_dirs[-keep_recent:]
     
     def get_evaluation_statistics(self) -> Dict[str, Any]:
         """Get evaluation performance statistics."""
@@ -882,7 +778,7 @@ class AutoGluonEvaluator:
             except Exception as e:
                 logger.warning(f"Failed to cleanup temp base dir: {e}")
     
-    def _debug_dataset_analysis(self, train_df: pd.DataFrame, val_df: pd.DataFrame) -> None:
+    def _debug_dataset_analysis(self, train_df: pd.DataFrame, val_df: pd.DataFrame = None) -> None:
         """
         Debug analysis of dataset before AutoGluon evaluation.
         Dumps dataset to /tmp/ and analyzes feature quality.
@@ -907,85 +803,56 @@ class AutoGluonEvaluator:
             
             logger.info(f"🔍 Debug: Dumped datasets to {train_path} and {val_path}")
             
-            # Analyze feature quality
-            self._analyze_feature_quality(train_df, iteration)
             
         except Exception as e:
             logger.warning(f"Debug dataset analysis failed: {e}")
     
-    def _analyze_feature_quality(self, df: pd.DataFrame, iteration: int) -> None:
-        """Analyze feature quality and detect potentially useless features."""
+
+    def _filter_useless_features_single(self, train_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filter out features that have no predictive signal before AutoGluon evaluation.
+        Returns filtered training dataframe.
+        """
         try:
-            # Basic statistics
-            total_features = len(df.columns)
-            feature_types = df.dtypes.value_counts()
+            original_feature_count = len(train_df.columns)
+            features_to_remove = set()
             
-            logger.info(f"📊 Iteration {iteration}: Dataset has {len(df)} rows, {total_features} features")
-            logger.info(f"📊 Feature types: {dict(feature_types)}")
-            
-            # Detect constant features (no signal)
-            constant_features = []
-            low_variance_features = []
-            
-            for col in df.columns:
+            # Identify features to remove
+            for col in train_df.columns:
                 if col == self.target_column:
                     continue
                     
-                nunique = df[col].nunique()
-                if nunique <= 1:
-                    constant_features.append(col)
-                elif nunique <= 2 and len(df) > 100:  # Binary features in large datasets
-                    variance = df[col].var() if pd.api.types.is_numeric_dtype(df[col]) else None
-                    if variance is not None and variance < 0.01:
-                        low_variance_features.append((col, variance, nunique))
-            
-            # Log problematic features
-            if constant_features:
-                logger.warning(f"🚨 Iteration {iteration}: Found {len(constant_features)} constant features (no signal):")
-                for i, feat in enumerate(constant_features[:10]):  # Show first 10
-                    logger.warning(f"  - {feat} (nunique={df[feat].nunique()})")
-                if len(constant_features) > 10:
-                    logger.warning(f"  ... and {len(constant_features) - 10} more")
-            
-            if low_variance_features:
-                logger.warning(f"⚠️  Iteration {iteration}: Found {len(low_variance_features)} low-variance features:")
-                for feat, var, nunique in low_variance_features[:5]:  # Show first 5
-                    logger.warning(f"  - {feat} (variance={var:.6f}, nunique={nunique})")
-            
-            # Identify categorical features with many unique values
-            high_cardinality_categorical = []
-            for col in df.select_dtypes(include=['object', 'category']).columns:
-                if col == self.target_column:
+                # Check for constant features (no variance)
+                train_nunique = train_df[col].nunique()
+                
+                if train_nunique <= 1:
+                    features_to_remove.add(col)
                     continue
-                nunique = df[col].nunique()
-                if nunique > 0.1 * len(df):  # More than 10% unique values
-                    high_cardinality_categorical.append((col, nunique))
+                
+                # Check for features with extremely low variance (numerical only)
+                if pd.api.types.is_numeric_dtype(train_df[col]):
+                    train_var = train_df[col].var()
+                    
+                    if train_var is not None and train_var < 1e-10:
+                        features_to_remove.add(col)
+                        continue
             
-            if high_cardinality_categorical:
-                logger.warning(f"🔤 Iteration {iteration}: High cardinality categorical features:")
-                for feat, nunique in high_cardinality_categorical[:5]:
-                    logger.warning(f"  - {feat} (nunique={nunique}/{len(df)})")
-            
-            # Log summary to file for later analysis
-            summary_path = f"/tmp/feature-analysis-{iteration:04d}.txt"
-            with open(summary_path, 'w') as f:
-                f.write(f"Feature Analysis - Iteration {iteration}\n")
-                f.write(f"Dataset: {len(df)} rows, {total_features} features\n")
-                f.write(f"Feature types: {dict(feature_types)}\n\n")
-                f.write(f"Constant features ({len(constant_features)}):\n")
-                for feat in constant_features:
-                    f.write(f"  - {feat}\n")
-                f.write(f"\nLow variance features ({len(low_variance_features)}):\n")
-                for feat, var, nunique in low_variance_features:
-                    f.write(f"  - {feat} (var={var:.6f}, nunique={nunique})\n")
-                f.write(f"\nHigh cardinality categorical features ({len(high_cardinality_categorical)}):\n")
-                for feat, nunique in high_cardinality_categorical:
-                    f.write(f"  - {feat} (nunique={nunique})\n")
-            
-            logger.info(f"📝 Feature analysis saved to {summary_path}")
-            
+            # Remove useless features
+            if features_to_remove:
+                cols_to_keep = [col for col in train_df.columns if col not in features_to_remove]
+                train_filtered = train_df[cols_to_keep].copy()
+                
+                logger.info(f"✅ Filtered useless features: {original_feature_count} -> {len(train_filtered.columns)} "
+                           f"(removed {len(features_to_remove)} features)")
+                
+                return train_filtered
+            else:
+                logger.info(f"✅ No useless features detected, keeping all {original_feature_count} features")
+                return train_df
+                
         except Exception as e:
-            logger.error(f"Feature quality analysis failed: {e}")
+            logger.warning(f"Feature filtering failed: {e}, using all features")
+            return train_df
 
     def _filter_useless_features(self, train_df: pd.DataFrame, val_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """

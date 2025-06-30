@@ -68,11 +68,12 @@ class FeatureSpace:
     with existing feature engineering infrastructure.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], duckdb_manager=None):
         """Initialize feature space with configuration."""
         self.config = config
         self.feature_config = config['feature_space']
         self.autogluon_config = config['autogluon']
+        self.duckdb_manager = duckdb_manager
         
         # Feature operation definitions
         self.operations: Dict[str, FeatureOperation] = {}

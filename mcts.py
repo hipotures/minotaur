@@ -148,11 +148,7 @@ class FeatureDiscoveryRunner:
                 set_session_context(self.db.session_name)
                 logger.info(f"Session context set to: {self.db.session_name}")
             
-            # Initialize feature space
-            logger.info("Initializing feature space...")
-            self.feature_space = FeatureSpace(self.config)
-            
-            # Initialize AutoGluon evaluator (required)
+            # Initialize AutoGluon evaluator first (required for DuckDB manager)
             if not AUTOGLUON_AVAILABLE:
                 logger.error("❌ CRITICAL: AutoGluon is not installed!")
                 logger.error("📦 Please install AutoGluon: pip install autogluon")
@@ -169,6 +165,10 @@ class FeatureDiscoveryRunner:
                 
             logger.info("Initializing AutoGluon evaluator...")
             self.evaluator = AutoGluonEvaluator(self.config)
+            
+            # Initialize feature space with DuckDB manager from evaluator
+            logger.info("Initializing feature space...")
+            self.feature_space = FeatureSpace(self.config, duckdb_manager=getattr(self.evaluator, 'duckdb_manager', None))
             
             # Initialize MCTS engine
             logger.info("Initializing MCTS engine...")
