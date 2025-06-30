@@ -444,7 +444,7 @@ class DatasetImporter:
                 # OLD PIPELINE PATH - Generate features separately with post-hoc filtering
                 # 1. Generate GENERIC features only
                 dataset_logger.info("🔧 Generating GENERIC features...")
-                generic_df = feature_space.generate_generic_features(train_df)
+                generic_df = feature_space.generate_generic_features(train_df, target_column=target_column, id_column=id_column)
                 dataset_logger.info(f"Generated {len(generic_df.columns)} generic columns")
                 
                 # Save train_generic table
@@ -559,7 +559,7 @@ class DatasetImporter:
                 # OLD PIPELINE PATH for test data
                 # 1. Generate GENERIC features for test (without signal checking)
                 dataset_logger.info("🔧 Generating GENERIC features for test...")
-                test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False)
+                test_generic_df = feature_space.generate_generic_features(test_df, check_signal=False, target_column=None, id_column=id_column)
                 dataset_logger.info(f"Generated {len(test_generic_df.columns)} generic columns for test")
                 
                 # Save test_generic table

@@ -543,7 +543,7 @@ class FeatureSpace:
         forbidden = [self.target_column, self.id_column] + self.ignore_columns
         return [col for col in columns if col not in forbidden]
     
-    def generate_generic_features(self, df: pd.DataFrame, check_signal: bool = True) -> pd.DataFrame:
+    def generate_generic_features(self, df: pd.DataFrame, check_signal: bool = True, target_column: str = None, id_column: str = None) -> pd.DataFrame:
         """
         Generate generic features using new modular architecture.
         Used by dataset registration process.
@@ -630,10 +630,23 @@ class FeatureSpace:
                 categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
                 categorical_cols = self._filter_forbidden_columns(categorical_cols)
                 
+                # Prepare real forbidden columns for categorical operation
+                real_forbidden = []
+                if target_column:
+                    real_forbidden.append(target_column)
+                if id_column:
+                    real_forbidden.append(id_column)
+                real_forbidden.extend(self.ignore_columns)
+                
                 if categorical_cols:
-                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols)
+                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols, forbidden_columns=real_forbidden)
                     result_features.update(cat_features)
                     logger.info(f"Added {len(cat_features)} categorical features")
+                else:
+                    # Even if no object/category columns, still run auto-detection with proper forbidden list
+                    cat_features = cat_op.generate_features(df, forbidden_columns=real_forbidden)
+                    result_features.update(cat_features)
+                    logger.info(f"Added {len(cat_features)} categorical features (auto-detected)")
             
             # Temporal features
             if self.generic_operations_config.get('temporal_features', True):
