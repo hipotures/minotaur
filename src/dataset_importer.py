@@ -834,6 +834,9 @@ class DatasetImporter:
                 conn.execute(f"DROP TABLE {table_name}")
                 conn.execute(f"ALTER TABLE {table_name}_filtered RENAME TO {table_name}")
                 
+                # Note: No need to clean feature_catalog since features with no signal 
+                # are now filtered BEFORE catalog registration (fixed in base.py)
+                
                 final_count = len(remaining_columns)
                 dataset_logger.info(f"✅ Filtered {table_name}: {len(all_columns)} -> {final_count} columns (removed {len(columns_to_remove)})")
             else:
