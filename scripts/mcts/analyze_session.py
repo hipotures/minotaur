@@ -524,7 +524,15 @@ def main():
     # Load configuration and initialize database
     try:
         config = load_default_config()
-        db = FeatureDiscoveryDB(config, read_only=True)
+        
+        # Disable DB logging
+        logging.getLogger('DB').setLevel(logging.ERROR)
+        
+        # Suppress stdout temporarily for FeatureDiscoveryDB creation
+        import io, contextlib
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            db = FeatureDiscoveryDB(config, read_only=True)
     except Exception as e:
         print(f"❌ Failed to connect to database: {e}")
         return 1
