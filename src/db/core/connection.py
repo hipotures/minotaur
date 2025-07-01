@@ -374,7 +374,11 @@ class DuckDBConnectionManager:
             yield conn
             
         except Exception as e:
-            self.logger.error(f"Connection error: {e}")
+            # Don't log foreign key constraint errors as ERROR - they're handled gracefully
+            if "foreign key constraint" in str(e) or "Constraint Error" in str(e):
+                self.logger.debug(f"Connection constraint: {e}")
+            else:
+                self.logger.error(f"Connection error: {e}")
             raise
         finally:
             if conn:
@@ -426,7 +430,12 @@ class DuckDBConnectionManager:
         except Exception as e:
             duration = time.time() - start_time
             self.query_stats['failed_queries'] += 1
-            self.logger.error(f"Query failed after {duration:.3f}s: {e}")
+            
+            # Don't log foreign key constraint errors as ERROR - they're handled gracefully
+            if "foreign key constraint" in str(e) or "Constraint Error" in str(e):
+                self.logger.debug(f"Query constraint after {duration:.3f}s: {e}")
+            else:
+                self.logger.error(f"Query failed after {duration:.3f}s: {e}")
             raise
     
     def execute_transaction(self, operations: List[tuple]) -> List[Any]:
