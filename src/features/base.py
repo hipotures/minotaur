@@ -285,8 +285,16 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                     metadata.get('output_patterns', [])
                 ])
                 
-                # Register individual features
+                # Filter out features with no signal before registering in catalog
+                valid_features = {}
                 for feature_name, feature_series in features.items():
+                    if self._check_feature_signal(feature_series):
+                        valid_features[feature_name] = feature_series
+                    else:
+                        logger.debug(f"Feature '{feature_name}' has no signal, excluded from catalog registration")
+                
+                # Register only valid features (those with signal) in catalog
+                for feature_name, feature_series in valid_features.items():
                     # Detect operation from feature name for validation
                     detected_op = self._detect_operation_from_feature_name(feature_name, metadata)
                     
@@ -312,9 +320,9 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                     ])
                 
                 if mcts_feature:
-                    logger.debug(f"Auto-registered {len(features)} features with individual operation names (MCTS feature mode)")
+                    logger.debug(f"Auto-registered {len(valid_features)} valid features (out of {len(features)} generated) with individual operation names (MCTS feature mode)")
                 else:
-                    logger.debug(f"Auto-registered {len(features)} features for operation '{operation_name}'")
+                    logger.debug(f"Auto-registered {len(valid_features)} valid features (out of {len(features)} generated) for operation '{operation_name}'")
                 
         except Exception as e:
             logger.debug(f"Auto-registration failed for operation '{self.get_operation_name()}': {e}")
@@ -570,8 +578,16 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                     output_patterns
                 ])
                 
-                # Register individual features
+                # Filter out features with no signal before registering in catalog
+                valid_features = {}
                 for feature_name, feature_series in features.items():
+                    if self._check_feature_signal(feature_series):
+                        valid_features[feature_name] = feature_series
+                    else:
+                        logger.debug(f"Feature '{feature_name}' has no signal, excluded from catalog registration")
+                
+                # Register only valid features (those with signal) in catalog
+                for feature_name, feature_series in valid_features.items():
                     # Use individual feature name as operation_name when mcts_feature is True
                     feature_operation_name = feature_name if mcts_feature else operation_name_to_use
                     
@@ -594,9 +610,9 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                     ])
                 
                 if mcts_feature:
-                    logger.info(f"✅ Auto-registered {len(features)} custom features with individual operation names (MCTS feature mode, domain: {self.domain_name})")
+                    logger.info(f"✅ Auto-registered {len(valid_features)} valid custom features (out of {len(features)} generated) with individual operation names (MCTS feature mode, domain: {self.domain_name})")
                 else:
-                    logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name_to_use}' (domain: {self.domain_name})")
+                    logger.info(f"✅ Auto-registered {len(valid_features)} valid custom features (out of {len(features)} generated) for operation '{operation_name_to_use}' (domain: {self.domain_name})")
                 
         except Exception as e:
             logger.error(f"❌ Auto-registration failed for custom operation '{self.get_operation_name()}': {e}")

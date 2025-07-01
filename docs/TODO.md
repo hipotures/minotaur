@@ -79,4 +79,38 @@ generic_features(test_df, check_signal=False, target_column=None, id_column=id_c
 **Estimated Effort:** 1-2 hours
 **Impact:** Improved maintainability and flexibility
 
+### Feature Catalog Synchronization Check
+
+**Problem Description:**
+Need to implement a validation check to ensure feature_catalog table stays synchronized with actual feature columns in train_features/test_features tables.
+
+**Background:**
+Fixed critical bug where features with no signal were being registered in feature_catalog before signal validation, causing MCTS to attempt using non-existent features (resulting in score=0.0 nodes).
+
+**Solution Implemented:**
+- Modified `src/features/base.py` to filter features by signal BEFORE catalog registration
+- Both GenericFeatureOperation and CustomFeatureOperation now only register features that pass signal validation
+- Improved logging to show "valid features (out of X generated)" counts
+
+**Required Follow-up Task:**
+Create validation script that compares:
+1. Operations in `feature_catalog` table vs actual columns in `train_features`
+2. Identifies orphaned catalog entries (operations without corresponding columns)  
+3. Identifies missing catalog entries (columns without catalog registration)
+4. Provides cleanup recommendations
+
+**Implementation Details:**
+- Script should scan all dataset.duckdb files in cache directories
+- Report discrepancies per dataset with specific operation names
+- Suggest commands to fix synchronization issues
+- Run as part of health check system
+
+**Fixed in commit:** [COMMIT_HASH_TO_BE_FILLED]
+
+**Priority:** Medium  
+**Estimated Effort:** 1-2 hours
+**Impact:** Prevents MCTS evaluation failures due to catalog inconsistencies
+
+---
+
 (Future TODO items can be added here)
