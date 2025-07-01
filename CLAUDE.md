@@ -97,10 +97,118 @@ Comprehensive Feature Engineering documentation is organized in `docs/features/`
 - **Developers**: See [FEATURES_DEVELOPMENT.md](docs/features/FEATURES_DEVELOPMENT.md) for creating custom features
 - **DevOps**: Review [FEATURES_PERFORMANCE.md](docs/features/FEATURES_PERFORMANCE.md) for optimization
 
+## Common Commands
+
+### Core System Operations
+```bash
+# Main MCTS feature discovery
+./mcts.py --config config/mcts_config_s5e6_fast_test.yaml    # Fast testing (2-5 min)
+./mcts.py --config config/mcts_config_titanic_test.yaml      # Titanic validation (30-60s)
+./mcts.py --test-mode                                        # Mock mode for debugging (30s)
+
+# Database management
+./manager.py datasets --list                                 # List registered datasets
+./manager.py datasets --register --dataset-name NAME --auto --dataset-path PATH
+./manager.py sessions --list                                 # Show recent sessions
+./manager.py features --top 10                              # Top performing features
+
+# Session management
+./mcts.py --list-sessions                                    # List all sessions
+./mcts.py --resume                                           # Resume last session
+./mcts.py --resume SESSION_ID                               # Resume specific session
+```
+
+### Testing and Development
+```bash
+# Run tests
+pytest                                                       # Full test suite
+pytest tests/unit/                                          # Unit tests only
+pytest tests/integration/                                   # Integration tests only
+pytest --cov=src --cov-report=html                         # Coverage report
+
+# Development workflow
+./mcts.py --test-mode --validate-config                     # Validate config without running
+python -m src.features.generic.statistical                  # Test feature operations
+bin/duckdb data/minotaur.duckdb                            # Direct DuckDB access
+```
+
+### Performance Analysis
+```bash
+# System validation
+./manager.py selfcheck --run                                # System health check
+./manager.py verification --verify-latest                   # Data integrity check
+./manager.py analytics --summary                            # Performance summary
+./manager.py backup --create                                # Create database backup
+```
+
+## Custom Claude Code Commands
+
+### Documentation Update Command
+Update documentation based on Git history analysis:
+```
+/project:update-docs-from-git.md mcts      # Update MCTS documentation
+/project:update-docs-from-git.md features  # Update features documentation
+/project:update-docs-from-git.md db        # Update database documentation
+```
+
+This command analyzes recent commits and guides through updating the specified documentation.
+
+## System Architecture Essentials
+
+### MCTS Iteration Pattern
+The system follows a 4-phase cycle per iteration:
+1. **Selection**: UCB1 algorithm navigates tree to select promising nodes
+2. **Expansion**: Create child nodes with new feature operations
+3. **Evaluation**: AutoGluon evaluates feature combinations (MAP@3 metric)
+4. **Backpropagation**: Update node statistics up to root
+
+**Key Insight**: After ~13-15 iterations, MCTS shifts from exploration to exploitation - fewer new evaluations is normal behavior as it focuses on promising branches.
+
+### Database Repository Pattern
+All data access goes through repository layer:
+- `SessionRepository`: MCTS session management
+- `FeatureRepository`: Feature catalog and operations
+- `ExplorationRepository`: Node exploration tracking
+- `DatasetRepository`: Dataset registration and metadata
+
+Connection pooling is automatic - never create direct DuckDB connections.
+
+### Feature Operation System
+Two-tier architecture:
+- **Generic Operations** (`src/features/generic/`): Domain-agnostic (statistical, polynomial, binning, ranking, temporal, text, categorical)
+- **Custom Operations** (`src/features/custom/`): Domain-specific (kaggle_s5e6, titanic)
+
+All operations extend base classes with timing support and signal detection.
+
+### Configuration System
+Base + override pattern:
+- **Base**: `config/mcts_config.yaml` (never modify)
+- **Overrides**: Domain-specific configs that inherit from base
+- **Dataset Registration**: Use `dataset_name` instead of direct paths
+
+## Critical Performance Notes
+
+### MCTS Behavior Understanding
+- **100 iterations ≠ 100 evaluations**: Each iteration can evaluate multiple nodes
+- **Early iterations**: High expansion rate, many evaluations per iteration
+- **Later iterations**: Exploitation focus, fewer new evaluations (normal)
+- **Tree depth limits**: `max_tree_depth` affects exploration scope
+
+### Memory and Resource Management
+- **Feature catalog caching**: Thread-safe lazy loading for 50-100x speedup
+- **Connection pooling**: Automatic DuckDB connection management
+- **Memory monitoring**: Built-in resource tracking and garbage collection
+- **Signal detection**: Automatic filtering of low-signal features (nunique() <= 1)
+
+### Data Loading Optimization
+- **Parquet caching**: 4.2x faster than CSV loading
+- **DuckDB sampling**: Efficient random sampling without full data loading
+- **Column masking**: Use DuckDB queries instead of DataFrame copies in memory
+
 ## Memories
 
 ### DuckDB Interaction
-- Plik klient duckdb możesz tak wywołać bin/duckdb ma prawa wykonywania
+- Direct DuckDB client: `bin/duckdb data/minotaur.duckdb` (has execute permissions)
 
 ### Feature Engineering Refactoring (2025-06-29)
 - Migrated from `src/domains` to `src/features` with modular structure
@@ -108,11 +216,13 @@ Comprehensive Feature Engineering documentation is organized in `docs/features/`
 - Implemented no-signal feature detection (filters features with nunique() <= 1)
 - Created backward compatibility wrappers for smooth migration
 
+### MCTS Evaluation Issue Resolution (2025-07-01)
+- Identified that "13 evaluations per 100 iterations" is normal MCTS behavior
+- System actually performs 200+ total evaluations across all iterations
+- Early iterations do more expansion, later focus on exploitation
+- Configuration optimization: `expansion_budget` should be ≤ `max_children_per_node`
+
 ### Documentation Guidelines
-- Jeśli problem lub zagadnienie odnoszą się do tematu features (ficzerów) musisz zapoznać się z docs/features/FEATURES_OVERVIEW.md
-
-### MCTS Documentation Guidelines
-- Jeśli problem lub zagadnienie odnoszą się do tematów związnych z działaniem MCTS musisz zapoznać się zdocs/mcts/MCTS_OVERVIEW.md
-
-### AutoGluon Configuration Guidelines
-- Jeśli problem lub zagadnienie odnoszą się do tematów związnych z działaniem autogluon musisz zapoznać się z docs/AUTOGLUON_CONFIG_GUIDE.md
+- Features problems: Must read `docs/features/FEATURES_OVERVIEW.md`
+- MCTS problems: Must read `docs/mcts/MCTS_OVERVIEW.md`
+- AutoGluon problems: Must read `docs/AUTOGLUON_CONFIG_GUIDE.md`

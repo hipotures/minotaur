@@ -4,11 +4,11 @@ session:
   max_runtime_hours: 1
   checkpoint_interval: 1
 mcts:
-  max_tree_depth: 5
+  max_tree_depth: 10
   expansion_threshold: 1
   min_visits_for_best: 2
-  max_children_per_node: 2
-  expansion_budget: 5
+  max_children_per_node: 4
+  expansion_budget: 3
   max_nodes_in_memory: 1000
 autogluon:
   dataset_name: titanic
@@ -82,6 +82,8 @@ logging:
   max_log_size_mb: 10
   progress_interval: 1
   log_autogluon_details: false
+autogluon_cache:
+  disable_cache: true
 export:
   formats:
   - python

@@ -257,15 +257,27 @@ class FeatureSpace:
         Returns:
             List[str]: Available operation names
         """
+        # CRITICAL FIX: Accumulate features from path, not just applied_operations
+        # Walk up the tree to accumulate all features from root to current node
+        path_operations = []
+        
         if not hasattr(node, 'base_features') or not node.base_features:
             # For root node, use all available columns from database
             current_features = self._get_available_columns_from_db()
         else:
+            # Start with base features
             current_features = set(node.base_features)
             
-            # Add features from applied operations
-            for op_name in getattr(node, 'applied_operations', []):
-                current_features.update(self._get_operation_output_columns(op_name))
+            current = node
+            while current is not None and hasattr(current, 'operation_that_created_this'):
+                if current.operation_that_created_this and current.operation_that_created_this != 'root':
+                    path_operations.append(current.operation_that_created_this)
+                current = getattr(current, 'parent', None)
+            
+            # Apply operations in order from root to current (reverse path)
+            for op_name in reversed(path_operations):
+                op_features = self._get_operation_output_columns(op_name)
+                current_features.update(op_features)
         
         available_ops = []
         
@@ -278,7 +290,7 @@ class FeatureSpace:
             if operation.can_apply(current_features):
                 logger.debug(f"  ✓ Can apply {op_name}")
                 # Check if already applied in this path
-                if op_name not in getattr(node, 'applied_operations', []):
+                if op_name not in path_operations:
                     logger.debug(f"  ✓ Not already applied {op_name}")
                     # Apply category filtering
                     if not self.enabled_categories or operation.category in self.enabled_categories:

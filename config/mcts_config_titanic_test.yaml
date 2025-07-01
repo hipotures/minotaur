@@ -1,14 +1,14 @@
 test_mode: false
 session:
-  max_iterations: 5
+  max_iterations: 15
   max_runtime_hours: 0.25
   checkpoint_interval: 1
 mcts:
-  max_tree_depth: 4
+  max_tree_depth: 6
   expansion_threshold: 1
   min_visits_for_best: 2
-  max_children_per_node: 2
-  expansion_budget: 5
+  max_children_per_node: 3
+  expansion_budget: 2
   max_nodes_in_memory: 1000
 autogluon:
   dataset_name: titanic
