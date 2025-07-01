@@ -1,6 +1,6 @@
 test_mode: true
 session:
-  max_iterations: 100
+  max_iterations: 10
   max_runtime_hours: 1
 mcts:
   max_tree_depth: 15

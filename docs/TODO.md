@@ -91,6 +91,7 @@ Fixed critical bug where features with no signal were being registered in featur
 - Modified `src/features/base.py` to filter features by signal BEFORE catalog registration
 - Both GenericFeatureOperation and CustomFeatureOperation now only register features that pass signal validation
 - Improved logging to show "valid features (out of X generated)" counts
+- Removed redundant catalog cleanup from `src/dataset_importer.py` to resolve contradiction between signal filtering mechanisms
 
 **Required Follow-up Task:**
 Create validation script that compares:
@@ -105,7 +106,7 @@ Create validation script that compares:
 - Suggest commands to fix synchronization issues
 - Run as part of health check system
 
-**Fixed in commit:** 41a0323
+**Fixed in commits:** 41a0323 (initial fix), f4028b9 (contradiction resolution)
 
 **Priority:** Medium  
 **Estimated Effort:** 1-2 hours

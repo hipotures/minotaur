@@ -252,7 +252,6 @@ class RunCommand(BaseSelfCheckCommand):
                 'train_size': min(100, dataset_info.get('train_rows', 100)),
                 'time_limit': 10,
                 'presets': 'medium_quality',
-                'skip_final_evaluation': True,
                 'holdout_frac': 0.4,
                 'verbosity': 0,
                 'ag_args_fit': {

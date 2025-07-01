@@ -145,7 +145,6 @@ class SessionOutputManager:
         
         # Extract key metrics
         search_results = results.get('search_results', {})
-        final_eval = results.get('final_evaluation', {})
         timing_stats = results.get('timing_statistics', {})
         
         summary_content = f"""# Session Summary: {self.session_name}

@@ -383,14 +383,8 @@ class FeatureDiscoveryRunner:
             best_path = self.mcts_engine.get_best_path()
             logger.info(f"Best discovery path: {best_path}")
             
-            # Perform final evaluation if we found improvements
+            # Skip final evaluation - results from MCTS iterations are sufficient
             final_results = None
-            if search_results['best_score'] > 0 and not self.config['autogluon'].get('skip_final_evaluation', False):
-                logger.info("Performing final thorough evaluation...")
-                best_features_df = self.feature_space.generate_features_for_node(self.mcts_engine.best_node)
-                final_results = self.evaluator.evaluate_final_features(best_features_df)
-            elif self.config['autogluon'].get('skip_final_evaluation', False):
-                logger.info("Skipping final evaluation (skip_final_evaluation=True)")
             
             # Get timing statistics
             timing_stats = None
