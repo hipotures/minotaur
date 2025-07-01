@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 23:57
-Compatible with commit: 601a407
-Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
+Last Updated: 2025-07-01 20:30
+Compatible with commit: 4005559
+Changes: Updated with root node evaluation validation and expansion budget testing
 -->
 
 # MCTS Validation Framework
@@ -165,6 +165,53 @@ if main_log_level == 'DEBUG':
     
 # Verify session context in logs
 assert session_name in log_entry
+```
+
+### 8. Root Node Evaluation Validation (New in 2025-07-01)
+**What it tests**:
+- ✅ Root node (iteration 0) baseline evaluation
+- ✅ Original features vs engineered features comparison
+- ✅ MCTS strategy recommendation accuracy
+- ✅ Baseline data loading from 'train' table
+
+**Root node validation process**:
+```python
+# Verify root node exists as iteration 0
+root_node = session_data.get('root_node')
+assert root_node is not None
+assert root_node['iteration'] == 0
+
+# Validate root node uses original features
+assert 'train' in root_node['description']
+assert 'no feature engineering' in root_node['description']
+
+# Check root vs MCTS comparison exists
+assert 'improvement' in analysis_data
+assert 'efficiency_analysis' in analysis_data
+assert 'mcts_recommendation' in analysis_data
+
+# Validate recommendation logic
+improvement_pct = analysis_data['improvement_percentage']
+recommendation = analysis_data['mcts_recommendation']
+
+if improvement_pct > 5:
+    assert 'CONTINUE MCTS' in recommendation
+elif improvement_pct > 1:
+    assert 'CAUTIOUS MCTS' in recommendation  
+else:
+    assert 'QUESTIONABLE MCTS' in recommendation
+```
+
+**Expected root node data structure**:
+```python
+root_node = {
+    'iteration': 0,
+    'feature_count': 7,  # Original feature count
+    'score': 0.9637,     # Baseline performance
+    'eval_time': 2.35,   # Evaluation time
+    'features': ['col1', 'col2', ...],  # Original features
+    'description': 'Original features from train table (no feature engineering)'
+}
 ```
 
 ## 📊 Validation Output Examples

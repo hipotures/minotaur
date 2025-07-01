@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 23:57
-Compatible with commit: 601a407
-Changes: Updated to reflect new feature engineering system with origin classification and auto-registration
+Last Updated: 2025-07-01 20:30
+Compatible with commit: 4005559
+Changes: Updated with root node evaluation data flow and iteration 0 baseline assessment
 -->
 
 # MCTS Data Flow - Phase-by-Phase Analysis
@@ -81,8 +81,16 @@ df['moisture_stress'] = np.where(df['Moisture'] < 40, 1, 0)
 
 ### Tree Search Data Flow
 ```
-MCTS Tree Search
-├── Root Node: Base columns only
+MCTS Search Process (Updated 2025-07-01)
+
+Iteration 0 (Root Node Evaluation):
+├── Load original features from 'train' table  
+├── Evaluate baseline performance without feature engineering
+├── Columns: [Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture, Soil_Type, Crop_Type]
+└── Establish baseline for comparison
+
+MCTS Tree Search (Iterations 1-N):
+├── Root Node: Base columns from 'train_features'
 │   └── Columns: [Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture, Soil Type, Crop Type]
 ├── Depth 1: Base + 1 operation
 │   ├── Node A: Base + statistical_aggregations
@@ -177,10 +185,16 @@ feature_mapping = {
 
 **Feature Column Selection**:
 ```sql
--- Root node evaluation (base features only)
+-- Iteration 0: Root node baseline (original features from 'train')
 SELECT Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture, 
        Soil_Type, Crop_Type, Fertilizer_Name
-FROM train_features 
+FROM train  -- Original table, no feature engineering
+TABLESAMPLE(5%);
+
+-- MCTS iterations: Use engineered features from 'train_features'  
+SELECT Nitrogen, Phosphorous, Potassium, Temperature, Humidity, Moisture, 
+       Soil_Type, Crop_Type, Fertilizer_Name
+FROM train_features  -- Engineered features table
 TABLESAMPLE(5%);
 
 -- Node with statistical aggregations
