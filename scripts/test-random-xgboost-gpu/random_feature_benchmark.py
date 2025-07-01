@@ -66,7 +66,7 @@ class FastFeatureEvaluator:
     
     def __init__(self, dataset_name: str = None, data_path: str = None, 
                  target_column: str = 'survived', use_train_table: bool = False, 
-                 n_estimators: int = 1000):
+                 n_estimators: int = 1000, enable_predictions: bool = False):
         """
         Initialize evaluator with data from DuckDB or parquet file.
         
@@ -83,6 +83,12 @@ class FastFeatureEvaluator:
         self.data = None
         self.target = None
         self.feature_columns = None
+        self.test_data = None
+        self.test_feature_columns = None
+        self.submission_template = None
+        self.enable_predictions = enable_predictions
+        self.baseline_score = 0.0
+        self.prediction_counter = 0
         # Store GPU availability for model params
         self.use_gpu = CUDF_AVAILABLE
         
@@ -119,14 +125,37 @@ class FastFeatureEvaluator:
         """Load data from DuckDB dataset."""
         print(f"🗄️  Loading dataset '{self.dataset_name}' from DuckDB...")
         
-        # Construct DuckDB path
-        duckdb_path = f"cache/{self.dataset_name}/dataset.duckdb"
+        # Construct DuckDB path - search in multiple locations
+        possible_paths = [
+            f"cache/{self.dataset_name}/dataset.duckdb",  # Current dir
+            f"../../cache/{self.dataset_name}/dataset.duckdb",  # From scripts/test-*
+            f"../cache/{self.dataset_name}/dataset.duckdb",  # From scripts
+        ]
+        
+        duckdb_path = None
+        for path in possible_paths:
+            if Path(path).exists():
+                duckdb_path = Path(path)
+                break
+        
+        if duckdb_path is None:
+            # Try absolute path using script location
+            script_dir = Path(__file__).parent
+            project_root = script_dir.parent.parent
+            fallback_path = project_root / f"cache/{self.dataset_name}/dataset.duckdb"
+            if fallback_path.exists():
+                duckdb_path = fallback_path
+        
+        if duckdb_path is None:
+            available_paths = [str(p) for p in possible_paths]
+            raise FileNotFoundError(f"DuckDB dataset not found in any of: {available_paths}")
         
         if not Path(duckdb_path).exists():
             raise FileNotFoundError(f"DuckDB dataset not found: {duckdb_path}")
         
         # Connect to DuckDB
-        conn = duckdb.connect(duckdb_path)
+        print(f"   📂 Using DuckDB: {duckdb_path}")
+        conn = duckdb.connect(str(duckdb_path))
         
         try:
             # Choose table based on use_train_table flag
@@ -163,6 +192,10 @@ class FastFeatureEvaluator:
             
             # Handle categorical target encoding
             self._encode_target()
+            
+            # Load test data and submission template if predictions enabled
+            if self.enable_predictions:
+                self._load_test_data_and_submission(conn)
             
             # Setup GPU mode for DuckDB data
             self._setup_gpu_mode()
@@ -260,15 +293,38 @@ class FastFeatureEvaluator:
             
         print(f"🌱 Loading ROOT NODE data from 'train' table...")
         
-        # Construct DuckDB path
-        duckdb_path = f"cache/{self.dataset_name}/dataset.duckdb"
+        # Construct DuckDB path - search in multiple locations
+        possible_paths = [
+            f"cache/{self.dataset_name}/dataset.duckdb",  # Current dir
+            f"../../cache/{self.dataset_name}/dataset.duckdb",  # From scripts/test-*
+            f"../cache/{self.dataset_name}/dataset.duckdb",  # From scripts
+        ]
+        
+        duckdb_path = None
+        for path in possible_paths:
+            if Path(path).exists():
+                duckdb_path = Path(path)
+                break
+        
+        if duckdb_path is None:
+            # Try absolute path using script location
+            script_dir = Path(__file__).parent
+            project_root = script_dir.parent.parent
+            fallback_path = project_root / f"cache/{self.dataset_name}/dataset.duckdb"
+            if fallback_path.exists():
+                duckdb_path = fallback_path
+        
+        if duckdb_path is None:
+            available_paths = [str(p) for p in possible_paths]
+            raise FileNotFoundError(f"DuckDB dataset not found in any of: {available_paths}")
         
         if not Path(duckdb_path).exists():
             print(f"   ❌ DuckDB dataset not found: {duckdb_path}")
             return None, None, None
         
         # Connect to DuckDB
-        conn = duckdb.connect(duckdb_path)
+        print(f"   📂 Using DuckDB: {duckdb_path}")
+        conn = duckdb.connect(str(duckdb_path))
         
         try:
             # Load from 'train' table (original features)
@@ -316,6 +372,37 @@ class FastFeatureEvaluator:
         finally:
             conn.close()
     
+    def _load_test_data_and_submission(self, conn):
+        """Load test data and submission template from DuckDB."""
+        try:
+            print(f"🧪 Loading test data for predictions...")
+            
+            # Load test_features table
+            test_data = conn.execute("SELECT * FROM test_features").df()
+            print(f"   📊 Test data loaded: {len(test_data)} rows")
+            
+            # Filter test feature columns (exclude ID columns)
+            exclude_cols = {'id', 'passengerid'}
+            test_feature_columns = [col for col in test_data.columns 
+                                   if col.lower() not in {c.lower() for c in exclude_cols}]
+            
+            # Store test data without ID columns
+            self.test_data = test_data[test_feature_columns]
+            self.test_feature_columns = test_feature_columns
+            
+            # Load submission template
+            submission_data = conn.execute("SELECT * FROM submission").df()
+            print(f"   📋 Submission template loaded: {len(submission_data)} rows")
+            self.submission_template = submission_data
+            
+            print(f"   ✅ Test features: {len(test_feature_columns)} columns")
+            print(f"   ✅ Submission template: {list(submission_data.columns)}")
+            
+        except Exception as e:
+            print(f"   ⚠️  Failed to load test data: {e}")
+            print(f"   ℹ️  Predictions will be disabled")
+            self.enable_predictions = False
+    
     def _encode_target(self):
         """Encode categorical target if needed."""
         # Encode target if it's categorical (string)
@@ -351,6 +438,11 @@ class FastFeatureEvaluator:
         
         print(f"🎯 Classification type: {'Binary' if num_classes == 2 else f'Multi-class ({num_classes} classes)'}")
         print(f"🔧 GPU available: {CUDF_AVAILABLE}, use_gpu: {self.use_gpu}")
+        
+        # Print GPU params once at initialization
+        if self.use_gpu:
+            gpu_params = {k: v for k, v in self.model_params.items() if 'tree_method' in k or 'device' in k or 'verbosity' in k}
+            print(f"🔧 GPU params: {gpu_params}")
         
         # Force GPU usage with proper parameters
         try:
@@ -504,55 +596,20 @@ class FastFeatureEvaluator:
         # For GPU, ensure we have enough data to actually utilize it
         if self.use_gpu:
             data_points = len(X) * len(X.columns)
-            print(f"   📊 Dataset size: {len(X):,} rows × {len(X.columns)} cols = {data_points:,} data points")
-            
             if data_points < 10000:
                 print(f"   ⚠️  Small dataset ({data_points:,} points) - GPU may not be utilized efficiently")
         
         # Create XGBoost model
-        mode_str = "GPU" if self.use_gpu else "CPU"
-        print(f"   Using {mode_str} XGBoost: n_estimators={model_params['n_estimators']}")
         model = xgb.XGBClassifier(**model_params)
         
-        # Print GPU params for debugging
-        if self.use_gpu:
-            gpu_params = {k: v for k, v in model_params.items() if 'tree_method' in k or 'device' in k or 'verbosity' in k}
-            print(f"   🔧 GPU params: {gpu_params}")
-            print(f"   📊 Training data: {len(X)} rows × {len(X.columns)} features")
-            print(f"   🔍 Data type: {'cuDF' if hasattr(X, 'to_pandas') else 'pandas'}")
-            
-            # Keep verbosity low to avoid spam logs
-            if 'verbosity' not in model_params:
-                model_params['verbosity'] = 0
+        # Keep verbosity low to avoid spam logs
+        if 'verbosity' not in model_params:
+            model_params['verbosity'] = 0
         
         try:
             # Standard cross-validation
-            if self.use_gpu:
-                print(f"   🔍 GPU Training: {len(X)} samples, {len(X.columns)} features")
-                
-                # Monitor GPU before training
-                try:
-                    import subprocess
-                    gpu_before = subprocess.check_output(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used', '--format=csv,noheader,nounits'], encoding='utf-8').strip().split(',')
-                    print(f"   📊 GPU before: {gpu_before[0].strip()}% util, {gpu_before[1].strip()}MB mem")
-                except:
-                    pass
-            
             scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy')
             mean_score = scores.mean()
-            
-            # Monitor GPU after training
-            if self.use_gpu:
-                try:
-                    gpu_after = subprocess.check_output(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used', '--format=csv,noheader,nounits'], encoding='utf-8').strip().split(',')
-                    util_before = int(gpu_before[0].strip()) if 'gpu_before' in locals() else 0
-                    util_after = int(gpu_after[0].strip())
-                    mem_after = gpu_after[1].strip()
-                    
-                    if util_after > util_before:
-                        print(f"   ✅ GPU utilized: {util_after}% (up from {util_before}%), {mem_after}MB mem")
-                except Exception as e:
-                    pass  # Silent GPU monitoring
                     
         except Exception as e:
             print(f"❌ Evaluation failed for {len(feature_subset)} features: {e}")
@@ -560,6 +617,187 @@ class FastFeatureEvaluator:
             
         eval_time = time.time() - start_time
         return mean_score, eval_time
+    
+    def train_and_predict(self, feature_subset: List[str], iteration_num: int = 0) -> Tuple[float, bool]:
+        """
+        Train model on feature subset and generate predictions if score improves.
+        
+        Args:
+            feature_subset: List of feature column names to use
+            iteration_num: Current iteration number for file naming
+            
+        Returns:
+            Tuple of (score, prediction_generated)
+        """
+        if not self.enable_predictions:
+            return 0.0, False
+            
+        start_time = time.time()
+        
+        try:
+            # Prepare training data
+            X_train = self.data[feature_subset]
+            y_train = self.target
+            
+            # Handle data format conversion (same as evaluate_feature_subset)
+            is_cudf = hasattr(X_train, 'to_pandas')
+            
+            if not (is_cudf and self.use_gpu and CUDF_AVAILABLE):
+                for col in X_train.columns:
+                    if X_train[col].dtype.name == 'category':
+                        X_train[col] = X_train[col].cat.codes
+                    elif X_train[col].dtype == 'object':
+                        X_train[col] = pd.Categorical(X_train[col]).codes
+            
+            # Train model
+            model_params = self.model_params.copy()
+            model = xgb.XGBClassifier(**model_params)
+            model.fit(X_train, y_train)
+            
+            # Calculate CV score for comparison
+            from sklearn.model_selection import cross_val_score
+            scores = cross_val_score(model, X_train, y_train, cv=3, scoring='accuracy')
+            cv_score = scores.mean()
+            
+            # Check if this score improves baseline
+            if cv_score > self.baseline_score:
+                print(f"   🎯 NEW BEST SCORE: {cv_score:.4f} (improved from {self.baseline_score:.4f})")
+                
+                # Update baseline
+                old_baseline = self.baseline_score
+                self.baseline_score = cv_score
+                
+                # Generate predictions on test set
+                success = self._generate_predictions(model, feature_subset, iteration_num, cv_score)
+                
+                if success:
+                    print(f"   ✅ Prediction file generated for iteration {iteration_num}")
+                    return cv_score, True
+                else:
+                    # Revert baseline if prediction failed
+                    self.baseline_score = old_baseline
+                    return cv_score, False
+            else:
+                print(f"   📊 Score {cv_score:.4f} (no improvement over {self.baseline_score:.4f})")
+                return cv_score, False
+                
+        except Exception as e:
+            print(f"   ❌ Train and predict failed: {e}")
+            return 0.0, False
+    
+    def _generate_predictions(self, model, feature_subset: List[str], iteration_num: int, score: float) -> bool:
+        """
+        Generate predictions and save to submission file.
+        
+        Args:
+            model: Trained XGBoost model
+            feature_subset: Features used for training
+            iteration_num: Current iteration number
+            score: CV score achieved
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Prepare test data with same feature subset
+            available_test_features = [f for f in feature_subset if f in self.test_feature_columns]
+            
+            if len(available_test_features) != len(feature_subset):
+                missing_features = set(feature_subset) - set(available_test_features)
+                print(f"   ⚠️  Missing test features: {missing_features}")
+                return False
+            
+            X_test = self.test_data[available_test_features]
+            
+            # Handle data format conversion (same as training)
+            is_cudf = hasattr(X_test, 'to_pandas')
+            
+            if not (is_cudf and self.use_gpu and CUDF_AVAILABLE):
+                for col in X_test.columns:
+                    if X_test[col].dtype.name == 'category':
+                        X_test[col] = X_test[col].cat.codes
+                    elif X_test[col].dtype == 'object':
+                        X_test[col] = pd.Categorical(X_test[col]).codes
+            
+            # Generate predictions
+            if hasattr(model, 'predict_proba'):
+                # For classification, get class probabilities
+                predictions_proba = model.predict_proba(X_test)
+                
+                # Handle multi-class vs binary classification
+                if predictions_proba.shape[1] > 2:
+                    # Multi-class: use class with highest probability
+                    predictions = np.argmax(predictions_proba, axis=1)
+                else:
+                    # Binary: use class 1 probability
+                    predictions = predictions_proba[:, 1]
+            else:
+                # Fallback to direct prediction
+                predictions = model.predict(X_test)
+            
+            # Create submission DataFrame
+            submission_df = self.submission_template.copy()
+            
+            # Update prediction column (assuming target column exists in submission)
+            target_col_in_submission = None
+            for col in submission_df.columns:
+                if col.lower() == self.target_column.lower():
+                    target_col_in_submission = col
+                    break
+            
+            if target_col_in_submission is None:
+                # Try common submission column names
+                possible_target_cols = ['prediction', 'target', 'label', 'class']
+                for col in submission_df.columns:
+                    if col.lower() in possible_target_cols:
+                        target_col_in_submission = col
+                        break
+            
+            if target_col_in_submission is None:
+                print(f"   ❌ Cannot find target column in submission template")
+                return False
+            
+            # Handle label encoding for predictions
+            if hasattr(self, 'label_encoder') and self.label_encoder is not None:
+                if predictions_proba.shape[1] > 2:
+                    # Multi-class: predictions are already class indices
+                    # Convert back to original labels
+                    prediction_labels = self.label_encoder.inverse_transform(predictions.astype(int))
+                else:
+                    # Binary: threshold probabilities and convert to labels
+                    prediction_classes = (predictions > 0.5).astype(int)
+                    prediction_labels = self.label_encoder.inverse_transform(prediction_classes)
+                
+                submission_df[target_col_in_submission] = prediction_labels
+            else:
+                # No label encoding needed
+                if hasattr(predictions, 'shape') and len(predictions.shape) > 0:
+                    if predictions_proba.shape[1] > 2:
+                        submission_df[target_col_in_submission] = predictions
+                    else:
+                        # Binary classification: threshold probabilities
+                        submission_df[target_col_in_submission] = (predictions > 0.5).astype(int)
+                else:
+                    submission_df[target_col_in_submission] = predictions
+            
+            # Generate filename with dataset name
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dataset_name = getattr(self, 'dataset_name', 'unknown')
+            filename = f"submission-{dataset_name}-{timestamp}-{iteration_num:03d}-{score:.4f}.csv"
+            
+            # Save submission file
+            submission_df.to_csv(filename, index=False)
+            
+            self.prediction_counter += 1
+            
+            print(f"   💾 NEW SUBMISSION: {filename}")
+            print(f"   📊 Features: {len(available_test_features)}, Score: {score:.4f}, Total files: {self.prediction_counter}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Prediction generation failed: {e}")
+            return False
         
     def random_feature_selection_benchmark(self, 
                                          n_iterations: int = 100,
@@ -624,6 +862,18 @@ class FastFeatureEvaluator:
                 # Evaluate root node with all original features
                 root_score, root_eval_time = self.evaluate_feature_subset(root_feature_columns)
                 
+                # Set baseline score for predictions
+                if self.enable_predictions:
+                    self.baseline_score = root_score
+                    print(f"   🎯 Setting baseline score: {root_score:.4f}")
+                    
+                    # Generate baseline prediction (iteration 0)
+                    prediction_generated = self._generate_predictions_for_iteration(
+                        root_feature_columns, 0, root_score
+                    )
+                    if prediction_generated:
+                        print(f"   💾 Baseline submission generated")
+                
                 # Restore original data
                 self.data = original_data
                 self.target = original_target
@@ -636,7 +886,8 @@ class FastFeatureEvaluator:
                     'score': root_score,
                     'eval_time': root_eval_time,
                     'features': root_feature_columns,
-                    'description': 'Original features from train table (no feature engineering)'
+                    'description': 'Original features from train table (no feature engineering)',
+                    'prediction_generated': prediction_generated if self.enable_predictions else False
                 }
                 
                 print(f"🌱 ROOT NODE RESULT:")
@@ -665,12 +916,26 @@ class FastFeatureEvaluator:
             # Evaluate subset
             score, eval_time = self.evaluate_feature_subset(feature_subset)
             
+            # Check for predictions if enabled
+            prediction_generated = False
+            if self.enable_predictions and score > self.baseline_score:
+                prediction_generated = self._generate_predictions_for_iteration(
+                    feature_subset, i + 1, score
+                )
+                if prediction_generated:
+                    improvement = score - self.baseline_score
+                    improvement_pct = (improvement / self.baseline_score * 100) if self.baseline_score > 0 else 0
+                    print(f"   🚀 NEW BEST SCORE: {score:.4f} (+{improvement:.4f}, +{improvement_pct:.1f}%)")
+                    self.baseline_score = score
+            
             # Track results
             results['iterations'].append(i + 1)
             results['feature_counts'].append(n_features)
             results['scores'].append(score)
             results['eval_times'].append(eval_time)
             results['feature_subsets'].append(feature_subset)
+            if self.enable_predictions:
+                results.setdefault('predictions_generated', []).append(prediction_generated)
             
             total_time += eval_time
             
@@ -679,14 +944,12 @@ class FastFeatureEvaluator:
                 best_score = score
                 best_features = feature_subset.copy()
                 
-            # Enhanced progress reporting with performance metrics
-            if (i + 1) % 5 == 0 or i == 0:  # More frequent reporting
-                avg_time = total_time / (i + 1)
-                evals_per_hour = 3600 / avg_time if avg_time > 0 else 0
-                print(f"📊 Iteration {i+1:3d}/{n_iterations}: "
-                      f"features={n_features:2d}, score={score:.4f}, "
-                      f"time={eval_time:.3f}s, avg_time={avg_time:.3f}s, "
-                      f"rate={evals_per_hour:.0f}/hr")
+            # Progress reporting for every iteration
+            avg_time = total_time / (i + 1)
+            prediction_status = "📝" if prediction_generated else ""
+            print(f"📊 Iteration {i+1:3d}/{n_iterations}: "
+                  f"features={n_features:2d}, score={score:.4f}, "
+                  f"time={eval_time:.3f}s, avg_time={avg_time:.3f}s {prediction_status}")
                 
         # Summary statistics
         avg_eval_time = np.mean(results['eval_times'])
@@ -828,6 +1091,13 @@ class FastFeatureEvaluator:
                 print("   💡 Consider focusing on original features or different approach")
             
             print("=" * 60)
+        
+        # Prediction summary
+        if self.enable_predictions:
+            print(f"\n📊 PREDICTION SUMMARY:")
+            print(f"   💾 Total predictions generated: {self.prediction_counter}")
+            print(f"   🎯 Final baseline score: {self.baseline_score:.4f}")
+            print(f"   📈 Score improvements captured: {sum(results.get('predictions_generated', []))}")
             
         return results
         
@@ -841,6 +1111,47 @@ class FastFeatureEvaluator:
             json.dump(results, f, indent=2)
             
         print(f"💾 Results saved to: {output_path}")
+    
+    def _generate_predictions_for_iteration(self, feature_subset: List[str], iteration_num: int, score: float) -> bool:
+        """
+        Generate predictions for a specific iteration.
+        
+        Args:
+            feature_subset: Features to use for training
+            iteration_num: Current iteration number
+            score: CV score achieved
+            
+        Returns:
+            True if prediction was generated successfully
+        """
+        if not self.enable_predictions:
+            return False
+            
+        try:
+            # Train model with current feature subset
+            X_train = self.data[feature_subset]
+            y_train = self.target
+            
+            # Handle data format conversion
+            is_cudf = hasattr(X_train, 'to_pandas')
+            if not (is_cudf and self.use_gpu and CUDF_AVAILABLE):
+                for col in X_train.columns:
+                    if X_train[col].dtype.name == 'category':
+                        X_train[col] = X_train[col].cat.codes
+                    elif X_train[col].dtype == 'object':
+                        X_train[col] = pd.Categorical(X_train[col]).codes
+            
+            # Train model
+            model_params = self.model_params.copy()
+            model = xgb.XGBClassifier(**model_params)
+            model.fit(X_train, y_train)
+            
+            # Generate predictions
+            return self._generate_predictions(model, feature_subset, iteration_num, score)
+            
+        except Exception as e:
+            print(f"   ❌ Failed to generate prediction for iteration {iteration_num}: {e}")
+            return False
 
 class FeatureAttributionAnalyzer:
     """Analyzes feature importance using different attribution methods."""
@@ -1097,6 +1408,8 @@ def main():
     parser.add_argument('--max-features', type=int, default=None, help='Maximum features per subset')
     parser.add_argument('--n-estimators', type=int, default=1000, help='Number of XGBoost estimators (default: 1000)')
     parser.add_argument('--output', help='Output JSON file path')
+    parser.add_argument('--enable-predictions', action='store_true', 
+                       help='Enable prediction generation for improved scores')
     
     # Feature attribution analysis options
     parser.add_argument('--marginal', action='store_true', 
@@ -1125,7 +1438,8 @@ def main():
             dataset_name=args.dataset_name,
             target_column=args.target_column,
             use_train_table=args.train,
-            n_estimators=args.n_estimators
+            n_estimators=args.n_estimators,
+            enable_predictions=args.enable_predictions
         )
     else:
         # Validate data file
@@ -1139,7 +1453,8 @@ def main():
         evaluator = FastFeatureEvaluator(
             data_path=args.data,
             target_column=args.target_column,
-            n_estimators=args.n_estimators
+            n_estimators=args.n_estimators,
+            enable_predictions=args.enable_predictions
         )
     
     # Run benchmark
