@@ -110,13 +110,104 @@ class FeatureSpace:
     def _load_feature_operations(self):
         """Load feature operations from src/features/ modules."""
         
-        # Load generic operations
-        self._load_generic_operations()
+        # Auto-detect MCTS feature mode based on feature_catalog structure
+        mcts_feature_mode = self._detect_mcts_feature_mode()
         
-        # Load custom operations based on dataset
-        self._load_custom_operations()
+        if mcts_feature_mode:
+            # Load individual features from feature_catalog instead of groups
+            self._load_mcts_feature_operations()
+        else:
+            # Load generic operations
+            self._load_generic_operations()
+            
+            # Load custom operations based on dataset
+            self._load_custom_operations()
         
         logger.info(f"Loaded {len(self.operations)} total feature operations")
+    
+    def _detect_mcts_feature_mode(self) -> bool:
+        """Auto-detect if dataset uses MCTS feature mode based on feature_catalog."""
+        if not self.duckdb_manager:
+            # Fall back to config if no DB connection
+            return self.config.get('mcts_feature', False)
+        
+        try:
+            # Check if we have many unique operation_names with single features
+            query = """
+                SELECT COUNT(DISTINCT operation_name) as unique_ops,
+                       COUNT(*) as total_features,
+                       AVG(feature_count) as avg_features_per_op
+                FROM (
+                    SELECT operation_name, COUNT(*) as feature_count
+                    FROM feature_catalog
+                    WHERE is_active = true
+                    GROUP BY operation_name
+                ) t
+            """
+            
+            result = self.duckdb_manager.connection.execute(query).fetchone()
+            if result:
+                unique_ops, total_features, avg_features_per_op = result
+                
+                # MCTS feature mode if:
+                # 1. We have many unique operations (>50)
+                # 2. Average features per operation is close to 1
+                # 3. Number of unique operations is close to total features
+                is_mcts_mode = (unique_ops > 50 and 
+                               avg_features_per_op <= 1.5 and 
+                               unique_ops / total_features > 0.8)
+                
+                if is_mcts_mode:
+                    logger.info(f"🔍 Auto-detected MCTS feature mode: {unique_ops} unique operations, "
+                              f"{total_features} total features, {avg_features_per_op:.2f} avg features/op")
+                
+                return is_mcts_mode
+                
+        except Exception as e:
+            logger.debug(f"Failed to auto-detect MCTS feature mode: {e}")
+        
+        # Fall back to config
+        return self.config.get('mcts_feature', False)
+    
+    def _load_mcts_feature_operations(self):
+        """Load individual features from feature_catalog as operations for MCTS mode."""
+        logger.info("🔄 MCTS feature mode: Loading individual features as operations")
+        
+        if not self.duckdb_manager:
+            logger.warning("No DuckDB connection available for MCTS feature mode")
+            return
+        
+        try:
+            # Get all unique operation names from feature_catalog
+            query = """
+                SELECT DISTINCT operation_name, feature_category, COUNT(*) as feature_count
+                FROM feature_catalog
+                WHERE is_active = true
+                GROUP BY operation_name, feature_category
+                ORDER BY operation_name
+            """
+            
+            results = self.duckdb_manager.connection.execute(query).fetchall()
+            
+            # Create an operation for each unique operation_name
+            for operation_name, category, feature_count in results:
+                self.operations[operation_name] = FeatureOperation(
+                    name=operation_name,
+                    category=category,
+                    description=f'Individual feature: {operation_name}',
+                    dependencies=[],
+                    computational_cost=0.1,  # Low cost for individual features
+                    output_features=[operation_name]  # Single feature output
+                )
+            
+            logger.info(f"✅ Loaded {len(self.operations)} individual feature operations from feature_catalog")
+            
+        except Exception as e:
+            logger.error(f"Failed to load MCTS feature operations: {e}")
+            # Fall back to regular mode
+            logger.warning("Falling back to regular operation loading")
+            self._load_generic_operations()
+            self._load_custom_operations()
     
     def _load_generic_operations(self):
         """Load generic operations from src/features/generic/."""
@@ -767,7 +858,7 @@ class FeatureSpace:
                 groupby_cols = self._filter_forbidden_columns(groupby_cols)
                 aggregate_cols = self._filter_forbidden_columns(aggregate_cols)
                 
-                stat_features = stat_op.generate_features(df, groupby_cols=groupby_cols, agg_cols=aggregate_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                stat_features = stat_op.generate_features(df, groupby_cols=groupby_cols, agg_cols=aggregate_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                 result_features.update(stat_features)
                 logger.info(f"Added {len(stat_features)} statistical features")
             
@@ -781,7 +872,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                poly_features = poly_op.generate_features(df, numeric_cols=numeric_cols, degree=degree, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                poly_features = poly_op.generate_features(df, numeric_cols=numeric_cols, degree=degree, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                 result_features.update(poly_features)
                 logger.info(f"Added {len(poly_features)} polynomial features")
             
@@ -795,7 +886,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                bin_features = bin_op.generate_features(df, numeric_cols=numeric_cols, n_bins=n_bins, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                bin_features = bin_op.generate_features(df, numeric_cols=numeric_cols, n_bins=n_bins, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                 result_features.update(bin_features)
                 logger.info(f"Added {len(bin_features)} binning features")
             
@@ -808,7 +899,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                rank_features = rank_op.generate_features(df, numeric_cols=numeric_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                rank_features = rank_op.generate_features(df, numeric_cols=numeric_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                 result_features.update(rank_features)
                 logger.info(f"Added {len(rank_features)} ranking features")
             
@@ -828,12 +919,12 @@ class FeatureSpace:
                 real_forbidden.extend(self.ignore_columns)
                 
                 if categorical_cols:
-                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                     result_features.update(cat_features)
                     logger.info(f"Added {len(cat_features)} categorical features")
                 else:
                     # Even if no object/category columns, still run auto-detection with proper forbidden list
-                    cat_features = cat_op.generate_features(df, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                    cat_features = cat_op.generate_features(df, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                     result_features.update(cat_features)
                     logger.info(f"Added {len(cat_features)} categorical features (auto-detected)")
             
@@ -845,7 +936,7 @@ class FeatureSpace:
                 datetime_cols = self._filter_forbidden_columns(datetime_cols)
                 
                 if datetime_cols:
-                    temp_features = temp_op.generate_features(df, datetime_cols=datetime_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                    temp_features = temp_op.generate_features(df, datetime_cols=datetime_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                     result_features.update(temp_features)
                     logger.info(f"Added {len(temp_features)} temporal features")
             
@@ -863,7 +954,7 @@ class FeatureSpace:
                             text_cols.append(col)
                 
                 if text_cols:
-                    text_features = text_op.generate_features(df, text_cols=text_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                    text_features = text_op.generate_features(df, text_cols=text_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                     result_features.update(text_features)
                     logger.info(f"Added {len(text_features)} text features")
                 
@@ -921,7 +1012,7 @@ class FeatureSpace:
                 custom_instance._check_signal = check_signal
                 
                 # Generate all custom features
-                custom_features = custom_instance.generate_all_features(df, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
+                custom_features = custom_instance.generate_all_features(df, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'), mcts_feature=self.config.get('mcts_feature', False))
                 
                 if isinstance(custom_features, dict):
                     result_features.update(custom_features)

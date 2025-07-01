@@ -123,6 +123,8 @@ class DatasetsModule(ModuleInterface):
                                   help='Competition name')
         register_group.add_argument('--description', type=str,
                                   help='Dataset description')
+        register_group.add_argument('--mcts-feature', action='store_true',
+                                  help='Register each feature with individual operation_name for MCTS exploration')
         
         # Output options
         output_group = parser.add_argument_group('Output Options')

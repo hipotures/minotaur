@@ -240,6 +240,7 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             
             # Use dataset database if provided in kwargs, otherwise fall back to main database
             dataset_db_path = kwargs.get('dataset_db_path')
+            mcts_feature = kwargs.get('mcts_feature', False)
             if dataset_db_path and os.path.exists(dataset_db_path):
                 db_path = dataset_db_path
                 logger.debug(f"Using dataset database for auto-registration: {db_path}")
@@ -289,6 +290,9 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                     # Detect operation from feature name for validation
                     detected_op = self._detect_operation_from_feature_name(feature_name, metadata)
                     
+                    # Use individual feature name as operation_name when mcts_feature is True
+                    feature_operation_name = feature_name if mcts_feature else operation_name
+                    
                     conn.execute("""
                         INSERT INTO feature_catalog (feature_name, feature_category, python_code, operation_name, description, origin)
                         VALUES (?, ?, ?, ?, ?, ?)
@@ -302,12 +306,15 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         feature_name,
                         metadata.get('category', 'unknown'),
                         self.__class__.__name__,  # Actual class name
-                        operation_name,
+                        feature_operation_name,
                         None,  # Let database set description or leave NULL
                         origin
                     ])
                 
-                logger.debug(f"Auto-registered {len(features)} features for operation '{operation_name}'")
+                if mcts_feature:
+                    logger.debug(f"Auto-registered {len(features)} features with individual operation names (MCTS feature mode)")
+                else:
+                    logger.debug(f"Auto-registered {len(features)} features for operation '{operation_name}'")
                 
         except Exception as e:
             logger.debug(f"Auto-registration failed for operation '{self.get_operation_name()}': {e}")
@@ -524,6 +531,7 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             
             # Use dataset database if provided in kwargs, otherwise fall back to main database
             dataset_db_path = kwargs.get('dataset_db_path')
+            mcts_feature = kwargs.get('mcts_feature', False)
             if dataset_db_path and os.path.exists(dataset_db_path):
                 db_path = dataset_db_path
                 logger.debug(f"Using dataset database for custom auto-registration: {db_path}")
@@ -564,6 +572,9 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                 
                 # Register individual features
                 for feature_name, feature_series in features.items():
+                    # Use individual feature name as operation_name when mcts_feature is True
+                    feature_operation_name = feature_name if mcts_feature else operation_name_to_use
+                    
                     conn.execute("""
                         INSERT INTO feature_catalog (feature_name, feature_category, python_code, operation_name, description, origin)
                         VALUES (?, ?, ?, ?, ?, ?)
@@ -577,12 +588,15 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         feature_name,
                         'custom_domain',
                         self.__class__.__name__,  # Actual class name
-                        operation_name_to_use,
+                        feature_operation_name,
                         None,  # Let database set description or leave NULL
                         origin
                     ])
                 
-                logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name_to_use}' (domain: {self.domain_name})")
+                if mcts_feature:
+                    logger.info(f"✅ Auto-registered {len(features)} custom features with individual operation names (MCTS feature mode, domain: {self.domain_name})")
+                else:
+                    logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name_to_use}' (domain: {self.domain_name})")
                 
         except Exception as e:
             logger.error(f"❌ Auto-registration failed for custom operation '{self.get_operation_name()}': {e}")

@@ -245,13 +245,14 @@ class DatasetImporter:
             return None
     
     def create_duckdb_dataset(self, file_mappings: Dict[str, str], 
-                             target_column: str, id_column: str = None) -> str:
+                             target_column: str, id_column: str = None, mcts_feature: bool = False) -> str:
         """Convert dataset files to DuckDB format.
         
         Args:
             file_mappings: Dict mapping table names to file paths
             target_column: Name of target column
             id_column: Optional ID column name
+            mcts_feature: If True, register each feature with individual operation_name for MCTS exploration
             
         Returns:
             Path to created DuckDB file
@@ -374,7 +375,11 @@ class DatasetImporter:
                 
                 # Register original train columns in feature_catalog with origin='train'
                 logger.info("Registering original train columns in feature_catalog...")
+                if mcts_feature:
+                    logger.info("🔄 MCTS feature mode enabled - registering each feature with individual operation_name")
                 for col_name in column_names:
+                    # Use individual feature name as operation_name when mcts_feature is True
+                    operation_name = col_name if mcts_feature else 'train_features'
                     conn.execute("""
                         INSERT INTO feature_catalog (feature_name, feature_category, python_code, operation_name, description, origin)
                         VALUES (?, ?, ?, ?, ?, ?)
@@ -387,11 +392,14 @@ class DatasetImporter:
                         col_name,
                         'original',  # category for original columns
                         'Original dataset column',  # python_code
-                        'train_features',  # operation_name
+                        operation_name,  # operation_name - now conditional
                         f'Original column from {self.dataset_name} dataset',  # description
                         'train'  # origin
                     ])
-                logger.info(f"✅ Registered {len(column_names)} original train columns in feature_catalog")
+                if mcts_feature:
+                    logger.info(f"✅ Registered {len(column_names)} original train columns with individual operation names")
+                else:
+                    logger.info(f"✅ Registered {len(column_names)} original train columns in feature_catalog")
             
             # Commit changes before feature generation to ensure tables are visible
             conn.commit()
@@ -399,7 +407,7 @@ class DatasetImporter:
             # Generate features for train and test tables
             logger.info("Generating features for dataset...")
             # Pass target and ID columns (already lowercase from earlier conversion)
-            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column, str(duckdb_path))
+            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column, str(duckdb_path), mcts_feature)
             
             conn.close()
             
@@ -416,7 +424,7 @@ class DatasetImporter:
                 duckdb_path.unlink()
             raise ValueError(f"Failed to create DuckDB dataset: {e}")
     
-    def _generate_and_save_features(self, conn, dataset_name: str, target_column: str, id_column: str = None, duckdb_path: str = None):
+    def _generate_and_save_features(self, conn, dataset_name: str, target_column: str, id_column: str = None, duckdb_path: str = None, mcts_feature: bool = False):
         """Generate features in separate tables: generic, custom, train_features, test_features."""
         import sys
         from pathlib import Path
@@ -476,7 +484,11 @@ class DatasetImporter:
         
         # Initialize FeatureSpace with dataset database path for auto-registration
         config['dataset_db_path'] = duckdb_path if duckdb_path else None  # Pass dataset DB path for auto-registration
-        dataset_logger.info("🔧 Initializing FeatureSpace...")
+        config['mcts_feature'] = mcts_feature  # Pass mcts_feature flag for individual operation names
+        if mcts_feature:
+            dataset_logger.info("🔧 Initializing FeatureSpace with MCTS feature mode (individual operation names)...")
+        else:
+            dataset_logger.info("🔧 Initializing FeatureSpace...")
         try:
             feature_space = FeatureSpace(config)
             dataset_logger.info("✅ FeatureSpace initialized successfully")

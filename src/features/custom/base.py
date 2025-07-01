@@ -50,11 +50,12 @@ class BaseDomainFeatures(CustomFeatureOperation):
         all_features = {}
         
         # Remove auto_register, origin, and dataset_db_path from kwargs before passing to individual operations
-        # Keep dataset_db_path for auto-registration
+        # Keep dataset_db_path and mcts_feature for auto-registration
         operation_kwargs = kwargs.copy()
         operation_kwargs.pop('auto_register', None)
         operation_kwargs.pop('origin', None)
         dataset_db_path = operation_kwargs.pop('dataset_db_path', None)
+        mcts_feature = operation_kwargs.pop('mcts_feature', False)
         
         for operation_name, operation_func in self._operation_registry.items():
             try:
@@ -65,7 +66,7 @@ class BaseDomainFeatures(CustomFeatureOperation):
                 # Register each operation separately if auto-registration enabled
                 if self._auto_registration_enabled and features and auto_register:
                     logger.debug(f"Auto-registering {len(features)} features for operation '{operation_name}'")
-                    self._register_operation_features(operation_name, features, origin=origin, dataset_db_path=dataset_db_path, **operation_kwargs)
+                    self._register_operation_features(operation_name, features, origin=origin, dataset_db_path=dataset_db_path, mcts_feature=mcts_feature, **operation_kwargs)
                     
             except Exception as e:
                 logger.error(f"Error generating {operation_name} features: {e}")

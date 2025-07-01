@@ -256,7 +256,8 @@ class DatasetService:
                              id_column: Optional[str] = None,
                              competition_name: Optional[str] = None,
                              description: Optional[str] = None,
-                             force_update: bool = False) -> Dict[str, Any]:
+                             force_update: bool = False,
+                             mcts_feature: bool = False) -> Dict[str, Any]:
         """Auto-register dataset by detecting files in directory.
         
         Args:
@@ -376,7 +377,7 @@ class DatasetService:
                 }
             
             # Import data to DuckDB (only if no conflicts)
-            duckdb_path = importer.create_duckdb_dataset(file_mappings, target_column, id_column)
+            duckdb_path = importer.create_duckdb_dataset(file_mappings, target_column, id_column, mcts_feature=mcts_feature)
             
             # Build metadata
             full_metadata = {
@@ -426,7 +427,8 @@ class DatasetService:
                                target_column: Optional[str] = None,
                                id_column: Optional[str] = None,
                                competition_name: Optional[str] = None,
-                               description: Optional[str] = None) -> Dict[str, Any]:
+                               description: Optional[str] = None,
+                               mcts_feature: bool = False) -> Dict[str, Any]:
         """Manually register dataset with specified file paths.
         
         Args:

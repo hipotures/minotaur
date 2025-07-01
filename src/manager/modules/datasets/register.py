@@ -69,7 +69,8 @@ class RegisterCommand(BaseDatasetsCommand):
                 id_column=getattr(args, 'id_column', None),
                 competition_name=getattr(args, 'competition_name', None),
                 description=getattr(args, 'description', None),
-                force_update=getattr(args, 'force_update', False)
+                force_update=getattr(args, 'force_update', False),
+                mcts_feature=getattr(args, 'mcts_feature', False)
             )
             
             # Stop animation
@@ -112,7 +113,8 @@ class RegisterCommand(BaseDatasetsCommand):
                 target_column=getattr(args, 'target_column', None),
                 id_column=getattr(args, 'id_column', None),
                 competition_name=getattr(args, 'competition_name', None),
-                description=getattr(args, 'description', None)
+                description=getattr(args, 'description', None),
+                mcts_feature=getattr(args, 'mcts_feature', False)
             )
             
             if result.get('success'):

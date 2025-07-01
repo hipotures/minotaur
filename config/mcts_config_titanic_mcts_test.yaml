@@ -1,0 +1,25 @@
+test_mode: true
+mcts_feature: true
+session:
+  max_iterations: 15
+  max_runtime_hours: 0.25
+mcts:
+  max_tree_depth: 15
+  expansion_budget: 2
+autogluon:
+  dataset_name: titanic-mcts-test
+  target_column: survived
+  target_metric: accuracy
+  included_model_types:
+  - XGB
+  time_limit: 60
+  verbosity: 2
+feature_space:
+  max_features_per_node: 50
+  max_cache_size_mb: 256
+resources:
+  max_memory_gb: 1
+  max_cpu_cores: 2
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
