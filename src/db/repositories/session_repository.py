@@ -33,8 +33,37 @@ class SessionRepository(BaseRepository[Session]):
         return Session
     
     def _get_conflict_target(self) -> Optional[str]:
-        """Use session_id as conflict target since it's the primary key."""
-        return 'session_id'
+        """Disable ON CONFLICT for sessions to avoid foreign key issues."""
+        return None  # Force use of INSERT without ON CONFLICT
+    
+    def save(self, entity: Session, update_on_conflict: bool = True) -> Session:
+        """
+        Override save method to handle foreign key constraints properly.
+        
+        Args:
+            entity: Session entity to save
+            update_on_conflict: Ignored - we handle INSERT/UPDATE logic manually
+            
+        Returns:
+            Saved session entity
+        """
+        try:
+            # Check if session already exists
+            existing = self.find_by_id(entity.session_id, 'session_id')
+            
+            if existing:
+                # Session exists, do UPDATE
+                return self._update_session_direct(entity)
+            else:
+                # Session doesn't exist, do INSERT
+                return super().save(entity, update_on_conflict=False)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to save session {entity.session_id}: {e}")
+            # If INSERT fails due to race condition, try UPDATE
+            if "UNIQUE constraint failed" in str(e) or "already exists" in str(e):
+                return self._update_session_direct(entity)
+            raise
     
     def _row_to_model(self, row: Any) -> Session:
         """Convert database row to Session model."""
@@ -144,6 +173,44 @@ class SessionRepository(BaseRepository[Session]):
         
         return self.save(session)
     
+    def _update_session_direct(self, session: Session) -> Session:
+        """
+        Direct UPDATE operation for sessions to avoid foreign key conflicts.
+        
+        Args:
+            session: Session model to update
+            
+        Returns:
+            Updated session model
+        """
+        try:
+            # Convert model to dict and exclude session_id from updates
+            data = self._model_to_dict(session)
+            data.pop('session_id', None)  # Remove session_id from updates
+            
+            if not data:
+                return session  # Nothing to update
+            
+            # Build UPDATE query
+            set_clauses = [f"{col} = ?" for col in data.keys()]
+            values = list(data.values()) + [session.session_id]
+            
+            query = f"""
+                UPDATE {self.table_name} 
+                SET {', '.join(set_clauses)}
+                WHERE session_id = ?
+            """
+            
+            with self.connection_manager.get_connection() as conn:
+                conn.execute(query, values)
+            
+            self.logger.debug(f"Successfully updated session {session.session_id} using direct UPDATE")
+            return session
+            
+        except Exception as e:
+            self.logger.error(f"Direct session update failed for {session.session_id}: {e}")
+            raise
+
     def get_active_sessions(self, limit: Optional[int] = None) -> List[Session]:
         """
         Get all active sessions.

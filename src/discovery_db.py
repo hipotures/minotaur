@@ -219,6 +219,25 @@ class FeatureDiscoveryDB:
     def close_session(self, status: str = 'completed') -> None:
         """Close the current session and mark it as completed."""
         return self.db_service.close_session(status)
+    
+    def update_mcts_node_visits(self, node_id: int, visit_count: int, total_reward: float, 
+                               average_reward: float) -> None:
+        """Update MCTS node visit statistics during backpropagation."""
+        return self.db_service.update_mcts_node_visits(node_id, visit_count, total_reward, average_reward)
+    
+    def ensure_mcts_node_exists(self, node_id: int, parent_node_id: Optional[int], 
+                               depth: int, operation_applied: Optional[str],
+                               features_before: List[str], features_after: List[str],
+                               base_features: List[str], applied_operations: List[str],
+                               evaluation_score: Optional[float] = None,
+                               evaluation_time: Optional[float] = None,
+                               memory_usage_mb: Optional[float] = None) -> None:
+        """Ensure MCTS node exists in mcts_tree_nodes table."""
+        return self.db_service.ensure_mcts_node_exists(
+            node_id, parent_node_id, depth, operation_applied,
+            features_before, features_after, base_features, applied_operations,
+            evaluation_score, evaluation_time, memory_usage_mb
+        )
         
     def __enter__(self):
         return self

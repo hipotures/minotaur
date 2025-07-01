@@ -133,8 +133,21 @@ def validate_visit_counts(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     """Validate that visit counts accumulate correctly."""
     print("\n🔍 Validating Visit Count Accumulation...")
     
-    # Check for visit count accumulation
-    query = """
+    # First check mcts_tree_nodes table (new implementation)
+    tree_query = """
+    SELECT COUNT(*) as total_records,
+           COUNT(CASE WHEN visit_count > 1 THEN 1 END) as multi_visit_nodes,
+           MAX(visit_count) as max_visits,
+           AVG(visit_count) as avg_visits
+    FROM mcts_tree_nodes 
+    WHERE session_id = ?
+    """
+    
+    with db.db_service.connection_manager.get_connection() as conn:
+        tree_result = conn.execute(tree_query, [session_id]).fetchone()
+    
+    # Also check exploration_history table (legacy)
+    legacy_query = """
     SELECT COUNT(*) as total_records,
            COUNT(CASE WHEN node_visits > 1 THEN 1 END) as multi_visit_nodes,
            MAX(node_visits) as max_visits,
@@ -144,15 +157,21 @@ def validate_visit_counts(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     """
     
     with db.db_service.connection_manager.get_connection() as conn:
-        result = conn.execute(query, [session_id]).fetchone()
+        legacy_result = conn.execute(legacy_query, [session_id]).fetchone()
     
-    if not result:
-        return {"status": "FAIL", "reason": "No records found"}
-    
-    total, multi_visit, max_visits, avg_visits = result
+    # Prioritize tree_nodes table if it has data
+    if tree_result and tree_result[0] > 0:
+        total, multi_visit, max_visits, avg_visits = tree_result
+        source = "mcts_tree_nodes"
+    elif legacy_result:
+        total, multi_visit, max_visits, avg_visits = legacy_result
+        source = "exploration_history"
+    else:
+        return {"status": "FAIL", "reason": "No records found in either table"}
     
     validation = {
         "status": "PASS" if multi_visit > 0 else "FAIL",
+        "source_table": source,
         "total_records": total,
         "multi_visit_nodes": multi_visit,
         "max_visits": max_visits or 0,
@@ -160,9 +179,9 @@ def validate_visit_counts(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     }
     
     if validation["status"] == "PASS":
-        print(f"✅ {multi_visit} out of {total} nodes have multiple visits (max: {max_visits}, avg: {avg_visits:.2f})")
+        print(f"✅ {multi_visit} out of {total} nodes have multiple visits (max: {max_visits}, avg: {avg_visits:.2f}) [source: {source}]")
     else:
-        print(f"❌ No nodes have multiple visits - backpropagation not working")
+        print(f"❌ No nodes have multiple visits - backpropagation not working [source: {source}]")
     
     return validation
 
@@ -246,10 +265,15 @@ def validate_mcts_logging(session_id: str) -> Dict[str, Any]:
     """Validate MCTS logging system."""
     print("\n🔍 Validating MCTS Logging System...")
     
-    log_file = Path("logs/mcts.log")
+    # Look for session-specific log file
+    logs_dir = Path("logs/mcts")
+    session_logs = list(logs_dir.glob("session_*.log")) if logs_dir.exists() else []
     
-    if not log_file.exists():
-        return {"status": "FAIL", "reason": "MCTS log file not found"}
+    if not session_logs:
+        return {"status": "FAIL", "reason": "No MCTS session log files found in logs/mcts/"}
+    
+    # Use the most recent log file
+    log_file = max(session_logs, key=lambda f: f.stat().st_mtime)
     
     try:
         with open(log_file, 'r') as f:
@@ -262,6 +286,7 @@ def validate_mcts_logging(session_id: str) -> Dict[str, Any]:
         
         validation = {
             "status": "PASS" if all([selection_logs, expansion_logs, backprop_logs]) else "FAIL",
+            "log_file": str(log_file.name),
             "log_file_size": log_file.stat().st_size,
             "selection_phase_logs": selection_logs,
             "expansion_phase_logs": expansion_logs,
@@ -269,14 +294,14 @@ def validate_mcts_logging(session_id: str) -> Dict[str, Any]:
         }
         
         if validation["status"] == "PASS":
-            print(f"✅ MCTS logging active: {selection_logs} selection, {expansion_logs} expansion, {backprop_logs} backprop phases")
+            print(f"✅ MCTS logging active ({log_file.name}): {selection_logs} selection, {expansion_logs} expansion, {backprop_logs} backprop phases")
         else:
-            print(f"❌ MCTS logging incomplete or missing")
+            print(f"❌ MCTS logging incomplete or missing in {log_file.name}")
         
         return validation
         
     except Exception as e:
-        return {"status": "FAIL", "reason": f"Error reading log file: {e}"}
+        return {"status": "FAIL", "reason": f"Error reading log file {log_file}: {e}"}
 
 
 def get_latest_session_id(db: FeatureDiscoveryDB) -> Optional[str]:

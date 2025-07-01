@@ -252,6 +252,99 @@ class DatabaseService:
         step = self.exploration_repo.log_exploration_step(step_data)
         return step.id
     
+    def update_mcts_node_visits(self, node_id: int, visit_count: int, total_reward: float, 
+                               average_reward: float) -> None:
+        """
+        Update MCTS node visit statistics during backpropagation.
+        
+        Args:
+            node_id: MCTS internal node ID
+            visit_count: Updated visit count
+            total_reward: Updated total reward
+            average_reward: Updated average reward
+        """
+        if not self.current_session_id:
+            raise RuntimeError("No active session. Call initialize_session() first.")
+        
+        query = """
+        UPDATE mcts_tree_nodes 
+        SET visit_count = ?, 
+            total_reward = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ? AND node_id = ?
+        """
+        
+        with self.connection_manager.get_connection() as conn:
+            conn.execute(query, [visit_count, total_reward, self.current_session_id, node_id])
+            
+        self.logger.debug(f"Updated MCTS node {node_id}: visits={visit_count}, total_reward={total_reward:.5f}")
+    
+    def ensure_mcts_node_exists(self, node_id: int, parent_node_id: Optional[int], 
+                               depth: int, operation_applied: Optional[str],
+                               features_before: List[str], features_after: List[str],
+                               base_features: List[str], applied_operations: List[str],
+                               evaluation_score: Optional[float] = None,
+                               evaluation_time: Optional[float] = None,
+                               memory_usage_mb: Optional[float] = None) -> None:
+        """
+        Ensure MCTS node exists in mcts_tree_nodes table (upsert operation).
+        
+        Args:
+            node_id: MCTS internal node ID
+            parent_node_id: Parent's MCTS node ID (None for root)
+            depth: Tree depth
+            operation_applied: Operation that created this node (None for root)
+            features_before: Features before operation
+            features_after: Features after operation  
+            base_features: Base features of the dataset
+            applied_operations: List of operations applied to reach this node
+            evaluation_score: Node evaluation score (if evaluated)
+            evaluation_time: Time taken for evaluation
+            memory_usage_mb: Memory usage in MB
+        """
+        if not self.current_session_id:
+            raise RuntimeError("No active session. Call initialize_session() first.")
+        
+        # Check if node exists
+        check_query = "SELECT COUNT(*) FROM mcts_tree_nodes WHERE session_id = ? AND node_id = ?"
+        with self.connection_manager.get_connection() as conn:
+            result = conn.execute(check_query, [self.current_session_id, node_id]).fetchone()
+            exists = result[0] > 0 if result else False
+        
+        if not exists:
+            # Insert new node
+            insert_query = """
+            INSERT INTO mcts_tree_nodes 
+            (session_id, node_id, parent_node_id, depth, operation_applied,
+             base_features, features_before, features_after, applied_operations,
+             evaluation_score, evaluation_time, memory_usage_mb, visit_count, total_reward)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0.0)
+            """
+            
+            import json
+            with self.connection_manager.get_connection() as conn:
+                conn.execute(insert_query, [
+                    self.current_session_id, node_id, parent_node_id, depth, operation_applied,
+                    json.dumps(base_features), json.dumps(features_before), 
+                    json.dumps(features_after), json.dumps(applied_operations),
+                    evaluation_score, evaluation_time, memory_usage_mb
+                ])
+                
+            self.logger.debug(f"Created MCTS node {node_id} in database")
+        else:
+            # Update existing node with evaluation results
+            if evaluation_score is not None:
+                update_query = """
+                UPDATE mcts_tree_nodes 
+                SET evaluation_score = ?, evaluation_time = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = ? AND node_id = ?
+                """
+                with self.connection_manager.get_connection() as conn:
+                    conn.execute(update_query, [evaluation_score, evaluation_time, 
+                                              self.current_session_id, node_id])
+                    
+                self.logger.debug(f"Updated MCTS node {node_id} evaluation in database")
+    
     def register_feature(self,
                         name: str,
                         category: str,

@@ -492,7 +492,7 @@ class MCTSEngine:
             logger.error(f"Evaluation failed for node: {e}")
             return 0.0, time.time() - start_time
     
-    def backpropagation(self, node: FeatureNode, reward: float, evaluation_time: float) -> None:
+    def backpropagation(self, node: FeatureNode, reward: float, evaluation_time: float, db=None) -> None:
         """
         Backpropagation phase: Update all ancestors with the reward.
         
@@ -500,6 +500,7 @@ class MCTSEngine:
             node: Starting node (usually evaluated leaf)
             reward: Reward value to propagate
             evaluation_time: Time taken for evaluation
+            db: Database interface for persisting updates
         """
         mcts_logger.debug(f"=== BACKPROPAGATION PHASE START ===")
         mcts_logger.debug(f"Starting from node {node.node_id} with reward {reward:.5f}")
@@ -521,6 +522,18 @@ class MCTSEngine:
             mcts_logger.debug(f"Updated node {current.node_id}: visits={current.visit_count}, "
                             f"total_reward={current.total_reward:.5f}, "
                             f"avg_reward={current.average_reward:.5f}")
+            
+            # Update database with new visit statistics
+            if db:
+                try:
+                    db.update_mcts_node_visits(
+                        node_id=current.node_id,
+                        visit_count=current.visit_count,
+                        total_reward=current.total_reward,
+                        average_reward=current.average_reward
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update MCTS node {current.node_id} in database: {e}")
             
             current = current.parent
         
@@ -588,7 +601,7 @@ class MCTSEngine:
             mcts_logger.debug(f"=== BACKPROPAGATION PHASE START ===")
             mcts_logger.debug(f"Backpropagating score {score:.5f} from node {node.node_id} to root")
             
-            self.backpropagation(node, score, eval_time)
+            self.backpropagation(node, score, eval_time, db)
             
             mcts_logger.debug(f"Updated node {node.node_id}: visits={node.visit_count}, total_reward={node.total_reward:.5f}, avg={node.average_reward:.5f}")
             
@@ -612,6 +625,21 @@ class MCTSEngine:
                         memory_usage_mb=node.memory_usage_mb,
                         mcts_node_id=node.node_id,
                         node_visits=node.visit_count
+                    )
+                    
+                    # Ensure node exists in mcts_tree_nodes table with evaluation results
+                    db.ensure_mcts_node_exists(
+                        node_id=node.node_id,
+                        parent_node_id=node.parent.node_id if node.parent else None,
+                        depth=node.depth,
+                        operation_applied=node.operation_that_created_this,
+                        features_before=node.features_before,
+                        features_after=node.features_after,
+                        base_features=getattr(self, 'base_features', node.features_before),
+                        applied_operations=getattr(node, 'applied_operations', []),
+                        evaluation_score=score,
+                        evaluation_time=eval_time,
+                        memory_usage_mb=node.memory_usage_mb
                     )
                     
                     # Log feature impact if this is a feature operation (not root)
