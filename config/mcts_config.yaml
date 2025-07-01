@@ -32,6 +32,11 @@ autogluon:
   num_bag_sets: 1
   holdout_frac: 0.2
   verbosity: 1
+  final_eval:
+    time_limit: 120
+    presets: high_quality
+    num_bag_folds: 5
+    num_bag_sets: 1
 feature_space:
   max_features_per_node: 300
   min_improvement_threshold: 0.0005
