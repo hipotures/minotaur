@@ -116,30 +116,37 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
 
 def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
     """Draw ASCII tree structure showing MCTS exploration."""
-    # Get tree data with visit counts from mcts_tree_nodes if available
-    tree_query = """
-    SELECT t.node_id, e.operation_applied, t.parent_node_id,
-           t.evaluation_score, t.visit_count, e.mcts_ucb1_score
-    FROM mcts_tree_nodes t
-    JOIN exploration_history e ON t.session_id = e.session_id AND t.node_id = e.mcts_node_id
-    WHERE t.session_id = ?
-    ORDER BY t.node_id
+    
+    # Always get base data from exploration_history for complete tree structure
+    base_query = """
+    SELECT mcts_node_id, operation_applied, parent_node_id, 
+           evaluation_score, node_visits, mcts_ucb1_score
+    FROM exploration_history 
+    WHERE session_id = ?
+    ORDER BY iteration
     """
+    records = db.db_service.connection_manager.execute_query(base_query, params=(session_id,), fetch='all')
     
-    tree_records = db.db_service.connection_manager.execute_query(tree_query, params=(session_id,), fetch='all')
+    # Get enhanced visit counts from mcts_tree_nodes if available
+    visit_query = """
+    SELECT node_id, visit_count
+    FROM mcts_tree_nodes 
+    WHERE session_id = ?
+    """
+    visit_records = db.db_service.connection_manager.execute_query(visit_query, params=(session_id,), fetch='all')
     
-    if not tree_records:
-        # Fallback to exploration_history only
-        query = """
-        SELECT mcts_node_id, operation_applied, parent_node_id, 
-               evaluation_score, node_visits, mcts_ucb1_score
-        FROM exploration_history 
-        WHERE session_id = ?
-        ORDER BY iteration
-        """
-        records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
-    else:
-        records = tree_records
+    # Create visit count lookup
+    enhanced_visits = {node_id: visit_count for node_id, visit_count in visit_records} if visit_records else {}
+    
+    # Update records with enhanced visit counts where available
+    updated_records = []
+    for record in records:
+        node_id, operation, parent_id, score, visits, ucb1 = record
+        # Use enhanced visit count if available, otherwise keep original
+        actual_visits = enhanced_visits.get(node_id, visits)
+        updated_records.append((node_id, operation, parent_id, score, actual_visits, ucb1))
+    
+    records = updated_records
     
     if not records:
         return "❌ No tree data found"
