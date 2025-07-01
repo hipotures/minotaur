@@ -120,8 +120,8 @@ class UniversalFeatureGenerator(ABC):
         if processed_features:
             features_df = pd.DataFrame(processed_features)
         else:
-            # Return empty DataFrame with proper index
-            features_df = pd.DataFrame(index=df.index)
+            # Return DataFrame with placeholder column to avoid DuckDB errors
+            features_df = pd.DataFrame({'_no_features_placeholder': [0] * len(df.index)}, index=df.index)
         
         # Log summary
         self._log_generation_summary(feature_type, time.time() - start_time)

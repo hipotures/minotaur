@@ -265,7 +265,15 @@ class FeaturePipelineManager:
         valid_dfs = [df for df in feature_dfs if df is not None and not df.empty]
         
         if not valid_dfs:
-            raise ValueError("No valid feature DataFrames to combine")
+            logger.warning("No valid feature DataFrames to combine - creating placeholder DataFrame")
+            # Create placeholder DataFrame with dummy column to avoid DuckDB errors
+            # Need proper index length - get from first non-None DataFrame or use default
+            index_length = 1
+            for df in feature_dfs:
+                if df is not None and hasattr(df, 'index'):
+                    index_length = len(df.index)
+                    break
+            return pd.DataFrame({'_no_features_generated': [0] * index_length})
         
         # Start with first DataFrame
         combined = valid_dfs[0].copy()

@@ -398,15 +398,17 @@ class MCTSEngine:
         mcts_logger.debug(f"New operations available: {new_operations}")
         
         # Select operations to expand (up to budget)
-        expansion_count = min(
-            len(new_operations),
-            self.expansion_budget,
-            self.max_children_per_node - len(node.children)
-        )
+        new_ops_count = len(new_operations)
+        budget_limit = self.expansion_budget
+        children_limit = self.max_children_per_node - len(node.children)
+        
+        expansion_count = min(new_ops_count, budget_limit, children_limit)
+        
+        mcts_logger.debug(f"Expansion calculation: new_ops={new_ops_count}, budget={budget_limit}, children_limit={children_limit}, expansion_count={expansion_count}")
         
         if expansion_count <= 0:
             node.is_fully_expanded = True
-            mcts_logger.debug(f"No expansion possible for node {node.node_id} (budget/limit reached)")
+            mcts_logger.debug(f"No expansion possible for node {node.node_id} (budget/limit reached): new_ops={new_ops_count}, budget={budget_limit}, children_limit={children_limit}")
             return []
         
         # Randomly sample operations to expand (or use all if under budget)

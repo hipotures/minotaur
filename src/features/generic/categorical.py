@@ -172,7 +172,9 @@ class CategoricalFeatures(GenericFeatureOperation):
                     # Clean the value name for use in feature name
                     clean_value = str(value).replace(' ', '_').replace('-', '_')
                     feature_name = f'{col.lower()}_is_{clean_value}'
-                    features[feature_name] = (df[col] == value).astype(int)
+                    # Handle NaN values in one-hot encoding
+                    one_hot_series = (df[col] == value)
+                    features[feature_name] = one_hot_series.fillna(False).astype(int)
         
         return features
     
@@ -193,8 +195,14 @@ class CategoricalFeatures(GenericFeatureOperation):
                 # Add special value for missing
                 value_to_int[np.nan] = -1
                 
-                # Apply mapping
-                features[f'{col.lower()}_label_encoded'] = df[col].map(value_to_int).fillna(-1).astype(int)
+                # Apply mapping with robust NA handling
+                try:
+                    mapped_series = df[col].map(value_to_int).fillna(-1)
+                    # Convert to int with explicit error handling for different pandas versions
+                    features[f'{col.lower()}_label_encoded'] = pd.to_numeric(mapped_series, errors='coerce').fillna(-1).astype(int)
+                except Exception as e:
+                    logger.warning(f"Label encoding failed for {col}: {e}, skipping...")
+                    continue
         
         return features
     
@@ -211,7 +219,14 @@ class CategoricalFeatures(GenericFeatureOperation):
                 # Get unique values and create label encoding first
                 unique_values = df[col].dropna().unique()
                 value_to_int = {val: i for i, val in enumerate(unique_values)}
-                label_encoded = df[col].map(value_to_int).fillna(-1).astype(int)
+                
+                # Robust label encoding with error handling
+                try:
+                    mapped_series = df[col].map(value_to_int).fillna(-1)
+                    label_encoded = pd.to_numeric(mapped_series, errors='coerce').fillna(-1).astype(int)
+                except Exception as e:
+                    logger.warning(f"Binary encoding failed for {col}: {e}, skipping...")
+                    continue
                 
                 # Determine number of bits needed
                 max_val = len(unique_values)

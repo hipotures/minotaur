@@ -476,10 +476,17 @@ class DatasetImporter:
         
         # Initialize FeatureSpace with dataset database path for auto-registration
         config['dataset_db_path'] = duckdb_path if duckdb_path else None  # Pass dataset DB path for auto-registration
-        feature_space = FeatureSpace(config)
+        dataset_logger.info("🔧 Initializing FeatureSpace...")
+        try:
+            feature_space = FeatureSpace(config)
+            dataset_logger.info("✅ FeatureSpace initialized successfully")
+        except Exception as e:
+            dataset_logger.error(f"❌ FeatureSpace initialization failed: {e}")
+            raise
         
         # Check if new pipeline is enabled
         use_new_pipeline = config.get('feature_space', {}).get('use_new_pipeline', False)
+        dataset_logger.info(f"🔍 use_new_pipeline configuration: {use_new_pipeline}")
         
         # Process train data if exists
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='train'").fetchone():
@@ -494,17 +501,40 @@ class DatasetImporter:
             if use_new_pipeline:
                 dataset_logger.info("🚀 Using new feature pipeline with signal detection during generation...")
                 
-                # Generate all features using pipeline
-                features_df = feature_space.generate_all_features_pipeline(
-                    train_df, 
-                    dataset_name=dataset_name,
-                    target_column=target_column,
-                    id_column=id_column
-                )
+                try:
+                    # Generate all features using pipeline
+                    dataset_logger.info("🔧 Calling generate_all_features_pipeline...")
+                    features_df = feature_space.generate_all_features_pipeline(
+                        train_df, 
+                        dataset_name=dataset_name,
+                        target_column=target_column,
+                        id_column=id_column
+                    )
+                    dataset_logger.info("✅ Pipeline completed successfully")
+                except Exception as e:
+                    dataset_logger.error(f"❌ Pipeline failed: {e}")
+                    raise
+                
+                # Debug: Check what we actually got
+                dataset_logger.info(f"🔍 Pipeline returned DataFrame with shape: {features_df.shape}")
+                dataset_logger.info(f"🔍 Pipeline returned columns: {len(features_df.columns)}")
+                if len(features_df.columns) > 0:
+                    dataset_logger.info(f"🔍 First few columns: {list(features_df.columns[:5])}")
+                else:
+                    dataset_logger.warning("🔍 Pipeline returned DataFrame with NO COLUMNS!")
                 
                 # Save directly as train_features (no post-hoc filtering needed)
                 conn.execute("DROP TABLE IF EXISTS train_features")
-                conn.register('features_df', features_df)
+                
+                # Check if features_df has any columns before registering
+                if len(features_df.columns) == 0:
+                    dataset_logger.warning("Features DataFrame is empty - creating placeholder table")
+                    # Create minimal placeholder table
+                    placeholder_df = pd.DataFrame({'_no_features_available': [0] * len(train_df)})
+                    conn.register('features_df', placeholder_df)
+                else:
+                    conn.register('features_df', features_df)
+                    
                 conn.execute("CREATE TABLE train_features AS SELECT * FROM features_df")
                 conn.unregister('features_df')
                 
@@ -519,6 +549,7 @@ class DatasetImporter:
                 valid_train_columns = list(features_df.columns)
             else:
                 # OLD PIPELINE PATH - Generate features separately with post-hoc filtering
+                dataset_logger.info("🔧 Using OLD PIPELINE PATH - Generate features separately with post-hoc filtering")
                 # 1. Generate GENERIC features only
                 dataset_logger.info("🔧 Generating GENERIC features...")
                 generic_df = feature_space.generate_generic_features(train_df, target_column=target_column, id_column=id_column)
@@ -526,7 +557,15 @@ class DatasetImporter:
                 
                 # Save train_generic table
                 conn.execute("DROP TABLE IF EXISTS train_generic")
-                conn.register('generic_df', generic_df)
+                
+                # Check if generic_df has columns before registering
+                if len(generic_df.columns) == 0:
+                    dataset_logger.warning("Generic DataFrame is empty - creating placeholder table")
+                    placeholder_generic_df = pd.DataFrame({'_no_generic_features': [0] * len(train_df)})
+                    conn.register('generic_df', placeholder_generic_df)
+                else:
+                    conn.register('generic_df', generic_df)
+                    
                 conn.execute("CREATE TABLE train_generic AS SELECT * FROM generic_df")
                 conn.unregister('generic_df')
                 dataset_logger.info(f"✅ Created 'train_generic' table with {len(generic_df.columns)} columns")
@@ -538,7 +577,15 @@ class DatasetImporter:
                 
                 # Save train_custom table
                 conn.execute("DROP TABLE IF EXISTS train_custom")
-                conn.register('custom_df', custom_df)
+                
+                # Check if custom_df has columns before registering  
+                if len(custom_df.columns) == 0:
+                    dataset_logger.warning("Custom DataFrame is empty - creating placeholder table")
+                    placeholder_custom_df = pd.DataFrame({'_no_custom_features': [0] * len(train_df)})
+                    conn.register('custom_df', placeholder_custom_df)
+                else:
+                    conn.register('custom_df', custom_df)
+                    
                 conn.execute("CREATE TABLE train_custom AS SELECT * FROM custom_df")
                 conn.unregister('custom_df')
                 dataset_logger.info(f"✅ Created 'train_custom' table with {len(custom_df.columns)} columns")
@@ -641,7 +688,15 @@ class DatasetImporter:
                 
                 # Save test_generic table
                 conn.execute("DROP TABLE IF EXISTS test_generic")
-                conn.register('test_generic_df', test_generic_df)
+                
+                # Check if test_generic_df has columns before registering
+                if len(test_generic_df.columns) == 0:
+                    dataset_logger.warning("Test generic DataFrame is empty - creating placeholder table")
+                    placeholder_test_generic_df = pd.DataFrame({'_no_test_generic_features': [0] * len(test_df)})
+                    conn.register('test_generic_df', placeholder_test_generic_df)
+                else:
+                    conn.register('test_generic_df', test_generic_df)
+                    
                 conn.execute("CREATE TABLE test_generic AS SELECT * FROM test_generic_df")
                 conn.unregister('test_generic_df')
                 dataset_logger.info(f"✅ Created 'test_generic' table with {len(test_generic_df.columns)} columns")
@@ -653,7 +708,15 @@ class DatasetImporter:
                 
                 # Save test_custom table
                 conn.execute("DROP TABLE IF EXISTS test_custom")
-                conn.register('test_custom_df', test_custom_df)
+                
+                # Check if test_custom_df has columns before registering
+                if len(test_custom_df.columns) == 0:
+                    dataset_logger.warning("Test custom DataFrame is empty - creating placeholder table")
+                    placeholder_test_custom_df = pd.DataFrame({'_no_test_custom_features': [0] * len(test_df)})
+                    conn.register('test_custom_df', placeholder_test_custom_df)
+                else:
+                    conn.register('test_custom_df', test_custom_df)
+                    
                 conn.execute("CREATE TABLE test_custom AS SELECT * FROM test_custom_df")
                 conn.unregister('test_custom_df')
                 dataset_logger.info(f"✅ Created 'test_custom' table with {len(test_custom_df.columns)} columns")

@@ -45,6 +45,9 @@ feature_space:
     polynomial_features: true
     binning_features: true
     ranking_features: true
+    categorical_features: true    # Re-enabled with NA fix
+    text_features: true          # Re-enabled 
+    train_features: true         # Re-enabled
   generic_params:
     polynomial_degree: 2
     binning_bins: 5

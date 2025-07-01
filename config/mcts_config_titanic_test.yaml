@@ -1,97 +1,22 @@
-test_mode: false
+test_mode: true
 session:
   max_iterations: 15
   max_runtime_hours: 0.25
-  checkpoint_interval: 1
 mcts:
-  max_tree_depth: 6
-  expansion_threshold: 1
-  min_visits_for_best: 2
-  max_children_per_node: 3
+  max_tree_depth: 15
   expansion_budget: 2
-  max_nodes_in_memory: 1000
 autogluon:
   dataset_name: titanic
-  target_metric: accuracy
-  ignore_columns: null
   included_model_types:
   - XGB
-  enable_gpu: true
-  train_size: 1.0
   time_limit: 60
-  presets: medium_quality
-  skip_final_evaluation: true
-  holdout_frac: 0.2
   verbosity: 2
-  ag_args_fit:
-    num_cpus: 1
-    num_gpus: 1
-  ag_args_ensemble:
-    fold_fitting_strategy: sequential_local
-    enable_ray: false
 feature_space:
   max_features_per_node: 50
-  feature_timeout: 30
   max_cache_size_mb: 256
-  max_features_to_build: 10
-  max_features_per_iteration: 3
-  feature_build_timeout: 60
-  cache_miss_limit: 10
-  generic_operations:
-    statistical_aggregations: true
-    polynomial_features: false
-    binning_features: true
-    ranking_features: true
-  generic_params:
-    polynomial_degree: 2
-    binning_bins: 3
-    groupby_columns:
-    - Sex
-    - Pclass
-    aggregate_columns:
-    - Age
-    - Fare
-  category_weights:
-    binning: 1.0
-    categorical: 1.1
-    polynomial: 0.8
-    ranking: 0.9
-    statistical: 1.0
-    temporal: 0.7
-    text: 0.6
-  '# DYNAMIC_CATEGORIES_INFO': Categories and weights are generated from src/features/generic/OPERATION_METADATA
 resources:
   max_memory_gb: 1
-  memory_check_interval: 1
-  force_gc_interval: 5
   max_cpu_cores: 2
-  max_disk_usage_gb: 5
-data:
-  backend: duckdb
-  prefer_parquet: false
-  auto_convert_csv: false
-  memory_limit_mb: 256
-  dtype_optimization: true
-database:
-  path: data/minotaur.duckdb
-  max_history_size: 1000
-  backup_interval: 10
-  retention_days: 1
 logging:
-  log_level: INFO
+  log_level: DEBUG
   max_log_size_mb: 10
-  progress_interval: 1
-  log_autogluon_details: false
-export:
-  formats:
-  - python
-  python_output: outputs/titanic_best_features_test.py
-  include_documentation: false
-  output_dir: outputs/reports_titanic_test
-  export_on_improvement: false
-  export_on_completion: true
-analytics:
-  generate_charts: false
-  include_timing_analysis: false
-validation:
-  validate_generated_features: false
