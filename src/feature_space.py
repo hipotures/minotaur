@@ -8,6 +8,7 @@ Replaces hardcoded operations with dynamic loading from generic and custom featu
 import time
 import logging
 import importlib
+import threading
 from typing import Dict, List, Set, Any, Optional
 from pathlib import Path
 import pandas as pd
@@ -78,6 +79,10 @@ class FeatureSpace:
         # Caching
         self.cache_features = self.feature_config.get('cache_features', True)
         self.feature_cache = {}
+        
+        # Feature catalog cache for column names (lazy loading)
+        self._feature_catalog_cache = {}
+        self._cache_lock = threading.Lock()
         
         # Feature performance tracking
         self.feature_stats = {}
@@ -303,6 +308,79 @@ class FeatureSpace:
         logger.debug(f"Found {len(available_ops)} available operations for node at depth {getattr(node, 'depth', 0)}")
         return available_ops
     
+    def _get_feature_columns_cached(self, operation_name: str, is_custom: bool = False) -> List[str]:
+        """
+        Get feature columns for an operation using lazy cached lookup.
+        
+        This method implements a thread-safe cache to avoid redundant database queries.
+        The cache is populated on first access and reused for subsequent calls.
+        
+        Args:
+            operation_name: Name of the operation to get features for
+            is_custom: Whether this is a custom domain operation
+            
+        Returns:
+            List of feature column names for the operation
+        """
+        # Generate cache key based on operation type
+        if is_custom:
+            cache_key = f"custom:{operation_name}"
+        else:
+            # Normalize operation name for cache key
+            cache_key = f"generic:{operation_name.lower().replace(' ', '_')}"
+        
+        # Check cache first (no lock needed for read)
+        if cache_key in self._feature_catalog_cache:
+            return self._feature_catalog_cache[cache_key].copy()
+        
+        # Cache miss - need to query database
+        with self._cache_lock:
+            # Double-check pattern - another thread might have populated while we waited
+            if cache_key in self._feature_catalog_cache:
+                return self._feature_catalog_cache[cache_key].copy()
+            
+            # No database connection - return empty list
+            if not hasattr(self, 'duckdb_manager') or self.duckdb_manager is None:
+                logger.warning(f"No DuckDB connection for cached lookup of '{operation_name}'")
+                self._feature_catalog_cache[cache_key] = []
+                return []
+            
+            try:
+                # Execute appropriate query based on operation type
+                if is_custom:
+                    query = """
+                        SELECT DISTINCT feature_name 
+                        FROM feature_catalog 
+                        WHERE operation_name = ?
+                    """
+                    result = self.duckdb_manager.connection.execute(query, [operation_name]).fetchall()
+                else:
+                    query = """
+                        SELECT DISTINCT feature_name 
+                        FROM feature_catalog 
+                        WHERE LOWER(REPLACE(operation_name, ' ', '_')) = LOWER(?)
+                    """
+                    result = self.duckdb_manager.connection.execute(query, [operation_name]).fetchall()
+                
+                # Extract feature names from result
+                feature_names = [row[0] for row in result]
+                
+                # Filter out forbidden columns
+                forbidden = {self.id_column, self.target_column} | set(self.ignore_columns or [])
+                feature_names = [col for col in feature_names if col not in forbidden]
+                
+                # Store in cache
+                self._feature_catalog_cache[cache_key] = feature_names
+                
+                logger.debug(f"Cached {len(feature_names)} features for operation '{operation_name}' (key: {cache_key})")
+                return feature_names.copy()
+                
+            except Exception as e:
+                logger.error(f"Failed to query feature catalog for '{operation_name}': {e}")
+                # Cache empty result to avoid repeated failures
+                self._feature_catalog_cache[cache_key] = []
+                return []
+    
     def get_feature_columns_for_node(self, node) -> List[str]:
         """
         Get list of feature column names for a given MCTS node.
@@ -320,53 +398,18 @@ class FeatureSpace:
             logger.debug(f"Root node - returning {len(base_features)} base features")
             return base_features
         
-        # Get features for the current operation from database
-        if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
-            try:
-                # Use dynamic database query to get features for this operation
-                # Handle naming differences (underscores vs spaces, case differences)
-                
-                # Check if this is a custom domain operation
-                is_custom_op = current_operation in self.operations and self.operations[current_operation].category == 'custom_domain'
-                
-                if is_custom_op and self.dataset_name:
-                    # For custom operations, use the specific operation name
-                    query = """
-                        SELECT DISTINCT feature_name 
-                        FROM feature_catalog 
-                        WHERE operation_name = ?
-                    """
-                    operation_name_to_query = current_operation
-                    result = self.duckdb_manager.connection.execute(query, [operation_name_to_query]).fetchall()
-                else:
-                    # For generic operations, handle naming differences
-                    query = """
-                        SELECT DISTINCT feature_name 
-                        FROM feature_catalog 
-                        WHERE LOWER(REPLACE(operation_name, ' ', '_')) = LOWER(?)
-                    """
-                    result = self.duckdb_manager.connection.execute(query, [current_operation]).fetchall()
-                operation_features = [row[0] for row in result]
-                
-                if operation_features:
-                    logger.debug(f"Node operation '{current_operation}' - found {len(operation_features)} features from database")
-                    
-                    # Remove forbidden columns
-                    forbidden = [self.id_column, self.target_column] + self.ignore_columns
-                    selected_columns = [col for col in operation_features if col not in forbidden]
-                    
-                    return selected_columns
-                else:
-                    logger.warning(f"No features found in database for operation '{current_operation}' - falling back to pattern matching")
-                    # Fallback to pattern-based detection if no database entries
-                    return self._get_features_by_pattern_fallback(current_operation, node)
-                    
-            except Exception as e:
-                logger.error(f"Database query failed for operation '{current_operation}': {e}")
-                # Fallback to pattern-based detection
-                return self._get_features_by_pattern_fallback(current_operation, node)
+        # Check if this is a custom domain operation
+        is_custom_op = current_operation in self.operations and self.operations[current_operation].category == 'custom_domain'
+        
+        # Use cached lookup for feature columns
+        operation_features = self._get_feature_columns_cached(current_operation, is_custom=is_custom_op)
+        
+        if operation_features:
+            logger.debug(f"Node operation '{current_operation}' - found {len(operation_features)} features from cache")
+            return operation_features
         else:
-            logger.warning("No DuckDB connection available - using pattern fallback")
+            logger.warning(f"No features found for operation '{current_operation}' - falling back to pattern matching")
+            # Fallback to pattern-based detection if no database entries
             return self._get_features_by_pattern_fallback(current_operation, node)
     
     def _get_features_by_pattern_fallback(self, operation_name: str, node) -> List[str]:
@@ -893,10 +936,24 @@ class FeatureSpace:
         
         return result_df
     
+    def clear_feature_catalog_cache(self) -> None:
+        """
+        Clear the feature catalog cache.
+        
+        Use this method when the feature catalog has been updated and you need
+        to force a refresh of cached column names.
+        """
+        with self._cache_lock:
+            cache_size = len(self._feature_catalog_cache)
+            self._feature_catalog_cache.clear()
+            logger.info(f"Cleared feature catalog cache ({cache_size} entries)")
+    
     def cleanup(self) -> None:
         """Cleanup resources."""
         if hasattr(self, 'feature_cache'):
             self.feature_cache.clear()
+        if hasattr(self, '_feature_catalog_cache'):
+            self._feature_catalog_cache.clear()
         logger.debug("Feature space cleanup completed")
     
     def get_feature_metadata(self) -> Dict[str, Any]:
