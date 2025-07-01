@@ -150,7 +150,7 @@ class ExplorationRepository(BaseRepository[ExplorationStep]):
         # Update session statistics
         self._update_session_stats(step_data.session_id, step_data.iteration, step_data.evaluation_score)
         
-        self.logger.info(f"Logged exploration step {step_data.iteration} for session {step_data.session_id[:8]}...")
+        self.logger.info(f"Logged exploration step {step_data.iteration} for session {step_data.session_id}")
         return saved_step
     
     def _is_best_score_so_far(self, session_id: str, score: float) -> bool:

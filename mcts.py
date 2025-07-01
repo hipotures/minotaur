@@ -1113,6 +1113,9 @@ def main():
             
             # Output JSON on a single line with clear marker
             print(f"MCTS_RESULT_JSON:{json.dumps(output_data)}")
+            
+            # Also log as info for debugging
+            logger.info(f"Final session data: {json.dumps(output_data, indent=2)}")
         
         return 0
         
