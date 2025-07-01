@@ -1,0 +1,291 @@
+# MCTS Feature Discovery Configuration
+# All parameters for MCTS, AutoGluon, SQLite, and system behavior
+
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
+# Session Management
+session:
+  # Options: 'new', 'continue', 'resume_best'
+  mode: 'new'                    # new: start fresh, continue: resume last session, resume_best: start from best node
+  max_iterations: 20            # Total iteration limit
+  max_runtime_hours: 12          # Maximum runtime in hours
+  checkpoint_interval: 25        # Save progress every N iterations
+  auto_save: true               # Auto-save session on interruption
+  session_name: null            # Custom session name (null = auto-generate)
+
+# MCTS Algorithm Parameters  
+mcts:
+  exploration_weight: 1.4       # UCB1 C parameter (higher = more exploration)
+  max_tree_depth: 8            # Maximum depth of feature operation tree
+  expansion_threshold: 3        # Minimum visits before expanding node
+  min_visits_for_best: 10      # Min visits to consider node as "best"
+  ucb1_confidence: 0.95        # Confidence level for UCB1
+  
+  # Node selection strategy
+  selection_strategy: 'ucb1'    # Options: 'ucb1', 'uct', 'thompson_sampling'
+  
+  # Expansion control
+  max_children_per_node: 5      # Max feature operations per expansion
+  expansion_budget: 20          # Max new nodes per iteration
+  
+  # Memory management
+  max_nodes_in_memory: 10000   # Max nodes to keep in memory
+  prune_threshold: 0.1         # Remove nodes with reward < threshold
+
+# AutoGluon Evaluation Settings
+autogluon:
+  # Dataset configuration (new centralized system)
+  dataset_name: null                   # Name of registered dataset (preferred method)
+  target_metric: null          # classification: [‘accuracy’, ‘balanced_accuracy’, ‘f1’, ‘f1_macro’, ‘f1_micro’, ‘f1_weighted’, 
+                               # ‘roc_auc’, ‘roc_auc_ovo’, ‘roc_auc_ovr’, ‘average_precision’, ‘precision’, 
+                               # ‘precision_macro’, ‘precision_micro’, ‘precision_weighted’, ‘recall’, ‘recall_macro’, 
+                               # ‘recall_micro’, ‘recall_weighted’, ‘log_loss’, ‘pac_score’, ‘quadratic_kappa’]
+                               # regression: [‘root_mean_squared_error’, ‘mean_squared_error’, ‘mean_absolute_error’, ‘median_absolute_error’, ‘r2’]
+                               # quantile regression: [‘pinball_loss’]
+  
+  # Production AutoGluon Configuration
+  included_model_types: ['XGB', 'GBM', 'CAT']  # XGBoost, LightGBM, CatBoost
+  # Available: GBM, CAT, XGB, FASTAI, RF, XT, NN_TORCH, KNN
+  enable_gpu: true                             # GPU acceleration
+  train_size: 0.8                             # 80% of training data
+  
+  # Model training settings
+  time_limit: 60                              # Wallclock time in seconds per AutoGluon evaluation
+  presets: 'medium_quality'    # good_quality, medium_quality_faster_train, best_quality
+  num_bag_folds: 3                            # Cross-validation folds
+  num_bag_sets: 1                             # Number of bagging sets
+  holdout_frac: 0.2                           # Holdout fraction for validation
+  verbosity: 1                                # 0=silent, 1=minimal, 2=verbose
+  
+  # Note: Multi-phase evaluation removed - using single configuration above
+
+# Feature Space Configuration
+feature_space:
+  # Feature generation limits
+  max_features_per_node: 300    # Maximum features in any single node
+  min_improvement_threshold: 0.0005  # Minimum MAP@3 improvement to consider
+  feature_timeout: 300          # Max seconds to generate features
+  
+  # NEW: Feature building control parameters
+  max_features_to_build: null        # null = unlimited, number = limit total features built
+  max_features_per_iteration: null   # null = unlimited, number = limit per MCTS iteration  
+  feature_build_timeout: 300         # Timeout per individual feature building (seconds)
+  cache_miss_limit: 50              # Max cache misses allowed per session
+  
+  # Feature categories to explore
+  enabled_categories:
+    - 'npk_interactions'
+    - 'environmental_stress'  
+    - 'agricultural_domain'
+    - 'statistical_aggregations'
+    - 'feature_transformations'
+    - 'feature_selection'
+    - 'custom_domain'
+  
+  # Generic operations from src/domains/generic.py (can be disabled individually)
+  generic_operations:
+    statistical_aggregations: true   # Group-based aggregations (mean, std, deviation)
+    polynomial_features: true       # Polynomial transformations of numeric features
+    binning_features: true          # Quantile-based binning and discretization  
+    ranking_features: true          # Rank-based transformations
+  
+  # Generic operation parameters
+  generic_params:
+    polynomial_degree: 2            # Degree for polynomial features
+    binning_bins: 5                # Number of bins for discretization
+    groupby_columns: []             # Auto-detect categorical columns if empty
+    aggregate_columns: []           # Auto-detect numeric columns if empty
+    
+  # Operation weights (higher = more likely to be selected)
+  category_weights:
+    npk_interactions: 2.0
+    environmental_stress: 1.5
+    agricultural_domain: 2.5     # Domain knowledge is valuable
+    statistical_aggregations: 1.0
+    feature_transformations: 0.8
+    feature_selection: 0.5
+    
+  # Generation strategy
+  lazy_loading: true            # Generate features on-demand
+  cache_features: true          # Cache computed features
+  max_cache_size_mb: 2048      # Max feature cache size in MB
+  cache_cleanup_threshold: 0.8  # Cleanup when 80% full
+
+# Database Configuration
+database:
+  path: 'data/minotaur.duckdb'   # Unified DuckDB database
+  type: 'duckdb'                 # Database type: 'duckdb' or 'sqlite'
+  schema: 'main'                 # Default schema name
+  backup_path: 'data/backups/'   # Backup directory
+  backup_interval: 50            # Backup every N iterations
+  backup_prefix: 'minotaur_backup_'  # Backup file prefix
+  max_history_size: 50000        # Max records in exploration_history
+  max_backup_files: 10           # Keep last N backup files
+  
+  # Transaction settings
+  batch_size: 10               # Batch DB operations
+  sync_mode: 'NORMAL'          # NORMAL, FULL, OFF
+  journal_mode: 'WAL'          # WAL, DELETE, TRUNCATE
+  
+  # Cleanup settings
+  auto_cleanup: true
+  cleanup_interval_hours: 24   # Cleanup old data every N hours
+  retention_days: 30           # Keep data for N days
+
+# Logging and Monitoring  
+logging:
+  level: 'DEBUG'               # DEBUG, INFO, WARNING, ERROR
+  log_file: 'logs/minotaur.log'
+  max_log_size_mb: 100
+  backup_count: 5
+  
+  # What to log
+  log_feature_code: true       # Save Python code for features
+  log_timing: true            # Track operation timing
+  log_memory_usage: true      # Monitor memory consumption
+  log_autogluon_details: false # Detailed AutoGluon logs (verbose)
+  
+  # Progress reporting
+  progress_interval: 10        # Report progress every N iterations
+  save_intermediate_results: true
+  
+  # Timing data export
+  timing_output_dir: 'logs/timing'  # Directory for timing JSON files
+  
+# Performance and Resource Management
+resources:
+  # Memory management
+  max_memory_gb: 16           # Maximum memory usage
+  memory_check_interval: 5    # Check memory every N iterations
+  force_gc_interval: 50       # Force garbage collection every N iterations
+  
+  # CPU/GPU settings
+  use_gpu: true
+  max_cpu_cores: -1           # -1 = use all available
+  autogluon_num_cpus: null    # null = auto-detect
+  
+  # Disk management
+  max_disk_usage_gb: 50       # Maximum disk usage for caches/logs
+  temp_dir: '/tmp/mcts_features'
+  cleanup_temp_on_exit: true
+
+# Data Loading and Backend Configuration
+data:
+  # Backend selection: 'auto', 'pandas', 'duckdb'
+  backend: 'auto'                    # auto = use DuckDB when available and beneficial
+  prefer_parquet: true               # Convert CSV to Parquet for faster loading
+  auto_convert_csv: true             # Automatically save CSV as Parquet
+  dtype_optimization: true           # Optimize DataFrame dtypes for memory
+  
+  # Memory limits
+  memory_limit_mb: 500               # Memory limit for datasets
+  use_small_dataset: false           # Force small dataset mode
+  small_dataset_size: 5000           # Size for small dataset testing
+  
+  # DuckDB Backend Configuration
+  duckdb:
+    enable_sampling: true            # Enable DuckDB efficient sampling
+    max_memory_gb: 4                 # DuckDB memory limit
+    temp_directory: '/tmp/duckdb_temp'
+    use_memory_limit: true           # Enforce memory limits
+    
+    # Persistent Database Settings
+    persistent_storage: true         # Use persistent database storage
+    database_name: 'features.duckdb' # Database filename
+    auto_load_data: true             # Load CSV data to database on first run
+    
+    # Feature Caching Settings
+    enable_feature_cache: true       # Enable feature caching in database
+    max_cached_features: 1000        # Maximum number of cached features
+    cache_cleanup_threshold: 0.8     # Cleanup when cache is 80% full
+    cache_min_score: 0.1             # Minimum score to keep in cache
+    
+    # Performance tuning
+    enable_object_cache: true        # DuckDB object cache
+    force_compression: 'zstd'        # Compression algorithm
+    enable_progress_bar: false       # Disable progress bars in logs
+
+# LLM Integration (Optional)
+llm:
+  enabled: false              # Enable LLM-assisted feature generation
+  provider: 'openai'          # 'openai', 'anthropic', 'local'
+  model: 'gpt-4'
+  api_key_env: 'OPENAI_API_KEY'
+  
+  # LLM usage frequency
+  trigger_interval: 20        # Use LLM every N iterations
+  trigger_on_plateau: true    # Use LLM when no improvement for N iterations
+  plateau_threshold: 15       # No improvement for N iterations = plateau
+  
+  # Generation settings
+  max_features_per_request: 5
+  temperature: 0.7
+  max_tokens: 1000
+  
+# Export and Reporting
+export:
+  # Output formats
+  formats: ['python', 'json', 'html']
+  
+  # Python code export
+  python_output: 'outputs/best_features_discovered.py'
+  include_dependencies: true
+  include_documentation: true
+  code_style: 'pep8'
+  
+  # Report generation
+  html_report: 'outputs/discovery_report.html'
+  include_plots: true
+  plot_format: 'png'
+  
+  # Analytics configuration
+  include_analytics: true
+  output_dir: 'outputs/reports'
+  
+  # Export triggers
+  export_on_completion: true
+  export_on_improvement: true  # Export when new best found
+  export_interval: 100        # Export every N iterations
+
+# Analytics Configuration
+analytics:
+  figure_size: [12, 8]
+  dpi: 100
+  format: 'png'
+  generate_charts: true
+  include_timing_analysis: true
+
+# Testing Configuration (AutoGluon required - no mock mode)
+# Validation and Testing
+validation:
+  # Feature validation
+  validate_generated_features: true
+  max_validation_time: 60     # Seconds to validate features
+  
+  # Cross-validation for impact analysis
+  cv_folds: 3
+  cv_repeats: 1
+  
+  # Statistical significance testing
+  significance_level: 0.05
+  min_samples_for_test: 10
+
+# Advanced Settings
+advanced:
+  # Experimental features
+  enable_neural_mcts: false   # Use neural network for value estimation
+  enable_parallel_evaluation: false  # Parallel AutoGluon evaluation
+  enable_multi_objective: false      # Optimize multiple metrics
+  
+  # Debug settings
+  debug_mode: false
+  debug_save_all_features: false     # Save all generated features (expensive)
+  debug_detailed_timing: false       # Detailed timing for each operation
+  
+  # Recovery settings
+  auto_recovery: true         # Auto-recover from crashes
+  max_recovery_attempts: 3
+  recovery_checkpoint_interval: 10
+  
+  # Self-check settings (removed sleep - subprocess.run already waits for completion)

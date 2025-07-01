@@ -1,0 +1,140 @@
+# MCTS Configuration Override for Playground Series S5E6 - 10 Iterations
+# This file contains only parameters that override the main mcts_config.yaml
+# For medium testing with real AutoGluon on small datasets
+#
+# PERFORMANCE TARGET: Complete 10 iterations in 5-10 minutes
+# RESOURCE LIMITS: train_size=1000 samples, limited memory, XGBoost+LightGBM
+
+# Test Mode Configuration  
+test_mode: false  # true = test session (for cleanup), false = production session
+
+# Session Management - Medium runs
+session:
+  max_iterations: 10              # Ultra-short for testing
+  max_runtime_hours: 0.25        # 15 minutes max
+  checkpoint_interval: 1         # Save every iteration
+
+# MCTS - Minimal exploration
+mcts:
+  max_tree_depth: 4             # Very shallow
+  expansion_threshold: 1        # Expand immediately
+  min_visits_for_best: 2        # Minimal visits
+  max_children_per_node: 2      # Very few children
+  expansion_budget: 5           # Tiny budget
+  max_nodes_in_memory: 1000     # Minimal memory
+
+# AutoGluon - Ultra-fast evaluation
+autogluon:
+  # S5E6 Dataset (registered in database)
+  dataset_name: 'playground-series-s5e6-2025'
+  target_metric: 'MAP@3'
+  
+  # Core configuration - extreme speed focus
+  included_model_types: ['XGB']           # Only XGBoost
+  enable_gpu: true                        # GPU for speed
+  train_size: 100                         # Fixed 100 samples for ultra-fast testing
+  
+  # Model training settings
+  time_limit: 60                          # Wallclock time in seconds per AutoGluon evaluation
+  presets: 'medium_quality'               # Fast preset
+  skip_final_evaluation: true             # Skip expensive final evaluation
+  holdout_frac: 0.4                       # Large holdout for speed
+  verbosity: 2                            # Show AutoGluon output
+  
+  # Ray GPU configuration - disable Ray completely
+  ag_args_fit:
+    num_cpus: 1
+    num_gpus: 1
+  ag_args_ensemble:
+    fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
+    enable_ray: false  # Force disable Ray
+
+# Feature Space - Minimal features for fertilizer domain
+feature_space:
+  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
+  max_features_per_node: 50               # Very few features
+  feature_timeout: 30                     # Short timeout
+  max_cache_size_mb: 256                  # Tiny cache
+  
+  # NEW: Feature building limits for ultra-fast testing
+  max_features_to_build: 10               # Only build 10 features total
+  max_features_per_iteration: 3           # Max 3 features per MCTS iteration
+  feature_build_timeout: 60               # 1 minute timeout per feature
+  cache_miss_limit: 10                    # Max 10 cache misses
+  
+  # Only most effective categories
+  enabled_categories:
+    - 'npk_interactions'                  # Essential only
+    - 'agricultural_domain'
+    
+  # Focused weights
+  category_weights:
+    npk_interactions: 3.0                 # High priority
+    agricultural_domain: 3.0              # High priority
+
+# Performance - Minimal resources
+resources:
+  max_memory_gb: 1                        # Very low memory
+  memory_check_interval: 1                
+  force_gc_interval: 5                    # Very frequent GC
+  max_cpu_cores: 2                        # Limit CPU cores
+  max_disk_usage_gb: 5                    # Minimal disk
+
+# Data - DuckDB for ultra-efficient sampling (train_size=100 samples)
+data:
+  backend: 'duckdb'                       # Force DuckDB for efficient sampling
+  prefer_parquet: true                    # Fast loading
+  auto_convert_csv: true                  
+  memory_limit_mb: 50                     # Very low memory limit
+  dtype_optimization: true                
+  
+  # DuckDB - Optimized for 100-sample testing with persistent storage
+  duckdb:
+    enable_sampling: true                 # Critical for train_size=100
+    max_memory_gb: 1                      # Low memory for testing
+    temp_directory: '/tmp/duckdb_test'
+    
+    # Persistent Database Settings - Critical for performance
+    persistent_storage: true              # Use persistent database storage
+    database_name: 'features_test.duckdb' # Separate test database
+    auto_load_data: true                  # Load CSV data on first run
+    
+    # Feature Caching Settings - Minimal for testing
+    enable_feature_cache: true            # Enable feature caching 
+    max_cached_features: 50               # Small cache for testing
+    cache_cleanup_threshold: 0.9          # Aggressive cleanup
+    cache_min_score: 0.0                  # Keep all features for testing
+    
+    enable_object_cache: true             # Cache for speed
+    force_compression: 'zstd'                
+
+# Database - Minimal settings
+database:
+  path: 'data/feature_discovery_test.db'      # Separate test DB
+  max_history_size: 1000                  # Tiny history
+  backup_interval: 10                     # Frequent backups
+  retention_days: 1                       # Very short retention
+
+# Logging - Minimal for speed
+logging:
+  max_log_size_mb: 10                     # Small logs
+  progress_interval: 1                    # Report every iteration
+  log_autogluon_details: false           # Skip details
+
+# Export - Minimal output
+export:
+  formats: ['python']                     # Only Python code
+  python_output: 'outputs/s5e6_best_features_test.py'
+  include_documentation: false            
+  output_dir: 'outputs/reports_test'
+  export_on_improvement: false            # Skip intermediate
+  export_on_completion: true              # Only final export
+
+# Analytics - Skip for speed
+analytics:
+  generate_charts: false                  # No charts for speed
+  include_timing_analysis: false          # Skip timing analysis
+
+# Validation - Skip for speed
+validation:
+  validate_generated_features: false      # Skip validation

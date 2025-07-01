@@ -83,7 +83,8 @@ feature_space:
   max_features_per_node: 300    # Maximum columns per evaluation
   
   # Enable/disable feature categories
-  enabled_categories:
+  # NOTE: Categories are now dynamic - see OPERATION_METADATA
+enabled_categories:
     - 'statistical_aggregations'
     - 'polynomial_features'
     - 'binning_features'

@@ -1,12 +1,8 @@
+-- NOTE: This migration uses hardcoded categories and should be reviewed
+-- Consider using dynamic categories from OPERATION_METADATA
 -- Migration 006: Dynamic Feature Categories System
 -- Adds support for dynamic feature-operation mappings
 -- Replaces hardcoded patterns with database-driven categorization
-
--- Add operation_name column to feature_catalog
-ALTER TABLE feature_catalog ADD COLUMN IF NOT EXISTS operation_name VARCHAR;
-
--- Create index for efficient operation_name lookups
-CREATE INDEX IF NOT EXISTS idx_feature_catalog_operation ON feature_catalog(operation_name);
 
 -- Create operation_categories table for mapping operations to categories
 CREATE TABLE IF NOT EXISTS operation_categories (

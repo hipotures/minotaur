@@ -135,7 +135,7 @@ class FeatureSpace:
             if self.generic_operations_config.get('polynomial_features', True):
                 self.operations['polynomial_features'] = FeatureOperation(
                     name='polynomial_features',
-                    category='feature_transformations',
+                    category='polynomial',
                     description=f'Polynomial features (degree {self.generic_params.get("polynomial_degree", 2)})',
                     dependencies=[],  # Works with any numeric columns
                     computational_cost=0.4,
@@ -146,7 +146,7 @@ class FeatureSpace:
             if self.generic_operations_config.get('binning_features', True):
                 self.operations['binning_features'] = FeatureOperation(
                     name='binning_features',
-                    category='feature_transformations',
+                    category='binning',
                     description=f'Binning of numerical features ({self.generic_params.get("binning_bins", 5)} bins)',
                     dependencies=[],  # Works with any numeric columns
                     computational_cost=0.3,
@@ -157,7 +157,7 @@ class FeatureSpace:
             if self.generic_operations_config.get('ranking_features', True):
                 self.operations['ranking_features'] = FeatureOperation(
                     name='ranking_features',
-                    category='feature_transformations',
+                    category='ranking',
                     description='Ranking features for numeric columns',
                     dependencies=[],  # Works with any numeric columns
                     computational_cost=0.2,
@@ -696,7 +696,7 @@ class FeatureSpace:
                 groupby_cols = self._filter_forbidden_columns(groupby_cols)
                 aggregate_cols = self._filter_forbidden_columns(aggregate_cols)
                 
-                stat_features = stat_op.generate_features(df, groupby_cols=groupby_cols, agg_cols=aggregate_cols, auto_register=auto_register, origin=origin)
+                stat_features = stat_op.generate_features(df, groupby_cols=groupby_cols, agg_cols=aggregate_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                 result_features.update(stat_features)
                 logger.info(f"Added {len(stat_features)} statistical features")
             
@@ -710,7 +710,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                poly_features = poly_op.generate_features(df, numeric_cols=numeric_cols, degree=degree, auto_register=auto_register, origin=origin)
+                poly_features = poly_op.generate_features(df, numeric_cols=numeric_cols, degree=degree, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                 result_features.update(poly_features)
                 logger.info(f"Added {len(poly_features)} polynomial features")
             
@@ -724,7 +724,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                bin_features = bin_op.generate_features(df, numeric_cols=numeric_cols, n_bins=n_bins, auto_register=auto_register, origin=origin)
+                bin_features = bin_op.generate_features(df, numeric_cols=numeric_cols, n_bins=n_bins, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                 result_features.update(bin_features)
                 logger.info(f"Added {len(bin_features)} binning features")
             
@@ -737,7 +737,7 @@ class FeatureSpace:
                 # Filter out forbidden columns
                 numeric_cols = self._filter_forbidden_columns(numeric_cols)
                 
-                rank_features = rank_op.generate_features(df, numeric_cols=numeric_cols, auto_register=auto_register, origin=origin)
+                rank_features = rank_op.generate_features(df, numeric_cols=numeric_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                 result_features.update(rank_features)
                 logger.info(f"Added {len(rank_features)} ranking features")
             
@@ -757,12 +757,12 @@ class FeatureSpace:
                 real_forbidden.extend(self.ignore_columns)
                 
                 if categorical_cols:
-                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin)
+                    cat_features = cat_op.generate_features(df, categorical_cols=categorical_cols, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                     result_features.update(cat_features)
                     logger.info(f"Added {len(cat_features)} categorical features")
                 else:
                     # Even if no object/category columns, still run auto-detection with proper forbidden list
-                    cat_features = cat_op.generate_features(df, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin)
+                    cat_features = cat_op.generate_features(df, forbidden_columns=real_forbidden, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                     result_features.update(cat_features)
                     logger.info(f"Added {len(cat_features)} categorical features (auto-detected)")
             
@@ -774,7 +774,7 @@ class FeatureSpace:
                 datetime_cols = self._filter_forbidden_columns(datetime_cols)
                 
                 if datetime_cols:
-                    temp_features = temp_op.generate_features(df, datetime_cols=datetime_cols, auto_register=auto_register, origin=origin)
+                    temp_features = temp_op.generate_features(df, datetime_cols=datetime_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                     result_features.update(temp_features)
                     logger.info(f"Added {len(temp_features)} temporal features")
             
@@ -792,7 +792,7 @@ class FeatureSpace:
                             text_cols.append(col)
                 
                 if text_cols:
-                    text_features = text_op.generate_features(df, text_cols=text_cols, auto_register=auto_register, origin=origin)
+                    text_features = text_op.generate_features(df, text_cols=text_cols, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                     result_features.update(text_features)
                     logger.info(f"Added {len(text_features)} text features")
                 
@@ -850,7 +850,7 @@ class FeatureSpace:
                 custom_instance._check_signal = check_signal
                 
                 # Generate all custom features
-                custom_features = custom_instance.generate_all_features(df, auto_register=auto_register, origin=origin)
+                custom_features = custom_instance.generate_all_features(df, auto_register=auto_register, origin=origin, dataset_db_path=self.config.get('dataset_db_path'))
                 
                 if isinstance(custom_features, dict):
                     result_features.update(custom_features)

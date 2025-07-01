@@ -275,6 +275,53 @@ class DatasetImporter:
             # Connect to DuckDB
             conn = duckdb.connect(str(duckdb_path))
             
+            # Create feature_catalog table for this dataset
+            logger.info("Creating feature_catalog table...")
+            conn.execute("""
+                CREATE SEQUENCE IF NOT EXISTS feature_catalog_id_seq;
+                
+                CREATE TABLE IF NOT EXISTS feature_catalog (
+                    id BIGINT PRIMARY KEY DEFAULT nextval('feature_catalog_id_seq'),
+                    feature_name VARCHAR UNIQUE NOT NULL,
+                    feature_category VARCHAR NOT NULL,
+                    python_code VARCHAR NOT NULL,
+                    dependencies JSON,
+                    description VARCHAR,
+                    created_by VARCHAR DEFAULT 'mcts',
+                    creation_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    computational_cost DOUBLE DEFAULT 1.0,
+                    data_type VARCHAR DEFAULT 'float64',
+                    operation_name VARCHAR,
+                    origin VARCHAR
+                );
+                
+                -- Create indexes for feature_catalog
+                CREATE INDEX IF NOT EXISTS idx_feature_catalog_operation ON feature_catalog(operation_name);
+                CREATE INDEX IF NOT EXISTS idx_feature_catalog_origin ON feature_catalog(origin);
+                
+                -- Create operation_categories table
+                CREATE TABLE IF NOT EXISTS operation_categories (
+                    operation_name VARCHAR PRIMARY KEY,
+                    category VARCHAR NOT NULL,
+                    description VARCHAR,
+                    dataset_name VARCHAR,
+                    is_generic BOOLEAN DEFAULT false,
+                    output_patterns VARCHAR[],
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                );
+                
+                -- Create indexes for operation_categories
+                CREATE INDEX IF NOT EXISTS idx_operation_categories_category ON operation_categories(category);
+                CREATE INDEX IF NOT EXISTS idx_operation_categories_dataset ON operation_categories(dataset_name);
+                CREATE INDEX IF NOT EXISTS idx_operation_categories_generic ON operation_categories(is_generic);
+            """)
+            logger.info("✅ Created feature_catalog table, operation_categories table and indexes")
+            
+            # Commit the table creation to make it visible to other connections
+            conn.commit()
+            
             # Import each file as a table
             for table_name, file_path in file_mappings.items():
                 logger.info(f"Importing {table_name} from {file_path}")
@@ -324,11 +371,35 @@ class DatasetImporter:
                 
                 if id_column and id_column not in column_names:
                     logger.warning(f"ID column '{id_column}' not found in train table")
+                
+                # Register original train columns in feature_catalog with origin='train'
+                logger.info("Registering original train columns in feature_catalog...")
+                for col_name in column_names:
+                    conn.execute("""
+                        INSERT INTO feature_catalog (feature_name, feature_category, python_code, operation_name, description, origin)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (feature_name) DO UPDATE SET
+                            operation_name = EXCLUDED.operation_name,
+                            feature_category = EXCLUDED.feature_category,
+                            description = EXCLUDED.description,
+                            origin = EXCLUDED.origin
+                    """, [
+                        col_name,
+                        'original',  # category for original columns
+                        'Original dataset column',  # python_code
+                        'train_features',  # operation_name
+                        f'Original column from {self.dataset_name} dataset',  # description
+                        'train'  # origin
+                    ])
+                logger.info(f"✅ Registered {len(column_names)} original train columns in feature_catalog")
+            
+            # Commit changes before feature generation to ensure tables are visible
+            conn.commit()
             
             # Generate features for train and test tables
             logger.info("Generating features for dataset...")
             # Pass target and ID columns (already lowercase from earlier conversion)
-            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column)
+            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column, str(duckdb_path))
             
             conn.close()
             
@@ -357,7 +428,7 @@ class DatasetImporter:
                 duckdb_path.unlink()
             raise ValueError(f"Failed to create DuckDB dataset: {e}")
     
-    def _generate_and_save_features(self, conn, dataset_name: str, target_column: str, id_column: str = None):
+    def _generate_and_save_features(self, conn, dataset_name: str, target_column: str, id_column: str = None, duckdb_path: str = None):
         """Generate features in separate tables: generic, custom, train_features, test_features."""
         import sys
         from pathlib import Path
@@ -415,7 +486,8 @@ class DatasetImporter:
         else:
             dataset_logger.info("No custom domain module found, using generic features only")
         
-        # Initialize FeatureSpace
+        # Initialize FeatureSpace with dataset database path for auto-registration
+        config['dataset_db_path'] = duckdb_path if duckdb_path else None  # Pass dataset DB path for auto-registration
         feature_space = FeatureSpace(config)
         
         # Check if new pipeline is enabled

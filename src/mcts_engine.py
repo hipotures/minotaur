@@ -560,7 +560,16 @@ class MCTSEngine:
         
         if not nodes_to_evaluate:
             mcts_logger.debug(f"No nodes to evaluate - selected_node {selected_node.node_id} already has score and no children expanded")
-            return {}
+            return {
+                'iteration': self.current_iteration,
+                'selected_node_depth': selected_node.depth,
+                'expanded_children': 0,
+                'evaluations': 0,
+                'best_score': selected_node.evaluation_score or 0.0,
+                'iteration_time': 0.0,
+                'total_nodes': self._count_total_nodes(),
+                'memory_usage_mb': self._get_memory_usage()
+            }
         
         evaluation_results = []
         for node in nodes_to_evaluate:

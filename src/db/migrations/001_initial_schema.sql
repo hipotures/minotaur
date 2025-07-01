@@ -41,8 +41,14 @@ CREATE TABLE IF NOT EXISTS feature_catalog (
     creation_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE,
     computational_cost DOUBLE DEFAULT 1.0,
-    data_type VARCHAR DEFAULT 'float64'
+    data_type VARCHAR DEFAULT 'float64',
+    operation_name VARCHAR,
+    origin VARCHAR
 );
+
+-- Indexes for feature_catalog
+CREATE INDEX IF NOT EXISTS idx_feature_catalog_operation ON feature_catalog(operation_name);
+CREATE INDEX IF NOT EXISTS idx_feature_catalog_origin ON feature_catalog(origin);
 
 -- Feature impact analysis
 CREATE TABLE IF NOT EXISTS feature_impact (

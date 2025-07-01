@@ -21,10 +21,10 @@ CREATE TABLE IF NOT EXISTS feature_metadata (
 );
 
 -- Index for fast lookups
-CREATE INDEX idx_feature_metadata_dataset ON feature_metadata(dataset_name);
-CREATE INDEX idx_feature_metadata_type ON feature_metadata(feature_type);
-CREATE INDEX idx_feature_metadata_signal ON feature_metadata(has_signal);
-CREATE INDEX idx_feature_metadata_category ON feature_metadata(category);
+CREATE INDEX IF NOT EXISTS idx_feature_metadata_dataset ON feature_metadata(dataset_name);
+CREATE INDEX IF NOT EXISTS idx_feature_metadata_type ON feature_metadata(feature_type);
+CREATE INDEX IF NOT EXISTS idx_feature_metadata_signal ON feature_metadata(has_signal);
+CREATE INDEX IF NOT EXISTS idx_feature_metadata_category ON feature_metadata(category);
 
 -- Feature usage tracking (how often features are used in MCTS)
 CREATE TABLE IF NOT EXISTS feature_usage (
@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS feature_usage (
 );
 
 -- Index for usage analysis
-CREATE INDEX idx_feature_usage_feature ON feature_usage(feature_name, dataset_name);
-CREATE INDEX idx_feature_usage_session ON feature_usage(session_id);
-CREATE INDEX idx_feature_usage_score ON feature_usage(evaluation_score);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage(feature_name, dataset_name);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_session ON feature_usage(session_id);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_score ON feature_usage(evaluation_score);
 
 -- Feature dependencies table (tracks which features depend on others)
 CREATE TABLE IF NOT EXISTS feature_dependencies (
@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS feature_dependencies (
 );
 
 -- Index for dependency queries
-CREATE INDEX idx_feature_deps_feature ON feature_dependencies(feature_name, dataset_name);
-CREATE INDEX idx_feature_deps_depends_on ON feature_dependencies(depends_on_feature);
+CREATE INDEX IF NOT EXISTS idx_feature_deps_feature ON feature_dependencies(feature_name, dataset_name);
+CREATE INDEX IF NOT EXISTS idx_feature_deps_depends_on ON feature_dependencies(depends_on_feature);
 
 -- View for feature performance analysis
 CREATE VIEW IF NOT EXISTS feature_performance AS

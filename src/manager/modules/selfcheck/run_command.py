@@ -273,10 +273,14 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_features_per_iteration': 2,
                 'feature_build_timeout': 60,
                 'cache_miss_limit': 10,
-                'enabled_categories': ['statistical_aggregations', 'feature_transformations'],
+                'use_dynamic_categories': True,
+                'category_filter': {
+                    'include': ['statistical', 'polynomial'],
+                    'exclude': []
+                },
                 'category_weights': {
-                    'statistical_aggregations': 2.0,
-                    'feature_transformations': 2.0
+                    'statistical': 2.0,
+                    'polynomial': 2.0
                 }
             },
             'resources': {

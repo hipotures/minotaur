@@ -1,108 +1,93 @@
-# MCTS Configuration Override for Playground Series S5E6 - Fast Real Testing
-# This file contains only parameters that override the main mcts_config.yaml
-# For rapid iteration with real AutoGluon on reduced datasets
-#
-# PERFORMANCE TARGET: Complete 5 iterations in 2-5 minutes
-# RESOURCE LIMITS: 5K samples, reduced memory, focused on XGBoost
-
-# Test Mode Configuration  
-test_mode: false  # true = test session (for cleanup), false = production session
-
-# Session Management - Shorter runs
+test_mode: false
 session:
-  max_iterations: 5              # Very short for fast iteration
-  max_runtime_hours: 1           # Short runtime
-  checkpoint_interval: 2         # Frequent saves
-
-# MCTS - Faster exploration
+  max_iterations: 5
+  max_runtime_hours: 1
+  checkpoint_interval: 2
 mcts:
-  max_tree_depth: 6             # Reduced depth
-  expansion_threshold: 2        # Lower threshold
-  min_visits_for_best: 5        # Reduced minimum
-  max_children_per_node: 3      # Fewer children
-  expansion_budget: 10          # Smaller budget
-  max_nodes_in_memory: 5000     # Reduced memory
-
-# AutoGluon - Fast evaluation with XGBoost focus
+  max_tree_depth: 6
+  expansion_threshold: 2
+  min_visits_for_best: 5
+  max_children_per_node: 3
+  expansion_budget: 10
+  max_nodes_in_memory: 5000
 autogluon:
-  # S5E6 Dataset (new centralized system)
-  dataset_name: 'playground-series-s5e6-2025'    # Registered dataset name
-  target_metric: 'MAP@3'
-  
-  # Core configuration - focus on speed
-  included_model_types: ['XGB']           # Only XGBoost
-  enable_gpu: true                        # GPU acceleration
-  train_size: 0.05                        # 5% of training data for very fast testing
-  
-  # Model training settings
-  time_limit: 60                          # Wallclock time in seconds per AutoGluon evaluation
-  presets: 'medium_quality_faster_train'  # Fast preset
-  num_bag_folds: 1                        # Minimal bagging for speed
-  num_bag_sets: 1                         # Single bagging set
-  holdout_frac: 0.3                       # Larger holdout for speed
-  verbosity: 0                            # Silent mode for speed
-
-# Feature Space - Focused categories for fertilizer domain
+  dataset_name: playground-series-s5e6-2025
+  target_metric: MAP@3
+  included_model_types:
+  - XGB
+  enable_gpu: true
+  train_size: 0.05
+  time_limit: 60
+  presets: medium_quality_faster_train
+  num_bag_folds: 1
+  num_bag_sets: 1
+  holdout_frac: 0.3
+  verbosity: 0
 feature_space:
-  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
-  enabled_categories:
-    - 'npk_interactions'
-    - 'agricultural_domain'
-  max_features_per_node: 150              # Reduced feature count
-  feature_timeout: 120                    # Shorter timeout
-  max_cache_size_mb: 1024                 # Reduced cache
-  
-  # Generic operations - balanced for real evaluation
+  max_features_per_node: 150
+  feature_timeout: 120
+  max_cache_size_mb: 1024
   generic_operations:
-    statistical_aggregations: true     # Keep aggregations
-    polynomial_features: true         # Keep polynomial features
-    binning_features: true            # Keep binning
-    ranking_features: false           # Disable ranking for speed
-  
-  # Generic operation parameters - balanced settings
+    statistical_aggregations: true
+    polynomial_features: true
+    binning_features: true
+    ranking_features: false
   generic_params:
-    polynomial_degree: 2              # Standard degree
-    binning_bins: 5                   # Standard bins
-    groupby_columns: []               # Auto-detect from fertilizer data
-    aggregate_columns: []             # Auto-detect numeric columns
-
-# Performance - Resource limits
+    polynomial_degree: 2
+    binning_bins: 5
+    groupby_columns: []
+    aggregate_columns: []
+  '# NOTE': Categories are now discovered dynamically from operation metadata
+  use_dynamic_categories: true
+  category_filter:
+    include:
+    - binning
+    - categorical
+    - polynomial
+    - ranking
+    - statistical
+    - temporal
+    - text
+    exclude: []
+  category_weights:
+    binning: 1.0
+    categorical: 1.1
+    polynomial: 0.8
+    ranking: 0.9
+    statistical: 1.0
+    temporal: 0.7
+    text: 0.6
+  '# DYNAMIC_CATEGORIES_INFO': Categories and weights are generated from src/features/generic/OPERATION_METADATA
 resources:
-  max_memory_gb: 2                        # Low memory limit
-  memory_check_interval: 2                
-  force_gc_interval: 10                   # Frequent GC
-  max_cpu_cores: 4                        # Limit CPU cores
-  max_disk_usage_gb: 10                   # Reduced disk
-
-# Data - Fast loading optimizations
+  max_memory_gb: 2
+  memory_check_interval: 2
+  force_gc_interval: 10
+  max_cpu_cores: 4
+  max_disk_usage_gb: 10
 data:
-  prefer_parquet: true                    # Always use parquet
-  auto_convert_csv: true                  # Auto convert
-  memory_limit_mb: 100                    # Low memory limit
-  dtype_optimization: true                # Optimize types
-
-# Database - Smaller limits
+  prefer_parquet: true
+  auto_convert_csv: true
+  memory_limit_mb: 100
+  dtype_optimization: true
 database:
-  path: 'data/feature_discovery_fast.db'      # Separate DB
-  max_history_size: 10000                 # Smaller history
-  backup_interval: 25                     # More frequent
-  retention_days: 7                       # Shorter retention
-
-# Logging - Faster reporting
+  path: data/feature_discovery_fast.db
+  max_history_size: 10000
+  backup_interval: 25
+  retention_days: 7
 logging:
-  log_file: 'logs/mcts_discovery_fast.log'    # Separate log
-  max_log_size_mb: 50                     # Smaller logs
-  progress_interval: 5                    # More frequent progress
-
-# Export - Minimal for speed
+  log_file: logs/mcts_discovery_fast.log
+  max_log_size_mb: 50
+  progress_interval: 5
 export:
-  formats: ['python', 'json']             # Skip HTML
-  python_output: 'outputs/s5e6_best_features_fast_real.py'
-  include_documentation: false            # Skip docs
-  output_dir: 'outputs/reports_fast_real'
-  export_on_improvement: false            # Skip intermediate exports
-
-# Analytics - Minimal
+  formats:
+  - python
+  - json
+  python_output: outputs/s5e6_best_features_fast_real.py
+  include_documentation: false
+  output_dir: outputs/reports_fast_real
+  export_on_improvement: false
 analytics:
-  figure_size: [10, 6]                    # Smaller figures
-  dpi: 72                                 # Lower DPI
+  figure_size:
+  - 10
+  - 6
+  dpi: 72

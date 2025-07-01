@@ -1,135 +1,97 @@
-# MCTS Configuration for Titanic Dataset - Self-Check Test
-# Fast test configuration for Titanic dataset validation and system testing
-#
-# PERFORMANCE TARGET: Complete 3 iterations in 30-60 seconds
-# RESOURCE LIMITS: train_size=100 samples, pandas backend, XGBoost only
-
-# Test Mode Configuration  
-test_mode: false  # true = test session (for cleanup), false = production session
-
-# Session Management - Ultra-short runs
+test_mode: false
 session:
-  max_iterations: 5              # Ultra-short for testing
-  max_runtime_hours: 0.25        # 15 minutes max
-  checkpoint_interval: 1         # Save every iteration
-
-# MCTS - Minimal exploration
+  max_iterations: 5
+  max_runtime_hours: 0.25
+  checkpoint_interval: 1
 mcts:
-  max_tree_depth: 4             # Very shallow
-  expansion_threshold: 1        # Expand immediately
-  min_visits_for_best: 2        # Minimal visits
-  max_children_per_node: 2      # Very few children
-  expansion_budget: 5           # Tiny budget
-  max_nodes_in_memory: 1000     # Minimal memory
-
-# AutoGluon - Ultra-fast evaluation with Titanic dataset
+  max_tree_depth: 4
+  expansion_threshold: 1
+  min_visits_for_best: 2
+  max_children_per_node: 2
+  expansion_budget: 5
+  max_nodes_in_memory: 1000
 autogluon:
-  # Titanic Dataset (registered in database)
-  dataset_name: 'titanic'
-  target_metric: 'accuracy'
-  
-  # Dataset-specific column configuration
-  ignore_columns: null                        # No columns to ignore
-  
-  # Core configuration - extreme speed focus
-  included_model_types: ['XGB']           # Only XGBoost
-  enable_gpu: true                        # GPU for speed
-  train_size: 1.0                         # Fixed 100 samples for ultra-fast testing
-  
-  # Model training settings
-  time_limit: 60                          # Wallclock time in seconds per AutoGluon evaluation
-  presets: 'medium_quality'               # Fast preset
-  skip_final_evaluation: true             # Skip expensive final evaluation
-  holdout_frac: 0.2                       # Large holdout for speed
-  verbosity: 2                            # Show AutoGluon output
-  
-  # Ray GPU configuration - disable Ray completely
+  dataset_name: titanic
+  target_metric: accuracy
+  ignore_columns: null
+  included_model_types:
+  - XGB
+  enable_gpu: true
+  train_size: 1.0
+  time_limit: 60
+  presets: medium_quality
+  skip_final_evaluation: true
+  holdout_frac: 0.2
+  verbosity: 2
   ag_args_fit:
     num_cpus: 1
     num_gpus: 1
   ag_args_ensemble:
-    fold_fitting_strategy: 'sequential_local'  # Avoid Ray workers
-    enable_ray: false  # Force disable Ray
-
-# Feature Space - Domain operations are loaded automatically based on dataset name
+    fold_fitting_strategy: sequential_local
+    enable_ray: false
 feature_space:
-  # Domain module will be loaded automatically from src/domains/{dataset_name}.py
-  
-  max_features_per_node: 50               # Very few features
-  feature_timeout: 30                     # Short timeout
-  max_cache_size_mb: 256                  # Tiny cache
-  
-  # NEW: Feature building limits for ultra-fast testing
-  max_features_to_build: 10               # Only build 10 features total
-  max_features_per_iteration: 3           # Max 3 features per MCTS iteration
-  feature_build_timeout: 60               # 1 minute timeout per feature
-  cache_miss_limit: 10                    # Max 10 cache misses
-  
-  # Generic operations - disable expensive ones for fast testing
+  max_features_per_node: 50
+  feature_timeout: 30
+  max_cache_size_mb: 256
+  max_features_to_build: 10
+  max_features_per_iteration: 3
+  feature_build_timeout: 60
+  cache_miss_limit: 10
   generic_operations:
-    statistical_aggregations: true     # Keep simple aggregations
-    polynomial_features: false        # Disable expensive polynomial features
-    binning_features: true            # Keep simple binning
-    ranking_features: true            # Keep ranking features
-  
-  # Generic operation parameters - minimal settings
+    statistical_aggregations: true
+    polynomial_features: false
+    binning_features: true
+    ranking_features: true
   generic_params:
-    polynomial_degree: 2              # Low degree (if enabled)
-    binning_bins: 3                   # Fewer bins for speed
-    groupby_columns: ["Sex", "Pclass"] # Specific columns for Titanic
-    aggregate_columns: ["Age", "Fare"] # Specific numeric columns for Titanic
-  
-  # Note: enabled_categories not needed with simplified domain system
-  # All methods in CustomFeatureOperations are automatically enabled
-
-# Performance - Minimal resources
+    polynomial_degree: 2
+    binning_bins: 3
+    groupby_columns:
+    - Sex
+    - Pclass
+    aggregate_columns:
+    - Age
+    - Fare
+  category_weights:
+    binning: 1.0
+    categorical: 1.1
+    polynomial: 0.8
+    ranking: 0.9
+    statistical: 1.0
+    temporal: 0.7
+    text: 0.6
+  '# DYNAMIC_CATEGORIES_INFO': Categories and weights are generated from src/features/generic/OPERATION_METADATA
 resources:
-  max_memory_gb: 1                        # Very low memory
-  memory_check_interval: 1                
-  force_gc_interval: 5                    # Very frequent GC
-  max_cpu_cores: 2                        # Limit CPU cores
-  max_disk_usage_gb: 5                    # Minimal disk
-
-# Data - Use DuckDB backend for proper cache generation
+  max_memory_gb: 1
+  memory_check_interval: 1
+  force_gc_interval: 5
+  max_cpu_cores: 2
+  max_disk_usage_gb: 5
 data:
-  backend: 'duckdb'                       # Use DuckDB for proper cache files
-  prefer_parquet: false                   # Stick to CSV for simplicity
-  auto_convert_csv: false                 # Don't auto-convert
-  memory_limit_mb: 256                    # Low memory limit
-  dtype_optimization: true                
-  
-  # DuckDB handles mixed data types properly and provides persistent cache
-
-# Database - Use main database with registered datasets
+  backend: duckdb
+  prefer_parquet: false
+  auto_convert_csv: false
+  memory_limit_mb: 256
+  dtype_optimization: true
 database:
-  path: 'data/minotaur.duckdb'            # Use main database with registered datasets
-  max_history_size: 1000                  # Tiny history
-  backup_interval: 10                     # Frequent backups
-  retention_days: 1                       # Very short retention
-  # Note: For selfcheck tests, database conflicts are handled by running MCTS in separate process
-
-# Logging - Minimal for speed
+  path: data/minotaur.duckdb
+  max_history_size: 1000
+  backup_interval: 10
+  retention_days: 1
 logging:
-  log_level: 'INFO'                       # Show progress
-  max_log_size_mb: 10                     # Small logs
-  progress_interval: 1                    # Report every iteration
-  log_autogluon_details: false           # Skip details
-
-# Export - Minimal output
+  log_level: INFO
+  max_log_size_mb: 10
+  progress_interval: 1
+  log_autogluon_details: false
 export:
-  formats: ['python']                     # Only Python code
-  python_output: 'outputs/titanic_best_features_test.py'
-  include_documentation: false            
-  output_dir: 'outputs/reports_titanic_test'
-  export_on_improvement: false            # Skip intermediate
-  export_on_completion: true              # Only final export
-
-# Analytics - Skip for speed
+  formats:
+  - python
+  python_output: outputs/titanic_best_features_test.py
+  include_documentation: false
+  output_dir: outputs/reports_titanic_test
+  export_on_improvement: false
+  export_on_completion: true
 analytics:
-  generate_charts: false                  # No charts for speed
-  include_timing_analysis: false          # Skip timing analysis
-
-# Validation - Skip for speed
+  generate_charts: false
+  include_timing_analysis: false
 validation:
-  validate_generated_features: false      # Skip validation
-
+  validate_generated_features: false

@@ -233,16 +233,23 @@ class GenericFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             **kwargs: Additional parameters passed to generate_features
         """
         try:
-            # Try to use global database connection if available
+            # Try to use dataset database connection if available
             import duckdb
             from src.project_root import PROJECT_ROOT
             import os
             
-            # Connect to the main database directly
-            db_path = os.path.join(PROJECT_ROOT, 'data', 'minotaur.duckdb')
-            if not os.path.exists(db_path):
-                logger.debug("Database not found, skipping auto-registration")
-                return
+            # Use dataset database if provided in kwargs, otherwise fall back to main database
+            dataset_db_path = kwargs.get('dataset_db_path')
+            if dataset_db_path and os.path.exists(dataset_db_path):
+                db_path = dataset_db_path
+                logger.debug(f"Using dataset database for auto-registration: {db_path}")
+            else:
+                # Fall back to main database
+                db_path = os.path.join(PROJECT_ROOT, 'data', 'minotaur.duckdb')
+                if not os.path.exists(db_path):
+                    logger.debug("Database not found, skipping auto-registration")
+                    return
+                logger.debug(f"Using main database for auto-registration: {db_path}")
             
             # Get operation details
             operation_name = self.get_operation_name()
@@ -513,11 +520,18 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             from src.project_root import PROJECT_ROOT
             import os
             
-            # Connect to the main database
-            db_path = os.path.join(PROJECT_ROOT, 'data', 'minotaur.duckdb')
-            if not os.path.exists(db_path):
-                logger.debug("Database not found, skipping auto-registration")
-                return
+            # Use dataset database if provided in kwargs, otherwise fall back to main database
+            dataset_db_path = kwargs.get('dataset_db_path')
+            if dataset_db_path and os.path.exists(dataset_db_path):
+                db_path = dataset_db_path
+                logger.debug(f"Using dataset database for custom auto-registration: {db_path}")
+            else:
+                # Fall back to main database
+                db_path = os.path.join(PROJECT_ROOT, 'data', 'minotaur.duckdb')
+                if not os.path.exists(db_path):
+                    logger.debug("Database not found, skipping auto-registration")
+                    return
+                logger.debug(f"Using main database for custom auto-registration: {db_path}")
             
             # Get operation details
             operation_name = self.get_operation_name()
@@ -566,10 +580,10 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         origin
                     ])
                 
-                logger.debug(f"Auto-registered {len(features)} custom features for operation '{operation_name}' (domain: {self.domain_name})")
+                logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name}' (domain: {self.domain_name})")
                 
         except Exception as e:
-            logger.debug(f"Auto-registration failed for custom operation '{self.get_operation_name()}': {e}")
+            logger.error(f"❌ Auto-registration failed for custom operation '{self.get_operation_name()}': {e}")
             # Don't raise the error - auto-registration is optional
     
     def _infer_output_patterns(self, features: Dict[str, pd.Series]) -> List[str]:

@@ -12,13 +12,24 @@ from enum import Enum
 
 
 class FeatureCategory(str, Enum):
-    """Feature category enumeration."""
-    NPK_INTERACTIONS = "npk_interactions"
-    ENVIRONMENTAL_STRESS = "environmental_stress"
-    AGRICULTURAL_DOMAIN = "agricultural_domain"
-    STATISTICAL_AGGREGATIONS = "statistical_aggregations"
-    FEATURE_TRANSFORMATIONS = "feature_transformations"
-    FEATURE_SELECTION = "feature_selection"
+    """Feature category enumeration based on dynamic operation metadata."""
+    # Dynamic categories from OPERATION_METADATA
+    STATISTICAL = "statistical"
+    POLYNOMIAL = "polynomial"
+    BINNING = "binning"
+    RANKING = "ranking"
+    TEMPORAL = "temporal"
+    TEXT = "text"
+    CATEGORICAL = "categorical"
+    CUSTOM_DOMAIN = "custom_domain"  # For domain-specific features
+    
+    # Legacy compatibility (deprecated - use dynamic categories above)
+    NPK_INTERACTIONS = "custom_domain"  # Maps to custom_domain
+    ENVIRONMENTAL_STRESS = "custom_domain"  # Maps to custom_domain
+    AGRICULTURAL_DOMAIN = "custom_domain"  # Maps to custom_domain
+    STATISTICAL_AGGREGATIONS = "statistical"  # Maps to statistical
+    FEATURE_TRANSFORMATIONS = "polynomial"  # Maps to polynomial
+    FEATURE_SELECTION = "custom_domain"  # Maps to custom_domain
 
 
 class FeatureCreator(str, Enum):
@@ -100,7 +111,7 @@ class Feature(BaseModel):
         json_schema_extra = {
             "example": {
                 "feature_name": "npk_ratio",
-                "feature_category": "npk_interactions",
+                "feature_category": "custom_domain",
                 "python_code": "df['npk_ratio'] = (df['N'] + df['P'] + df['K']) / 3",
                 "dependencies": ["N", "P", "K"],
                 "description": "Average NPK ratio for balanced fertilization",
@@ -280,9 +291,9 @@ class FeatureAnalysis(BaseModel):
                 "total_features": 45,
                 "active_features": 42,
                 "features_by_category": {
-                    "npk_interactions": 12,
-                    "environmental_stress": 8,
-                    "agricultural_domain": 15
+                    "statistical": 15,
+                    "polynomial": 8,
+                    "custom_domain": 12
                 },
                 "features_by_creator": {
                     "mcts": 35,

@@ -74,7 +74,7 @@ class FeatureRepository(BaseRepository[Feature]):
             try:
                 data['feature_category'] = FeatureCategory(data['feature_category'])
             except ValueError:
-                data['feature_category'] = FeatureCategory.FEATURE_TRANSFORMATIONS
+                data['feature_category'] = FeatureCategory.POLYNOMIAL
         
         if isinstance(data.get('created_by'), str):
             try:

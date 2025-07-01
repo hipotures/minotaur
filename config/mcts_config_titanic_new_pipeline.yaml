@@ -1,22 +1,18 @@
-# MCTS Configuration for Titanic Dataset with New Feature Pipeline
-# This configuration is optimized for the Titanic dataset using the new
-# feature generation pipeline with signal detection during generation
-
-# Base dataset configuration
 autogluon:
-  dataset_name: 'titanic'
-  target_column: 'Survived'
-  id_column: 'PassengerId'
-  target_metric: 'accuracy'
+  dataset_name: titanic
+  target_column: Survived
+  id_column: PassengerId
+  target_metric: accuracy
   train_size: 0.8
-  time_limit: 60  # Fast evaluation for testing
-  included_model_types: ['RF', 'GBM', 'XT']
-  hyperparameters: 'light'
+  time_limit: 60
+  included_model_types:
+  - RF
+  - GBM
+  - XT
+  hyperparameters: light
   enable_gpu: false
   sample_weight_column: null
   ignore_columns: []
-
-# MCTS search parameters
 mcts:
   exploration_weight: 1.4
   max_tree_depth: 5
@@ -25,62 +21,42 @@ mcts:
   expansion_budget: 50
   max_nodes_in_memory: 1000
   prune_threshold: 0.01
-
-# Session configuration
 session:
   max_iterations: 100
   max_runtime_hours: 0.5
   checkpoint_interval: 20
   enable_checkpoints: true
-
-# NEW FEATURE PIPELINE CONFIGURATION
 feature_space:
-  # ENABLE NEW PIPELINE
   use_new_pipeline: true
-  
-  # Signal detection during generation
   check_signal: true
   min_signal_ratio: 0.01
-  signal_sample_size: 500  # Smaller for Titanic dataset
+  signal_sample_size: 500
   lowercase_features: false
-  
-  # Pipeline options
   apply_generic_to_custom: true
   cache_features: true
   cache_intermediate: false
-  
-  # Feature limits
   max_features_per_type: null
   max_features_per_node: 200
-  
-  # Categories for Titanic
-  enabled_categories:
-    - 'statistical_aggregations'
-    - 'polynomial_features'
-    - 'feature_transformations'
-    - 'text_features'
-    - 'custom_domain'
-  
-  # Adjusted weights for Titanic
   category_weights:
-    'custom_domain': 1.5  # Prioritize Titanic-specific features
-    'statistical_aggregations': 1.0
-    'polynomial_features': 0.7
-    'feature_transformations': 0.8
-    'text_features': 0.5
-  
-  # Generic parameters optimized for Titanic
+    binning: 1.0
+    categorical: 1.1
+    polynomial: 0.8
+    ranking: 0.9
+    statistical: 1.0
+    temporal: 0.7
+    text: 0.6
   generic_params:
-    # Group by categorical columns
-    groupby_columns: ['Sex', 'Pclass', 'Embarked']
-    # Aggregate numeric columns
-    aggregate_columns: ['Age', 'Fare', 'SibSp', 'Parch']
-    # Polynomial settings
+    groupby_columns:
+    - Sex
+    - Pclass
+    - Embarked
+    aggregate_columns:
+    - Age
+    - Fare
+    - SibSp
+    - Parch
     polynomial_degree: 2
-    # Binning settings
     binning_bins: 5
-  
-  # Operations to enable
   generic_operations:
     statistical_aggregations: true
     polynomial_features: true
@@ -88,26 +64,30 @@ feature_space:
     ranking_features: true
     categorical_features: true
     temporal_features: false
-    text_features: true  # For Name, Ticket, Cabin
-
-# Resource management
+    text_features: true
+  '# NOTE': Categories are now discovered dynamically from operation metadata
+  use_dynamic_categories: true
+  category_filter:
+    include:
+    - binning
+    - categorical
+    - polynomial
+    - ranking
+    - statistical
+    - temporal
+    - text
+    exclude: []
+  '# DYNAMIC_CATEGORIES_INFO': Categories and weights are generated from src/features/generic/OPERATION_METADATA
 resources:
   max_memory_gb: 8
   max_threads: 4
   force_gc_interval: 50
-
-# Logging for feature generation details
 logging:
-  level: 'INFO'  # Use DEBUG to see each feature generation
+  level: INFO
   progress_interval: 10
   show_memory_usage: true
   log_feature_generation: true
-
-# Data configuration
 data:
   duckdb:
     max_memory_gb: 4
     enable_sampling: true
-
-# Example usage:
-# python mcts.py --config config/mcts_config_titanic_new_pipeline.yaml

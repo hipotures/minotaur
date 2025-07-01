@@ -41,7 +41,7 @@ Slow, inconsistent            Fast, deterministic
 
 ### Feature Categories (Origin Types)
 - **Train Features** (`origin='train'`): Original dataset columns (Nitrogen, Phosphorous, Potassium, etc.)
-- **Generic Features** (`origin='generic'`): Domain-agnostic operations (statistical, polynomial, binning, ranking, temporal, text, categorical)
+- **Generic Features** (`origin='generic'`): Domain-agnostic operations (binning, categorical, polynomial, ranking, statistical, temporal, text (dynamically discovered))
 - **Custom Features** (`origin='custom'`): Domain-specific operations (agricultural indicators, market sentiment, etc.)
 
 ### Feature Classification
