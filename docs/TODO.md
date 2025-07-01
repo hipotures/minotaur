@@ -105,7 +105,7 @@ Create validation script that compares:
 - Suggest commands to fix synchronization issues
 - Run as part of health check system
 
-**Fixed in commit:** [COMMIT_HASH_TO_BE_FILLED]
+**Fixed in commit:** 41a0323
 
 **Priority:** Medium  
 **Estimated Effort:** 1-2 hours
