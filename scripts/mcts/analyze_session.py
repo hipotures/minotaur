@@ -116,15 +116,30 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
 
 def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
     """Draw ASCII tree structure showing MCTS exploration."""
-    # Get tree data
-    query = """
-    SELECT mcts_node_id, operation_applied, parent_node_id, 
-           evaluation_score, node_visits, mcts_ucb1_score
-    FROM exploration_history 
-    WHERE session_id = ?
-    ORDER BY iteration
+    # Get tree data with visit counts from mcts_tree_nodes if available
+    tree_query = """
+    SELECT t.node_id, e.operation_applied, t.parent_node_id,
+           t.evaluation_score, t.visit_count, e.mcts_ucb1_score
+    FROM mcts_tree_nodes t
+    JOIN exploration_history e ON t.session_id = e.session_id AND t.node_id = e.mcts_node_id
+    WHERE t.session_id = ?
+    ORDER BY t.node_id
     """
-    records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
+    
+    tree_records = db.db_service.connection_manager.execute_query(tree_query, params=(session_id,), fetch='all')
+    
+    if not tree_records:
+        # Fallback to exploration_history only
+        query = """
+        SELECT mcts_node_id, operation_applied, parent_node_id, 
+               evaluation_score, node_visits, mcts_ucb1_score
+        FROM exploration_history 
+        WHERE session_id = ?
+        ORDER BY iteration
+        """
+        records = db.db_service.connection_manager.execute_query(query, params=(session_id,), fetch='all')
+    else:
+        records = tree_records
     
     if not records:
         return "❌ No tree data found"
@@ -268,15 +283,29 @@ def analyze_operation_performance(db: FeatureDiscoveryDB, session_id: str) -> Di
 def analyze_mcts_behavior(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, Any]:
     """Analyze MCTS-specific behavior (exploration vs exploitation)."""
     
-    # Visit distribution
-    visit_query = """
-    SELECT mcts_node_id, MAX(node_visits) as max_visits
-    FROM exploration_history 
-    WHERE session_id = ? AND mcts_node_id IS NOT NULL
-    GROUP BY mcts_node_id
+    # Visit distribution - check both mcts_tree_nodes (new) and exploration_history (legacy)
+    tree_visit_query = """
+    SELECT node_id, visit_count
+    FROM mcts_tree_nodes 
+    WHERE session_id = ?
     """
     
-    visit_records = db.db_service.connection_manager.execute_query(visit_query, params=(session_id,), fetch='all')
+    tree_visit_records = db.db_service.connection_manager.execute_query(tree_visit_query, params=(session_id,), fetch='all')
+    
+    if tree_visit_records:
+        # Use new mcts_tree_nodes table with accurate backpropagation data
+        visit_records = tree_visit_records
+        visit_source = "mcts_tree_nodes"
+    else:
+        # Fallback to legacy exploration_history table
+        visit_query = """
+        SELECT mcts_node_id, MAX(node_visits) as max_visits
+        FROM exploration_history 
+        WHERE session_id = ? AND mcts_node_id IS NOT NULL
+        GROUP BY mcts_node_id
+        """
+        visit_records = db.db_service.connection_manager.execute_query(visit_query, params=(session_id,), fetch='all')
+        visit_source = "exploration_history"
     
     if not visit_records:
         return {"error": "No node visit data found"}
@@ -295,6 +324,7 @@ def analyze_mcts_behavior(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, 
     
     behavior = {
         "node_statistics": {
+            "visit_data_source": visit_source,
             "total_unique_nodes": len(visit_counts),
             "single_visit_nodes": sum(1 for v in visit_counts if v == 1),
             "multi_visit_nodes": sum(1 for v in visit_counts if v > 1),
@@ -460,6 +490,8 @@ def print_analysis_summary(analysis: Dict[str, Any]):
         print(f"  Exploration Ratio: {behavior.get('exploration_ratio', 0)}")
         print(f"  Max Node Visits: {node_stats.get('max_visits', 0)}")
         print(f"  Multi-visit Nodes: {node_stats.get('multi_visit_nodes', 0)}")
+        if 'visit_data_source' in node_stats:
+            print(f"  Visit Data Source: {node_stats['visit_data_source']}")
     
     # Timeline Sample
     timeline = analysis.get("timeline", [])
