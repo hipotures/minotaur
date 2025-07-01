@@ -506,12 +506,14 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
             logger.error(f"Error in {self.domain_name} {self.get_operation_name()}: {e}")
             return {}
     
-    def _auto_register_custom_operation_metadata(self, features: Dict[str, pd.Series], origin: str = 'custom', **kwargs):
+    def _auto_register_custom_operation_metadata(self, features: Dict[str, pd.Series], origin: str = 'custom', operation_name: str = None, **kwargs):
         """
         Automatically register custom operation metadata in the database.
         
         Args:
             features: Generated features dictionary
+            origin: Feature origin type ('train', 'generic', 'custom')
+            operation_name: Specific operation name to use (overrides self.get_operation_name())
             **kwargs: Additional parameters passed to generate_features
         """
         try:
@@ -534,7 +536,7 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                 logger.debug(f"Using main database for custom auto-registration: {db_path}")
             
             # Get operation details
-            operation_name = self.get_operation_name()
+            operation_name_to_use = operation_name or self.get_operation_name()
             
             # Infer output patterns from generated features
             output_patterns = self._infer_output_patterns(features)
@@ -552,9 +554,9 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         is_generic = EXCLUDED.is_generic,
                         output_patterns = EXCLUDED.output_patterns
                 """, [
-                    operation_name,
+                    operation_name_to_use,
                     'custom_domain',  # category for custom operations
-                    f'Custom {operation_name} operation for {self.domain_name}',
+                    f'Custom {operation_name_to_use} operation for {self.domain_name}',
                     self.domain_name,  # dataset_name
                     False,  # is_generic = False
                     output_patterns
@@ -575,12 +577,12 @@ class CustomFeatureOperation(AbstractFeatureOperation, FeatureTimingMixin):
                         feature_name,
                         'custom_domain',
                         self.__class__.__name__,  # Actual class name
-                        operation_name,
+                        operation_name_to_use,
                         None,  # Let database set description or leave NULL
                         origin
                     ])
                 
-                logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name}' (domain: {self.domain_name})")
+                logger.info(f"✅ Auto-registered {len(features)} custom features for operation '{operation_name_to_use}' (domain: {self.domain_name})")
                 
         except Exception as e:
             logger.error(f"❌ Auto-registration failed for custom operation '{self.get_operation_name()}': {e}")

@@ -28,7 +28,7 @@ class TemporalFeatures(GenericFeatureOperation):
     
     def get_operation_name(self) -> str:
         """Return operation name."""
-        return "Temporal Features"
+        return "temporal_features"
     
     def _generate_features_impl(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate temporal features based on parameters."""

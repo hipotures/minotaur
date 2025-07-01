@@ -330,13 +330,13 @@ class FeatureSpace:
                 is_custom_op = current_operation in self.operations and self.operations[current_operation].category == 'custom_domain'
                 
                 if is_custom_op and self.dataset_name:
-                    # For custom operations, look for "{dataset} Custom Features"
+                    # For custom operations, use the specific operation name
                     query = """
                         SELECT DISTINCT feature_name 
                         FROM feature_catalog 
                         WHERE operation_name = ?
                     """
-                    operation_name_to_query = f"{self.dataset_name} Custom Features"
+                    operation_name_to_query = current_operation
                     result = self.duckdb_manager.connection.execute(query, [operation_name_to_query]).fetchall()
                 else:
                     # For generic operations, handle naming differences

@@ -61,19 +61,31 @@ class BaseDomainFeatures(CustomFeatureOperation):
                 logger.info(f"Generating {operation_name} features for {self.domain_name}")
                 features = operation_func(df, **operation_kwargs)
                 all_features.update(features)
+                
+                # Register each operation separately if auto-registration enabled
+                if self._auto_registration_enabled and features and auto_register:
+                    logger.debug(f"Auto-registering {len(features)} features for operation '{operation_name}'")
+                    self._register_operation_features(operation_name, features, origin=origin, dataset_db_path=dataset_db_path, **operation_kwargs)
+                    
             except Exception as e:
                 logger.error(f"Error generating {operation_name} features: {e}")
                 continue
         
         self.log_timing_summary(f"{self.domain_name} - All Features")
         
-        # Handle auto-registration if enabled and features were generated
-        logger.debug(f"Auto-registration check: enabled={self._auto_registration_enabled}, features={len(all_features)}, auto_register={auto_register}")
-        if self._auto_registration_enabled and all_features and auto_register:
-            logger.debug(f"Attempting auto-registration for {len(all_features)} custom features")
-            self._auto_register_custom_operation_metadata(all_features, origin=origin, dataset_db_path=dataset_db_path, **operation_kwargs)
-        
         return all_features
+    
+    def _register_operation_features(self, operation_name: str, features: Dict[str, pd.Series], **kwargs):
+        """
+        Register features for a specific operation with correct operation_name.
+        
+        Args:
+            operation_name: Name of the specific operation (e.g., 'family_size_features')
+            features: Dictionary of generated features
+            **kwargs: Additional parameters including origin and dataset_db_path
+        """
+        # Call the parent's auto-registration method with the specific operation name
+        self._auto_register_custom_operation_metadata(features, operation_name=operation_name, **kwargs)
     
     def generate_specific_features(self, df: pd.DataFrame, 
                                   operation_name: str, 

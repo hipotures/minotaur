@@ -28,7 +28,7 @@ class CategoricalFeatures(GenericFeatureOperation):
     
     def get_operation_name(self) -> str:
         """Return operation name."""
-        return "Categorical Features"
+        return "categorical_features"
     
     def _generate_features_impl(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate categorical features based on parameters."""

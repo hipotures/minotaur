@@ -29,7 +29,7 @@ class TextFeatures(GenericFeatureOperation):
     
     def get_operation_name(self) -> str:
         """Return operation name."""
-        return "Text Features"
+        return "text_features"
     
     def _generate_features_impl(self, df: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate text features based on parameters."""
