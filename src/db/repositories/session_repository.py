@@ -201,7 +201,7 @@ class SessionRepository(BaseRepository[Session]):
                 WHERE session_id = ?
             """
             
-            with self.connection_manager.get_connection() as conn:
+            with self.conn_manager.get_connection() as conn:
                 conn.execute(query, values)
             
             self.logger.debug(f"Successfully updated session {session.session_id} using direct UPDATE")
