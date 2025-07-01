@@ -21,17 +21,6 @@ CREATE INDEX IF NOT EXISTS idx_operation_categories_category ON operation_catego
 CREATE INDEX IF NOT EXISTS idx_operation_categories_dataset ON operation_categories(dataset_name);
 CREATE INDEX IF NOT EXISTS idx_operation_categories_generic ON operation_categories(is_generic);
 
--- Create view for easy feature-operation mapping queries
-CREATE OR REPLACE VIEW feature_operation_mapping AS
-SELECT 
-    fc.feature_name,
-    fc.operation_name,
-    oc.category,
-    oc.dataset_name,
-    oc.is_generic,
-    oc.output_patterns
-FROM feature_catalog fc
-LEFT JOIN operation_categories oc ON fc.operation_name = oc.operation_name;
 
 -- Insert initial generic operation categories
 INSERT INTO operation_categories (operation_name, category, description, is_generic, output_patterns) VALUES

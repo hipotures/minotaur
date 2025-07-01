@@ -3,7 +3,6 @@
 
 -- Create sequences for DuckDB autoincrement
 CREATE SEQUENCE IF NOT EXISTS exploration_history_id_seq;
-CREATE SEQUENCE IF NOT EXISTS feature_catalog_id_seq;
 CREATE SEQUENCE IF NOT EXISTS feature_impact_id_seq;
 CREATE SEQUENCE IF NOT EXISTS operation_performance_id_seq;
 CREATE SEQUENCE IF NOT EXISTS system_performance_id_seq;
@@ -29,26 +28,6 @@ CREATE TABLE IF NOT EXISTS exploration_history (
     notes VARCHAR
 );
 
--- Feature catalog with Python code
-CREATE TABLE IF NOT EXISTS feature_catalog (
-    id BIGINT PRIMARY KEY DEFAULT nextval('feature_catalog_id_seq'),
-    feature_name VARCHAR UNIQUE NOT NULL,
-    feature_category VARCHAR NOT NULL,
-    python_code VARCHAR NOT NULL,
-    dependencies JSON,
-    description VARCHAR,
-    created_by VARCHAR DEFAULT 'mcts',
-    creation_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT TRUE,
-    computational_cost DOUBLE DEFAULT 1.0,
-    data_type VARCHAR DEFAULT 'float64',
-    operation_name VARCHAR,
-    origin VARCHAR
-);
-
--- Indexes for feature_catalog
-CREATE INDEX IF NOT EXISTS idx_feature_catalog_operation ON feature_catalog(operation_name);
-CREATE INDEX IF NOT EXISTS idx_feature_catalog_origin ON feature_catalog(origin);
 
 -- Feature impact analysis
 CREATE TABLE IF NOT EXISTS feature_impact (
@@ -117,11 +96,9 @@ DROP TABLE IF EXISTS system_performance;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS operation_performance;
 DROP TABLE IF EXISTS feature_impact;
-DROP TABLE IF EXISTS feature_catalog;
 DROP TABLE IF EXISTS exploration_history;
 
 DROP SEQUENCE IF EXISTS system_performance_id_seq;
 DROP SEQUENCE IF EXISTS operation_performance_id_seq;
 DROP SEQUENCE IF EXISTS feature_impact_id_seq;
-DROP SEQUENCE IF EXISTS feature_catalog_id_seq;
 DROP SEQUENCE IF EXISTS exploration_history_id_seq;

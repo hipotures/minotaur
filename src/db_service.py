@@ -373,22 +373,95 @@ class DatabaseService:
         )
         
         results = []
-        for impact in impacts:
-            # Get feature details
-            feature = self.feature_repo.find_by_name(impact.feature_name)
-            
-            if feature:
+        
+        # Get dataset name to access correct dataset database
+        dataset_name = self.config.get('autogluon', {}).get('dataset_name')
+        if not dataset_name:
+            self.logger.warning("No dataset_name in config, returning impacts without feature details")
+            for impact in impacts:
                 results.append({
                     'feature_name': impact.feature_name,
-                    'feature_category': feature.feature_category.value,
+                    'feature_category': 'unknown',
                     'impact_delta': impact.impact_delta,
                     'impact_percentage': impact.impact_percentage,
                     'with_feature_score': impact.with_feature_score,
                     'sample_size': impact.sample_size,
-                    'python_code': feature.python_code,
-                    'computational_cost': feature.computational_cost,
+                    'python_code': f'# Feature: {impact.feature_name}',
+                    'computational_cost': 1.0,
                     'session_id': impact.session_id
                 })
+            return results
+        
+        # Connect to dataset database for feature details
+        import duckdb
+        from pathlib import Path
+        dataset_db_path = Path("cache") / dataset_name / "dataset.duckdb"
+        
+        if not dataset_db_path.exists():
+            self.logger.warning(f"Dataset database not found: {dataset_db_path}")
+            for impact in impacts:
+                results.append({
+                    'feature_name': impact.feature_name,
+                    'feature_category': 'unknown',
+                    'impact_delta': impact.impact_delta,
+                    'impact_percentage': impact.impact_percentage,
+                    'with_feature_score': impact.with_feature_score,
+                    'sample_size': impact.sample_size,
+                    'python_code': f'# Feature: {impact.feature_name}',
+                    'computational_cost': 1.0,
+                    'session_id': impact.session_id
+                })
+            return results
+        
+        try:
+            with duckdb.connect(str(dataset_db_path)) as conn:
+                for impact in impacts:
+                    # Get feature details from dataset database
+                    feature_result = conn.execute(
+                        "SELECT feature_category, python_code, computational_cost FROM feature_catalog WHERE feature_name = ?", 
+                        [impact.feature_name]
+                    ).fetchone()
+                    
+                    if feature_result:
+                        results.append({
+                            'feature_name': impact.feature_name,
+                            'feature_category': feature_result[0],
+                            'impact_delta': impact.impact_delta,
+                            'impact_percentage': impact.impact_percentage,
+                            'with_feature_score': impact.with_feature_score,
+                            'sample_size': impact.sample_size,
+                            'python_code': feature_result[1],
+                            'computational_cost': feature_result[2],
+                            'session_id': impact.session_id
+                        })
+                    else:
+                        # Feature not found in catalog
+                        results.append({
+                            'feature_name': impact.feature_name,
+                            'feature_category': 'unknown',
+                            'impact_delta': impact.impact_delta,
+                            'impact_percentage': impact.impact_percentage,
+                            'with_feature_score': impact.with_feature_score,
+                            'sample_size': impact.sample_size,
+                            'python_code': f'# Feature: {impact.feature_name}',
+                            'computational_cost': 1.0,
+                            'session_id': impact.session_id
+                        })
+        except Exception as e:
+            self.logger.error(f"Error accessing dataset database: {e}")
+            for impact in impacts:
+                results.append({
+                    'feature_name': impact.feature_name,
+                    'feature_category': 'unknown',
+                    'impact_delta': impact.impact_delta,
+                    'impact_percentage': impact.impact_percentage,
+                    'with_feature_score': impact.with_feature_score,
+                    'sample_size': impact.sample_size,
+                    'python_code': f'# Feature: {impact.feature_name}',
+                    'computational_cost': 1.0,
+                    'session_id': impact.session_id
+                })
+            return results
         
         return results
     
@@ -457,7 +530,29 @@ class DatabaseService:
         Returns:
             Python code or None if not found
         """
-        return self.feature_repo.get_feature_code(feature_name)
+        # Get dataset name to access correct dataset database
+        dataset_name = self.config.get('autogluon', {}).get('dataset_name')
+        if not dataset_name:
+            return f'# Feature: {feature_name} (no dataset configured)'
+        
+        # Connect to dataset database for feature code
+        import duckdb
+        from pathlib import Path
+        dataset_db_path = Path("cache") / dataset_name / "dataset.duckdb"
+        
+        if not dataset_db_path.exists():
+            return f'# Feature: {feature_name} (dataset database not found)'
+        
+        try:
+            with duckdb.connect(str(dataset_db_path)) as conn:
+                result = conn.execute(
+                    "SELECT python_code FROM feature_catalog WHERE feature_name = ?", 
+                    [feature_name]
+                ).fetchone()
+                return result[0] if result else f'# Feature: {feature_name} (not found in catalog)'
+        except Exception as e:
+            self.logger.error(f"Error getting feature code: {e}")
+            return f'# Feature: {feature_name} (error accessing catalog)'
     
     def close_session(self, status: str = 'completed') -> None:
         """

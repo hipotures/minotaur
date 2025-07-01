@@ -324,12 +324,28 @@ class FeatureSpace:
         if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
             try:
                 # Use dynamic database query to get features for this operation
-                query = """
-                    SELECT feature_name 
-                    FROM feature_catalog 
-                    WHERE operation_name = ?
-                """
-                result = self.duckdb_manager.connection.execute(query, [current_operation]).fetchall()
+                # Handle naming differences (underscores vs spaces, case differences)
+                
+                # Check if this is a custom domain operation
+                is_custom_op = current_operation in self.operations and self.operations[current_operation].category == 'custom_domain'
+                
+                if is_custom_op and self.dataset_name:
+                    # For custom operations, look for "{dataset} Custom Features"
+                    query = """
+                        SELECT DISTINCT feature_name 
+                        FROM feature_catalog 
+                        WHERE operation_name = ?
+                    """
+                    operation_name_to_query = f"{self.dataset_name} Custom Features"
+                    result = self.duckdb_manager.connection.execute(query, [operation_name_to_query]).fetchall()
+                else:
+                    # For generic operations, handle naming differences
+                    query = """
+                        SELECT DISTINCT feature_name 
+                        FROM feature_catalog 
+                        WHERE LOWER(REPLACE(operation_name, ' ', '_')) = LOWER(?)
+                    """
+                    result = self.duckdb_manager.connection.execute(query, [current_operation]).fetchall()
                 operation_features = [row[0] for row in result]
                 
                 if operation_features:

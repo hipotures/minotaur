@@ -21,7 +21,7 @@ class RankingFeatures(GenericFeatureOperation):
     """Generate ranking and percentile features."""
     
     def get_operation_name(self) -> str:
-        return "Ranking Features"
+        return "ranking_features"
     
     def _generate_features_impl(self, df: pd.DataFrame,
                                numeric_cols: Optional[List[str]] = None,

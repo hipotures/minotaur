@@ -26,7 +26,7 @@ class BinningFeatures(GenericFeatureOperation):
         self.min_unique_values = 2  # Minimum unique values to create bins
     
     def get_operation_name(self) -> str:
-        return "Binning Features"
+        return "binning_features"
     
     def _generate_features_impl(self, df: pd.DataFrame,
                                numeric_cols: Optional[List[str]] = None,

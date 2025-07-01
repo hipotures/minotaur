@@ -316,17 +316,36 @@ class FeatureDiscoveryRunner:
         
         train_path, target_column, id_column = dataset_info
         
-        # Load actual CSV file to get column names
+        # Get active train features from feature_catalog
+        # This respects the feature configuration (is_active=True)
         try:
-            df = pd.read_csv(train_path, nrows=1)  # Read only header
-            all_columns = set(df.columns)
+            # Use DuckDB connection to get active train features
+            cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
+            cache_db_path = cache_dir / 'dataset.duckdb'
             
-            # Remove target and ID columns from features
-            features = all_columns.copy()
-            if target_column and target_column in features:
-                features.remove(target_column)
-            if id_column and id_column in features:
-                features.remove(id_column)
+            if cache_db_path.exists():
+                import duckdb
+                with duckdb.connect(str(cache_db_path)) as conn:
+                    # Get active train features from feature_catalog, excluding target and ID columns
+                    features_result = conn.execute("""
+                        SELECT feature_name 
+                        FROM feature_catalog 
+                        WHERE origin = 'train' AND is_active = TRUE
+                          AND feature_name NOT IN (?, ?)
+                    """, [target_column.lower() if target_column else '', 
+                         id_column.lower() if id_column else '']).fetchall()
+                    features = set(row[0] for row in features_result)
+            else:
+                # Fallback to CSV if DuckDB cache not available
+                df = pd.read_csv(train_path, nrows=1)  # Read only header
+                all_columns = set(col.lower() for col in df.columns)  # Convert to lowercase
+                
+                # Remove target and ID columns from features
+                features = all_columns.copy()
+                if target_column and target_column.lower() in features:
+                    features.remove(target_column.lower())
+                if id_column and id_column.lower() in features:
+                    features.remove(id_column.lower())
             
             logger = logging.getLogger(__name__)
             logger.info(f"Loaded {len(features)} initial features from {dataset_name}: {sorted(features)}")

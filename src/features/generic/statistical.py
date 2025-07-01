@@ -21,7 +21,7 @@ class StatisticalFeatures(GenericFeatureOperation):
     """Generate statistical aggregation features."""
     
     def get_operation_name(self) -> str:
-        return "Statistical Aggregations"
+        return "statistical_aggregations"
     
     def _generate_features_impl(self, df: pd.DataFrame, 
                                groupby_cols: Optional[List[str]] = None,

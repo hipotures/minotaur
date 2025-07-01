@@ -6,8 +6,6 @@ CREATE INDEX IF NOT EXISTS idx_exploration_session ON exploration_history(sessio
 CREATE INDEX IF NOT EXISTS idx_exploration_score ON exploration_history(evaluation_score DESC);
 CREATE INDEX IF NOT EXISTS idx_exploration_timestamp ON exploration_history(timestamp);
 CREATE INDEX IF NOT EXISTS idx_exploration_iteration ON exploration_history(session_id, iteration);
-CREATE INDEX IF NOT EXISTS idx_feature_name ON feature_catalog(feature_name);
-CREATE INDEX IF NOT EXISTS idx_feature_category ON feature_catalog(feature_category);
 CREATE INDEX IF NOT EXISTS idx_impact_delta ON feature_impact(impact_delta DESC);
 CREATE INDEX IF NOT EXISTS idx_impact_session ON feature_impact(session_id);
 CREATE INDEX IF NOT EXISTS idx_operation_session ON operation_performance(session_id);
@@ -17,22 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_datasets_name ON datasets(dataset_name);
 CREATE INDEX IF NOT EXISTS idx_datasets_last_used ON datasets(last_used DESC);
 CREATE INDEX IF NOT EXISTS idx_datasets_active ON datasets(is_active);
 
--- Analytics views
-CREATE VIEW IF NOT EXISTS top_features AS
-SELECT 
-    fc.feature_name,
-    fc.feature_category,
-    fi.impact_delta,
-    fi.impact_percentage,
-    fi.with_feature_score,
-    fi.sample_size,
-    fc.python_code,
-    fc.computational_cost,
-    fi.session_id
-FROM feature_catalog fc
-JOIN feature_impact fi ON fc.feature_name = fi.feature_name
-WHERE fi.impact_delta > 0
-ORDER BY fi.impact_delta DESC;
 
 -- Session summary statistics
 CREATE VIEW IF NOT EXISTS session_summary AS
@@ -89,7 +71,6 @@ ORDER BY effectiveness_score DESC;
 DROP VIEW IF EXISTS operation_ranking;
 DROP VIEW IF EXISTS discovery_timeline;
 DROP VIEW IF EXISTS session_summary;
-DROP VIEW IF EXISTS top_features;
 
 DROP INDEX IF EXISTS idx_datasets_active;
 DROP INDEX IF EXISTS idx_datasets_last_used;
@@ -99,8 +80,6 @@ DROP INDEX IF EXISTS idx_sessions_start;
 DROP INDEX IF EXISTS idx_operation_session;
 DROP INDEX IF EXISTS idx_impact_session;
 DROP INDEX IF EXISTS idx_impact_delta;
-DROP INDEX IF EXISTS idx_feature_category;
-DROP INDEX IF EXISTS idx_feature_name;
 DROP INDEX IF EXISTS idx_exploration_iteration;
 DROP INDEX IF EXISTS idx_exploration_timestamp;
 DROP INDEX IF EXISTS idx_exploration_score;

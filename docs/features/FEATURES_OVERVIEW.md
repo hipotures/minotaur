@@ -111,11 +111,19 @@ python manager.py features --catalog
 
 ## 🗄️ Feature Catalog and Origin System
 
+### Feature Catalog Database Location
+The `feature_catalog` table is **dataset-specific** and located in **dataset databases only**:
+
+- **Location**: `cache/{dataset_name}/dataset.duckdb` (dataset-specific databases)
+- **NOT in**: `data/minotaur.duckdb` (main database)
+- **Architecture**: Each dataset has its own `feature_catalog` table
+- **MCTS Access**: MCTS operations access dataset databases for feature details
+
 ### Feature Origin Classification
 The system now tracks feature origin to enable comprehensive feature management:
 
 ```sql
--- Complete feature catalog with origins
+-- Complete feature catalog with origins (in dataset database)
 SELECT origin, COUNT(*) as count FROM feature_catalog GROUP BY origin;
 -- Result: train (10), generic (427), custom (varies)
 ```
@@ -130,6 +138,7 @@ All features are automatically registered during dataset import and feature gene
 1. **Train Features**: Original columns automatically registered when dataset is imported
 2. **Generated Features**: Auto-registered during feature generation with appropriate origin classification
 3. **No Manual Management**: Feature catalog is maintained automatically without user intervention
+4. **Dataset Isolation**: Each dataset maintains its own feature catalog independently
 
 ### MCTS Integration Benefits
 - **Complete Feature Visibility**: MCTS can now see all available features (original + generated)

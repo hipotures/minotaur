@@ -26,7 +26,7 @@ class PolynomialFeatures(GenericFeatureOperation):
         self.max_interaction_features = 3  # Limit interactions to first N features
     
     def get_operation_name(self) -> str:
-        return "Polynomial Features"
+        return "polynomial_features"
     
     def _generate_features_impl(self, df: pd.DataFrame,
                                numeric_cols: Optional[List[str]] = None,

@@ -270,6 +270,32 @@ feature_space.generate_all_features_pipeline()  # New method
 
 ## 🧮 MCTS Integration
 
+### Database Access Architecture for MCTS
+
+**MCTS Database Access Pattern**:
+MCTS operations require access to both main database and dataset databases:
+
+```python
+# MCTS accesses two database types:
+# 1. Main Database (data/minotaur.duckdb) - for session and impact tracking
+# 2. Dataset Database (cache/{dataset_name}/dataset.duckdb) - for feature metadata and data
+
+class DatabaseService:
+    def get_best_features(self, limit: int = 10):
+        # 1. Get feature impacts from main database
+        impacts = self.feature_impact_repo.get_top_performing_features(limit, session_id)
+        
+        # 2. Get feature details from dataset database
+        dataset_name = self.config.get('autogluon', {}).get('dataset_name')
+        dataset_db_path = Path("cache") / dataset_name / "dataset.duckdb"
+        
+        with duckdb.connect(str(dataset_db_path)) as conn:
+            feature_result = conn.execute(
+                "SELECT feature_category, python_code, computational_cost FROM feature_catalog WHERE feature_name = ?",
+                [impact.feature_name]
+            ).fetchone()
+```
+
 ### Feature Column Selection
 
 **MCTS Node Structure**:
@@ -280,14 +306,15 @@ node_features = {
     'operations': ['statistical_aggregations', 'custom_domain']
 }
 
-# Column mapping for SQL queries
+# Column mapping for SQL queries (accesses dataset database)
 selected_columns = feature_space.get_feature_columns_for_node(node)
 # Returns: ['Nitrogen', 'Phosphorous', ..., 'Nitrogen_mean_by_Soil_Type', 'NP_ratio']
 ```
 
-**SQL Query Generation**:
+**SQL Query Generation** (Dataset Database):
 ```sql
--- MCTS selects specific columns for evaluation
+-- MCTS selects specific columns for evaluation from dataset database
+-- Connect to: cache/{dataset_name}/dataset.duckdb
 SELECT 
     Nitrogen, Phosphorous, Potassium, Soil_Type, Crop_Type,  -- Base features
     Nitrogen_mean_by_Soil_Type, Phosphorous_std_by_Crop_Type, -- Statistical
@@ -385,10 +412,22 @@ python manager.py datasets --update NAME --regenerate-features
 
 ## 🗃️ Database Schema Integration
 
+### Feature Catalog Database Location
+
+**Important: Dataset-Specific Feature Catalogs**
+
+The `feature_catalog` table is **dataset-specific** and located in **dataset databases only**:
+
+- **Location**: `cache/{dataset_name}/dataset.duckdb` (each dataset has its own)
+- **NOT in**: `data/minotaur.duckdb` (main database)
+- **Architecture**: Each dataset maintains its own independent `feature_catalog` table
+- **MCTS Access**: MCTS operations query dataset databases for feature details and metadata
+
 ### Feature Metadata Tables
 
-**Feature Catalog** (`feature_catalog`):
+**Feature Catalog** (`feature_catalog`) - Located in Dataset Database:
 ```sql
+-- Located in: cache/{dataset_name}/dataset.duckdb
 CREATE TABLE feature_catalog (
     feature_name VARCHAR PRIMARY KEY,
     dataset_name VARCHAR,
@@ -429,25 +468,35 @@ CREATE TABLE feature_dependencies (
 
 ### Query Examples
 
-**Feature Performance Analysis**:
+**Feature Performance Analysis** (requires dataset database access):
 ```sql
 -- Top performing features across all sessions
+-- NOTE: feature_catalog is in dataset database, feature_impact is in main database
+-- This query requires joining across database connections
+
+-- 1. Query dataset database for feature metadata:
+-- Connect to: cache/fertilizer-s5e6/dataset.duckdb
 SELECT 
-    fc.feature_name,
-    fc.category,
-    COUNT(fi.session_id) as session_count,
-    AVG(fi.impact) as avg_impact,
-    MAX(fi.impact) as max_impact
-FROM feature_catalog fc
-JOIN feature_impact fi ON fc.feature_name = fi.feature_name
-GROUP BY fc.feature_name, fc.category
-ORDER BY avg_impact DESC
-LIMIT 20;
+    feature_name,
+    category,
+    generation_time,
+    has_signal
+FROM feature_catalog;
+
+-- 2. Query main database for impact data:
+-- Connect to: data/minotaur.duckdb  
+SELECT 
+    feature_name,
+    AVG(impact_delta) as avg_impact,
+    COUNT(session_id) as session_count
+FROM feature_impact
+GROUP BY feature_name;
 ```
 
-**Dataset Feature Summary**:
+**Dataset Feature Summary** (dataset database only):
 ```sql
 -- Feature generation summary for dataset
+-- Connect to: cache/{dataset_name}/dataset.duckdb
 SELECT 
     category,
     COUNT(*) as feature_count,
@@ -457,6 +506,19 @@ FROM feature_catalog
 WHERE dataset_name = 'fertilizer-s5e6'
 GROUP BY category
 ORDER BY feature_count DESC;
+```
+
+**MCTS Feature Access Pattern**:
+```python
+# MCTS accesses features from dataset database
+dataset_name = config.get('autogluon', {}).get('dataset_name')
+dataset_db_path = Path("cache") / dataset_name / "dataset.duckdb"
+
+with duckdb.connect(str(dataset_db_path)) as conn:
+    feature_result = conn.execute(
+        "SELECT python_code, computational_cost FROM feature_catalog WHERE feature_name = ?", 
+        [feature_name]
+    ).fetchone()
 ```
 
 ## 🔧 Configuration Integration
