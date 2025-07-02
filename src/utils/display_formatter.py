@@ -53,8 +53,7 @@ class DisplayFormatter:
         """Format a header title."""
         if self.plain_mode:
             clean_title = self._clean_text(title)
-            border = "=" * len(clean_title)
-            return f"{border}\n{clean_title}\n{border}"
+            return f"\n{clean_title}\n"
         else:
             return Panel.fit(title, style=style)
     
@@ -62,8 +61,7 @@ class DisplayFormatter:
         """Format a section header."""
         if self.plain_mode:
             clean_title = self._clean_text(title)
-            border = "-" * len(clean_title)
-            return f"\n{clean_title}\n{border}"
+            return f"\n{clean_title}\n"
         else:
             return Panel.fit(title, style=style)
     
@@ -189,12 +187,10 @@ class DisplayFormatter:
         result = []
         if title:
             result.append(f"\n{title}")
-            result.append("-" * len(title))
         
         # Header row
         header_row = " | ".join(h.ljust(col_widths[h]) for h in headers)
         result.append(header_row)
-        result.append("-" * len(header_row))
         
         # Data rows
         for row in data:
@@ -226,7 +222,6 @@ class DisplayFormatter:
         result = []
         if title:
             result.append(f"\n{self._clean_text(title)}")
-            result.append("-" * len(self._clean_text(title)))
         
         max_key_len = max(len(str(k)) for k in pairs.keys()) if pairs else 0
         
