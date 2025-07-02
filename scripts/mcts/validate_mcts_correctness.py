@@ -44,6 +44,9 @@ class MCTSCorrectnessValidator:
         config = {
             'database': {
                 'path': db_path
+            },
+            'logging': {
+                'level': 'WARNING'  # Suppress verbose DB logs in scripts
             }
         }
         self.conn_manager = DuckDBConnectionManager(config)

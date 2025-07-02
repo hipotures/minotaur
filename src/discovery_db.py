@@ -42,10 +42,6 @@ class FeatureDiscoveryDB:
         self.read_only = read_only
         
         # Initialize the new database service layer
-        import traceback
-        stack_info = ''.join(traceback.format_stack()[-3:-1])  # Get caller info
-        print(f"🔍 FeatureDiscoveryDB created with read_only={read_only}")
-        print(f"📍 Called from:\n{stack_info}")
         self.db_service = DatabaseService(config, read_only=read_only)
         
         # Extract session information from the service

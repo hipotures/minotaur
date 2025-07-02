@@ -296,7 +296,14 @@ def main():
     try:
         config = load_default_config()
         
+        # Temporarily change logging level to prevent console handlers in scripts
+        original_log_level = config.get('logging', {}).get('level', 'INFO')
+        config['logging']['level'] = 'WARNING'  # This prevents DEBUG console handlers
+        
         db = FeatureDiscoveryDB(config, read_only=True)
+        
+        # Restore original log level in config
+        config['logging']['level'] = original_log_level
     except Exception as e:
         print(f"❌ Failed to connect to database: {e}")
         return 1
@@ -304,8 +311,14 @@ def main():
     # Resolve session using universal resolver (with optional fallback)
     try:
         session_identifier = validate_optional_session_args(args)
+        
+        # Temporarily change logging level for session resolver too
+        config['logging']['level'] = 'WARNING'
         resolver = create_session_resolver(config)
         session_info = resolver.resolve_session(session_identifier)
+        
+        # Restore log level
+        config['logging']['level'] = original_log_level
         session_id = session_info.session_id
         
         print(f"🌳 Visualizing session: {session_id[:8]}... ({session_info.session_name})")
