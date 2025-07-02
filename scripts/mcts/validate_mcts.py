@@ -14,9 +14,15 @@ Usage:
     python scripts/mcts/validate_mcts.py --latest
 """
 
+# Suppress verbose logging FIRST, before any imports that might trigger DB connections
+import logging
+logging.getLogger('DB').setLevel(logging.WARNING)
+logging.getLogger('db').setLevel(logging.WARNING)  # Database connection manager logger
+logging.getLogger().setLevel(logging.WARNING)
+logging.getLogger('src').setLevel(logging.WARNING)
+
 import sys
 import argparse
-import logging
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -358,11 +364,6 @@ def main():
     # Load configuration and initialize database
     try:
         config = load_default_config()
-        
-        # Suppress verbose logging for cleaner script output
-        logging.getLogger('DB').setLevel(logging.WARNING)
-        logging.getLogger().setLevel(logging.WARNING)
-        logging.getLogger('src').setLevel(logging.WARNING)
         
         # Suppress stdout temporarily for FeatureDiscoveryDB creation
         import io, contextlib

@@ -13,9 +13,15 @@ Usage:
     python scripts/mcts/validate_mcts_correctness.py --all
 """
 
+# Suppress verbose logging FIRST, before any imports that might trigger DB connections
+import logging
+logging.getLogger('DB').setLevel(logging.WARNING)
+logging.getLogger('db').setLevel(logging.WARNING)  # Database connection manager logger
+logging.getLogger().setLevel(logging.WARNING)
+logging.getLogger('src').setLevel(logging.WARNING)
+
 import sys
 import argparse
-import logging
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -528,12 +534,6 @@ def main():
     parser.add_argument('--db-path', default='data/minotaur.duckdb', help='Path to DuckDB database')
     
     args = parser.parse_args()
-    
-    # Suppress verbose logging for cleaner script output
-    import logging
-    logging.getLogger('DB').setLevel(logging.WARNING)
-    logging.getLogger().setLevel(logging.WARNING)
-    logging.getLogger('src').setLevel(logging.WARNING)
     
     validator = MCTSCorrectnessValidator(args.db_path)
     

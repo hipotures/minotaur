@@ -10,11 +10,29 @@ Usage:
     python scripts/mcts/analyze_session.py --latest --detailed
 """
 
+# Suppress verbose logging FIRST, before any imports that might trigger DB connections
+import logging
 import sys
+
+# Create a null handler to completely suppress console output for specific loggers
+class NullHandler(logging.Handler):
+    def emit(self, record):
+        pass
+
+# Aggressively suppress database logging
+for logger_name in ['DB', 'db', 'src.db', 'src.discovery_db']:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.CRITICAL)
+    logger.handlers.clear()
+    logger.addHandler(NullHandler())
+    logger.propagate = False
+
+# Also suppress root logger INFO and below
+logging.getLogger().setLevel(logging.WARNING)
+
 import os
 import json
 import argparse
-import logging
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -691,20 +709,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Suppress verbose logging for cleaner script output (BEFORE loading anything)
-    logging.getLogger('DB').setLevel(logging.WARNING)
-    logging.getLogger().setLevel(logging.WARNING)
-    logging.getLogger('src').setLevel(logging.WARNING)
-    
     # Load configuration and initialize database
     try:
         config = load_default_config()
         
-        # Suppress stdout temporarily for FeatureDiscoveryDB creation
-        import io, contextlib
-        f = io.StringIO()
-        with contextlib.redirect_stdout(f):
-            db = FeatureDiscoveryDB(config, read_only=True)
+        db = FeatureDiscoveryDB(config, read_only=True)
     except Exception as e:
         print(f"❌ Failed to connect to database: {e}")
         return 1

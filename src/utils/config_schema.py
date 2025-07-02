@@ -211,7 +211,7 @@ class DatabaseConfig(BaseModel):
     """Database configuration validation."""
     path: str = Field(min_length=1, description="Database file path")
     type: str = Field(pattern=r'^(duckdb|sqlite)$', description="Database type")
-    schema: str = Field(default="main", description="Database schema")
+    db_schema: str = Field(default="main", description="Database schema")
     backup_path: str = Field(default="data/backups/", description="Backup directory")
     backup_interval: int = Field(ge=1, le=10000, description="Backup every N operations")
     backup_prefix: str = Field(default="minotaur_backup_", max_length=50)

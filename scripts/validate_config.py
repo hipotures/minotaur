@@ -302,6 +302,7 @@ if __name__ == "__main__":
     # Suppress logging output for cleaner tool output
     logging.getLogger().setLevel(logging.WARNING)
     logging.getLogger('DB').setLevel(logging.WARNING)
+    logging.getLogger('db').setLevel(logging.WARNING)  # Database connection manager logger
     logging.getLogger('src').setLevel(logging.WARNING)
     
     try:

@@ -10,10 +10,16 @@ Usage:
     python scripts/mcts/monitor_live.py --latest --refresh 5
 """
 
+# Suppress verbose logging FIRST, before any imports that might trigger DB connections
+import logging
+logging.getLogger('DB').setLevel(logging.WARNING)
+logging.getLogger('db').setLevel(logging.WARNING)  # Database connection manager logger
+logging.getLogger().setLevel(logging.WARNING)
+logging.getLogger('src').setLevel(logging.WARNING)
+
 import sys
 import time
 import argparse
-import logging
 import signal
 import yaml
 from pathlib import Path
@@ -374,11 +380,6 @@ def main():
     # Load configuration and initialize database
     try:
         config = load_default_config()
-        
-        # Suppress verbose logging for cleaner script output
-        logging.getLogger('DB').setLevel(logging.WARNING)
-        logging.getLogger().setLevel(logging.WARNING)
-        logging.getLogger('src').setLevel(logging.WARNING)
         
         db = FeatureDiscoveryDB(config, read_only=True)
     except Exception as e:
