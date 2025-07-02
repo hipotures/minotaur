@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Test script for DuckDB integration in MCTS feature discovery system.
+DEPRECATED: Test script for DuckDB integration in MCTS feature discovery system.
+
+⚠️  This test uses legacy DuckDBDataManager. For new tests, use SQLAlchemyDataManager.
 
 Tests:
 1. DuckDB availability and version
@@ -58,7 +60,7 @@ def test_duckdb_data_manager():
     logger.info("🧪 Testing DuckDB data manager...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
+        from src.legacy.duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
         
         if not is_duckdb_available():
             logger.error("❌ DuckDB not available for data manager")
@@ -179,7 +181,7 @@ def test_sampling_simulation():
     logger.info("🧪 Testing sampling simulation...")
     
     try:
-        from src.duckdb_data_manager import estimate_sample_efficiency
+        from src.legacy.duckdb_data_manager import estimate_sample_efficiency
         
         # Test efficiency estimates
         test_cases = [

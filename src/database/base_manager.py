@@ -61,6 +61,32 @@ class DatabaseManager:
                 result = conn.execute(query)
             return [dict(row._mapping) for row in result]
     
+    def execute_ddl(self, query: str, params: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Execute DDL (CREATE, DROP, ALTER) statement
+        
+        Args:
+            query: DDL SQL statement
+            params: Optional query parameters
+        """
+        with self.engine.begin() as conn:
+            conn.execute(text(query), params or {})
+    
+    def execute_dml(self, query: str, params: Optional[Dict[str, Any]] = None) -> int:
+        """
+        Execute DML (INSERT, UPDATE, DELETE) statement
+        
+        Args:
+            query: DML SQL statement
+            params: Optional query parameters
+            
+        Returns:
+            Number of affected rows
+        """
+        with self.engine.begin() as conn:
+            result = conn.execute(text(query), params or {})
+            return result.rowcount if result.rowcount is not None else 0
+    
     def execute_query_df(self, query: Union[str, Any], params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
         """
         Execute SELECT query and return as DataFrame

@@ -1,11 +1,10 @@
 """
-Service layer for analytics and reporting
+Service layer for analytics and reporting using SQLAlchemy abstraction layer.
 """
 
 from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime, timedelta
 import logging
-from ..repositories import SessionRepository, FeatureRepository, MetricsRepository
 from ..core.utils import format_duration, format_datetime, format_number
 
 
@@ -20,22 +19,24 @@ def safe_parse_datetime(date_str: Union[str, None]) -> Optional[datetime]:
 
 
 class AnalyticsService:
-    """Handles analytics and reporting business logic."""
+    """Handles analytics and reporting business logic using new database abstraction."""
     
-    def __init__(self, session_repo: SessionRepository, 
-                 feature_repo: FeatureRepository,
-                 metrics_repo: MetricsRepository):
-        """Initialize service with repositories.
+    def __init__(self, db_manager):
+        """Initialize service with database manager.
         
         Args:
-            session_repo: Session repository instance
-            feature_repo: Feature repository instance
-            metrics_repo: Metrics repository instance
+            db_manager: Database manager instance from factory
         """
-        self.session_repo = session_repo
-        self.feature_repo = feature_repo
-        self.metrics_repo = metrics_repo
+        self.db_manager = db_manager
         self.logger = logging.getLogger(__name__)
+        
+        # Ensure analytics tables exist
+        self._ensure_analytics_tables()
+        
+        # Legacy compatibility - modules expect repository attributes
+        self.session_repo = self
+        self.feature_repo = self 
+        self.metrics_repo = self
     
     def get_performance_summary(self, days: int = 30, 
                               dataset: Optional[str] = None) -> Dict[str, Any]:
@@ -49,10 +50,10 @@ class AnalyticsService:
             Summary data dictionary
         """
         # Get session statistics
-        stats = self.session_repo.get_session_statistics(days)
+        stats = self.get_session_statistics(days)
         
         # Get top sessions
-        all_sessions = self.session_repo.get_all_sessions()
+        all_sessions = self.get_all_sessions()
         if dataset:
             all_sessions = [s for s in all_sessions if s.get('dataset_name') == dataset]
         
@@ -71,7 +72,7 @@ class AnalyticsService:
                             reverse=True)[:10]
         
         # Get feature impact statistics
-        all_features = self.feature_repo.get_all_features()
+        all_features = self.get_all_features()
         feature_stats = {
             'total_features': len(all_features),
             'positive_features': sum(1 for f in all_features if f['avg_impact'] > 0),
@@ -139,7 +140,7 @@ class AnalyticsService:
         Returns:
             Trend data dictionary
         """
-        trends = self.metrics_repo.get_performance_trends(days, dataset)
+        trends = self.get_performance_trends(days, dataset)
         
         # Calculate trend indicators
         if len(trends) >= 7:
@@ -172,7 +173,7 @@ class AnalyticsService:
         Returns:
             Convergence analysis data
         """
-        convergence_data = self.metrics_repo.get_convergence_analysis(session_id)
+        convergence_data = self.get_convergence_analysis(session_id)
         
         if not convergence_data:
             return {'error': f'No data found for session {session_id}'}
@@ -230,10 +231,10 @@ class AnalyticsService:
             Operation analysis data
         """
         # Get operation metrics
-        op_metrics = self.metrics_repo.get_operation_metrics(days=days)
+        op_metrics = self.get_operation_metrics(days=days)
         
         # Get feature rankings to understand which operations create good features
-        feature_rankings = self.feature_repo.get_feature_rankings(limit=50)
+        feature_rankings = self.get_feature_rankings(limit=50)
         
         # Analyze which operations generate high-impact features
         operation_impact = {}
@@ -291,8 +292,8 @@ class AnalyticsService:
             'summary': self.get_performance_summary(days, dataset),
             'trends': self.get_performance_trends(days, dataset),
             'operations': self.analyze_operations(days),
-            'top_features': self.feature_repo.get_feature_rankings(limit=20),
-            'resource_usage': self.metrics_repo.get_resource_usage()
+            'top_features': self.get_feature_rankings(limit=20),
+            'resource_usage': self.get_resource_usage()
         }
     
     def compare_periods(self, period1_start: str, period1_end: str,
@@ -309,7 +310,7 @@ class AnalyticsService:
             Comparison data
         """
         # Get sessions for each period
-        all_sessions = self.session_repo.get_all_sessions()
+        all_sessions = self.get_all_sessions()
         
         period1_sessions = []
         period2_sessions = []
@@ -371,4 +372,367 @@ class AnalyticsService:
                 'overall_improvement': differences.get('avg_score', {}).get('improved', False),
                 'efficiency_change': differences.get('success_rate', {}).get('percentage', 0)
             }
+        }
+    
+    def _ensure_analytics_tables(self):
+        """Ensure analytics-related tables exist."""
+        self.logger.info("Creating analytics tables if not exist...")
+        
+        # Exploration history table for MCTS tracking
+        exploration_table = """
+        CREATE TABLE IF NOT EXISTS exploration_history (
+            id INTEGER PRIMARY KEY,
+            session_id VARCHAR NOT NULL,
+            node_id VARCHAR,
+            iteration INTEGER,
+            operation_applied VARCHAR,
+            evaluation_score DOUBLE DEFAULT 0.0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            node_visits INTEGER DEFAULT 0,
+            mcts_ucb1_score DOUBLE DEFAULT 0.0,
+            is_best_so_far BOOLEAN DEFAULT false
+        )
+        """
+        
+        # Operation performance table
+        operation_performance_table = """
+        CREATE TABLE IF NOT EXISTS operation_performance (
+            operation_name VARCHAR PRIMARY KEY,
+            operation_category VARCHAR,
+            total_applications INTEGER DEFAULT 0,
+            avg_execution_time DOUBLE DEFAULT 0.0,
+            avg_improvement DOUBLE DEFAULT 0.0,
+            best_improvement DOUBLE DEFAULT 0.0,
+            effectiveness_score DOUBLE DEFAULT 0.0,
+            last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        
+        # System performance table
+        system_performance_table = """
+        CREATE TABLE IF NOT EXISTS system_performance (
+            id INTEGER PRIMARY KEY,
+            session_id VARCHAR NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            memory_usage_mb DOUBLE DEFAULT 0.0,
+            cpu_usage_percent DOUBLE DEFAULT 0.0,
+            gpu_memory_mb DOUBLE DEFAULT 0.0,
+            active_nodes INTEGER DEFAULT 0,
+            evaluation_queue_size INTEGER DEFAULT 0
+        )
+        """
+        
+        self.db_manager.execute_ddl(exploration_table)
+        self.db_manager.execute_ddl(operation_performance_table)
+        self.db_manager.execute_ddl(system_performance_table)
+        self.logger.info("Analytics tables creation completed")
+    
+    # Repository-style methods for legacy compatibility
+    def get_session_statistics(self, days: int) -> Dict[str, Any]:
+        """Get session statistics for the specified period."""
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        query = """
+        SELECT 
+            COUNT(*) as total_sessions,
+            COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_sessions,
+            COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_sessions,
+            COUNT(CASE WHEN status = 'running' THEN 1 END) as running_sessions,
+            AVG(best_score) as avg_score,
+            MAX(best_score) as max_score,
+            AVG(total_iterations) as avg_iterations,
+            SUM(total_iterations) as total_nodes,
+            COUNT(DISTINCT dataset_name) as total_features
+        FROM sessions
+        WHERE start_time >= :cutoff_date
+        """
+        
+        result = self.db_manager.execute_query(query, {'cutoff_date': cutoff_date})
+        stats = result[0] if result else {}
+        
+        # Get status counts separately
+        status_query = """
+        SELECT 
+            status,
+            COUNT(*) as count
+        FROM sessions 
+        WHERE start_time >= :cutoff_date
+        GROUP BY status
+        """
+        
+        status_results = self.db_manager.execute_query(status_query, {'cutoff_date': cutoff_date})
+        status_counts = {row['status']: row['count'] for row in status_results}
+        
+        return {
+            'total_sessions': stats.get('total_sessions', 0),
+            'performance': {
+                'completed_sessions': stats.get('completed_sessions', 0),
+                'avg_score': stats.get('avg_score', 0.0),
+                'max_score': stats.get('max_score', 0.0),
+                'avg_duration': 0,  # Would need session duration calculation
+                'total_duration': 0,  # Would need session duration calculation
+                'total_nodes': stats.get('total_nodes', 0),
+                'total_features': stats.get('total_features', 0)
+            },
+            'status_counts': status_counts
+        }
+    
+    def get_all_sessions(self) -> List[Dict[str, Any]]:
+        """Get all sessions."""
+        query = """
+        SELECT 
+            session_id,
+            session_name,
+            dataset_name,
+            start_time,
+            end_time,
+            status,
+            total_iterations,
+            best_score,
+            config_hash,
+            error_message,
+            strategy,
+            is_test_mode
+        FROM sessions
+        ORDER BY start_time DESC
+        """
+        
+        return self.db_manager.execute_query(query)
+    
+    def get_all_features(self) -> List[Dict[str, Any]]:
+        """Get all features with basic statistics."""
+        query = """
+        WITH feature_stats AS (
+            SELECT 
+                fc.feature_name,
+                fc.feature_category,
+                fc.description,
+                AVG(COALESCE(fi.impact_delta, 0)) as avg_impact,
+                COUNT(fi.id) as total_uses
+            FROM feature_catalog fc
+            LEFT JOIN feature_impact fi ON fc.feature_name = fi.feature_name
+            WHERE fc.is_active = true
+            GROUP BY fc.feature_name, fc.feature_category, fc.description
+        )
+        SELECT 
+            feature_name,
+            feature_category,
+            description,
+            avg_impact,
+            total_uses
+        FROM feature_stats
+        ORDER BY avg_impact DESC NULLS LAST
+        """
+        
+        return self.db_manager.execute_query(query)
+    
+    def get_performance_trends(self, days: int = 30, dataset: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get performance trends over time."""
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        query = """
+        SELECT 
+            DATE(start_time) as date,
+            COUNT(*) as session_count,
+            AVG(best_score) as avg_score,
+            MAX(best_score) as max_score,
+            AVG(total_iterations) as avg_iterations,
+            COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
+            COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count
+        FROM sessions
+        WHERE start_time >= :cutoff_date
+        AND status IN ('completed', 'failed')
+        """
+        
+        params = {'cutoff_date': cutoff_date}
+        
+        if dataset:
+            query += " AND dataset_name = :dataset"
+            params['dataset'] = dataset
+        
+        query += " GROUP BY DATE(start_time) ORDER BY date ASC"
+        
+        return self.db_manager.execute_query(query, params)
+    
+    def get_convergence_analysis(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get score convergence data for a session."""
+        query = """
+        SELECT 
+            id,
+            iteration,
+            operation_applied,
+            evaluation_score,
+            timestamp,
+            node_visits,
+            mcts_ucb1_score,
+            is_best_so_far
+        FROM exploration_history
+        WHERE session_id = :session_id
+        ORDER BY iteration ASC
+        """
+        
+        rows = self.db_manager.execute_query(query, {'session_id': session_id})
+        
+        # Calculate running best score
+        best_score = 0
+        results = []
+        
+        for i, row in enumerate(rows):
+            current_score = row['evaluation_score'] if row['evaluation_score'] is not None else 0
+            best_score = max(best_score, current_score)
+            
+            results.append({
+                'iteration': row['iteration'],
+                'node_id': row['id'],
+                'operation': row['operation_applied'],
+                'score': current_score,
+                'best_score': best_score,
+                'timestamp': row['timestamp'],
+                'visit_count': row['node_visits'],
+                'ucb_score': row['mcts_ucb1_score'],
+                'is_best': row['is_best_so_far']
+            })
+        
+        return results
+    
+    def get_operation_metrics(self, operation_type: Optional[str] = None,
+                            days: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get metrics for operations."""
+        query = """
+        SELECT 
+            operation_name,
+            operation_category,
+            SUM(total_applications) as count,
+            AVG(avg_execution_time) as avg_duration,
+            MAX(avg_execution_time) as max_duration,
+            MIN(avg_execution_time) as min_duration,
+            SUM(total_applications) as total_uses,
+            AVG(avg_improvement) as avg_impact,
+            MAX(best_improvement) as best_impact,
+            AVG(effectiveness_score) as avg_effectiveness
+        FROM operation_performance
+        WHERE 1=1
+        """
+        
+        params = {}
+        
+        if operation_type:
+            query += " AND operation_name = :operation_type"
+            params['operation_type'] = operation_type
+        
+        if days:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            query += " AND last_used >= :cutoff_date"
+            params['cutoff_date'] = cutoff_date
+        
+        query += " GROUP BY operation_name, operation_category ORDER BY count DESC"
+        
+        return self.db_manager.execute_query(query, params)
+    
+    def get_feature_rankings(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get top features ranked by performance."""
+        query = """
+        WITH feature_stats AS (
+            SELECT 
+                fi.feature_name,
+                fc.feature_category,
+                fc.description,
+                COUNT(DISTINCT fi.session_id) as session_count,
+                AVG(fi.impact_delta) as avg_impact,
+                SUM(fi.impact_delta) as total_impact,
+                COUNT(*) as total_uses,
+                SUM(CASE WHEN fi.impact_delta > 0 THEN 1 ELSE 0 END) as positive_uses
+            FROM feature_impact fi
+            JOIN feature_catalog fc ON fi.feature_name = fc.feature_name
+            WHERE fc.is_active = true
+            GROUP BY fi.feature_name, fc.feature_category, fc.description
+        )
+        SELECT 
+            feature_name,
+            feature_category,
+            description,
+            session_count,
+            avg_impact,
+            total_impact,
+            total_uses,
+            CAST(positive_uses AS FLOAT) / total_uses as success_rate
+        FROM feature_stats
+        ORDER BY avg_impact DESC
+        LIMIT :limit
+        """
+        
+        return self.db_manager.execute_query(query, {'limit': limit})
+    
+    def get_resource_usage(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get resource usage statistics."""
+        # Database size estimation
+        db_size_bytes = 0
+        try:
+            import os
+            # Try to get database file size if using DuckDB
+            # This is a simplified approach - in practice would need config access
+            db_size_bytes = 50 * 1024 * 1024  # Default estimate
+        except:
+            pass
+        
+        # Table sizes - simplified for now
+        table_sizes_query = """
+        SELECT 
+            'sessions' as table_name,
+            0 as size_mb
+        UNION ALL
+        SELECT 
+            'feature_catalog' as table_name,
+            0 as size_mb
+        UNION ALL
+        SELECT 
+            'feature_impact' as table_name,
+            0 as size_mb
+        """
+        table_sizes = self.db_manager.execute_query(table_sizes_query)
+        
+        # Session-specific metrics if provided
+        session_metrics = {}
+        if session_id:
+            # Get system performance metrics
+            perf_query = """
+            SELECT 
+                MAX(memory_usage_mb) as max_memory,
+                AVG(cpu_usage_percent) as avg_cpu,
+                MAX(gpu_memory_mb) as max_gpu_memory,
+                MAX(active_nodes) as max_active_nodes
+            FROM system_performance
+            WHERE session_id = :session_id
+            """
+            
+            perf_results = self.db_manager.execute_query(perf_query, {'session_id': session_id})
+            perf = perf_results[0] if perf_results else {}
+            
+            # Get feature and node counts
+            counts_query = """
+            SELECT 
+                COUNT(DISTINCT node_id) as node_count,
+                COUNT(DISTINCT operation_applied) as feature_count
+            FROM exploration_history
+            WHERE session_id = :session_id
+            """
+            
+            counts_results = self.db_manager.execute_query(counts_query, {'session_id': session_id})
+            counts = counts_results[0] if counts_results else {}
+            
+            if perf and counts:
+                session_metrics = {
+                    'max_memory_mb': perf.get('max_memory', 0),
+                    'avg_cpu_percent': perf.get('avg_cpu', 0),
+                    'max_gpu_memory_mb': perf.get('max_gpu_memory', 0),
+                    'max_active_nodes': perf.get('max_active_nodes', 0),
+                    'total_nodes': counts.get('node_count', 0),
+                    'total_features': counts.get('feature_count', 0)
+                }
+        
+        return {
+            'database_size_bytes': db_size_bytes,
+            'database_size_mb': db_size_bytes / (1024 * 1024) if db_size_bytes else 0,
+            'table_sizes': table_sizes,
+            'session_metrics': session_metrics
         }

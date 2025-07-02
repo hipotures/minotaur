@@ -999,9 +999,9 @@ class MCTSEngine:
         try:
             dataset_name = self.config.get('autogluon', {}).get('dataset_name', 'unknown')
             
-            # Ensure we have DuckDB connection
-            if not hasattr(evaluator, 'duckdb_manager') or evaluator.duckdb_manager is None:
-                logger.warning("Cannot save test features - no DuckDB connection")
+            # Ensure we have database connection
+            if not hasattr(evaluator, 'db_manager') or evaluator.db_manager is None:
+                logger.warning("Cannot save test features - no database connection")
                 return
             
             # Always include ID column (but not target since it's test data)
@@ -1010,10 +1010,11 @@ class MCTSEngine:
             
             # Validate columns exist in test_features table
             try:
-                available_columns_result = evaluator.duckdb_manager.connection.execute(
-                    "SELECT name FROM pragma_table_info('test_features')"
-                ).fetchall()
-                available_columns = {col[0] for col in available_columns_result}
+                # Use database-agnostic method to get columns
+                available_columns_result = evaluator.db_manager.execute_query(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_features'"
+                )
+                available_columns = {col['column_name'] for col in available_columns_result}
                 
                 # Filter to only existing columns
                 valid_columns = [col for col in requested_columns if col in available_columns]
@@ -1032,7 +1033,7 @@ class MCTSEngine:
             
             # Load test data with best features
             test_query = f"SELECT {column_list} FROM test_features"
-            test_df = evaluator.duckdb_manager.connection.execute(test_query).df()
+            test_df = evaluator.db_manager.execute_query_df(test_query)
             
             # Save to file
             test_path = f"/tmp/{dataset_name}-test-{self.best_iteration:04d}.csv"

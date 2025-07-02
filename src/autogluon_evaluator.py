@@ -54,7 +54,7 @@ class AutoGluonEvaluator:
         self.target_column = dataset_info['target_column']
         self.id_column = dataset_info['id_column']
         self.ignore_columns = self.autogluon_config.get('ignore_columns', []) or []
-        self.use_duckdb_cache = dataset_info.get('use_duckdb_cache', False)
+        self.use_database_cache = dataset_info.get('use_database_cache', False)
         self.dataset_name = dataset_info.get('dataset_name')
         
         # Load base data once
@@ -106,9 +106,19 @@ class AutoGluonEvaluator:
         
         dataset_id, name, target_col, id_col = result.dataset_id, result.dataset_name, result.target_column, result.id_column
         
-        # Build cache paths
+        # Build cache paths - use database type from config
         cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
-        cache_db_path = cache_dir / 'dataset.duckdb'
+        db_config = self.config.get('database', {})
+        db_type = db_config.get('type', 'duckdb')
+        
+        # Choose file extension based on database type
+        if db_type == 'sqlite':
+            cache_db_path = cache_dir / 'dataset.sqlite'
+        elif db_type == 'duckdb':
+            cache_db_path = cache_dir / 'dataset.duckdb'
+        else:
+            # For PostgreSQL and other databases, use a generic name
+            cache_db_path = cache_dir / 'dataset.db'
         
         if not cache_db_path.exists():
             raise FileNotFoundError(f"Dataset cache not found at {cache_db_path}. Please register the dataset properly.")
@@ -119,7 +129,7 @@ class AutoGluonEvaluator:
             'target_column': target_col,
             'id_column': id_col or 'id',
             'dataset_name': dataset_name,
-            'use_duckdb_cache': True
+            'use_database_cache': True
         }
     
     def _load_base_data(self) -> None:
@@ -131,19 +141,29 @@ class AutoGluonEvaluator:
             
             logger.info(f"Loading base training and test data using backend: {backend}")
             
-            # Initialize DuckDB data manager for persistent storage
-            from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available
+            # Initialize SQLAlchemy database manager for persistent storage
+            from .database.engine_factory import DatabaseFactory
+            from .database.config import DatabaseConfig
             
-            # Use DuckDB for persistent data storage and loading (required for registered datasets)
-            if self.use_duckdb_cache:
-                self.duckdb_manager = DuckDBDataManager(self.config)
+            # Use SQLAlchemy for persistent data storage and loading (required for registered datasets)
+            if self.use_database_cache:
+                # Create database manager using SQLAlchemy Core
+                db_config = self.config.get('database', {})
+                db_type = db_config.get('type', 'duckdb')
                 
-                logger.info(f"Loading data from DuckDB database: {self.database_path}")
-                # Load train and test data from same database using SQL queries
-                self.base_train_data = self.duckdb_manager.execute_query("SELECT * FROM train_features")
-                self.base_test_data = self.duckdb_manager.execute_query("SELECT * FROM test_features")
+                if db_type == 'duckdb':
+                    connection_params = {'database': self.database_path}
+                else:
+                    connection_params = db_config.get('connection_params', {})
+                
+                self.db_manager = DatabaseFactory.create_manager(db_type, connection_params)
+                
+                logger.info(f"Loading data from database: {self.database_path}")
+                # Load train and test data from same database using SQLAlchemy Core
+                self.base_train_data = self.db_manager.execute_query_df("SELECT * FROM train_features")
+                self.base_test_data = self.db_manager.execute_query_df("SELECT * FROM test_features")
             else:
-                raise ValueError("Only registered datasets with DuckDB cache are supported. Please register your dataset first.")
+                raise ValueError("Only registered datasets with database cache are supported. Please register your dataset first.")
             
             # Use full training data - AutoGluon will handle validation split internally via holdout_frac
             self.base_train_data = self.base_train_data.reset_index(drop=True)
@@ -177,7 +197,7 @@ class AutoGluonEvaluator:
                                      node_depth: int = 0, 
                                      iteration: int = 0) -> float:
         """
-        Evaluate a feature set by selecting specific columns from DuckDB.
+        Evaluate a feature set by selecting specific columns from database.
         
         Args:
             feature_columns: List of column names to select from train_features
@@ -205,7 +225,7 @@ class AutoGluonEvaluator:
             eval_config = self.get_current_config()
             logger.debug(f"Using evaluation config: {eval_config}")
             
-            # Prepare data by selecting columns from DuckDB
+            # Prepare data by selecting columns from database
             # For first iteration (baseline), use original train/test tables
             # For subsequent iterations, use train_features/test_features tables with generated features
             if self.evaluation_count == 1:
@@ -328,13 +348,13 @@ class AutoGluonEvaluator:
         if eval_config is None:
             eval_config = self.get_current_config()
         
-        # Ensure we have DuckDB manager
-        if not hasattr(self, 'duckdb_manager') or self.duckdb_manager is None:
-            raise ValueError("DuckDB manager not available for baseline data loading")
+        # Ensure we have database manager
+        if not hasattr(self, 'db_manager') or self.db_manager is None:
+            raise ValueError("Database manager not available for baseline data loading")
         
         # Load original train data (all columns)
         train_query = "SELECT * FROM train"
-        train_data = self.duckdb_manager.connection.execute(train_query).df()
+        train_data = self.db_manager.execute_query_df(train_query)
         
         logger.info(f"📊 Loaded original dataset: {len(train_data)} rows, {len(train_data.columns)} columns")
         logger.debug(f"Train Data Columns: {len(train_data.columns)}")
@@ -362,7 +382,7 @@ class AutoGluonEvaluator:
     
     def _prepare_autogluon_data_from_columns(self, feature_columns: List[str], eval_config: Dict[str, Any] = None) -> TabularDataset:
         """
-        Prepare training and validation data by selecting specific columns from DuckDB.
+        Prepare training and validation data by selecting specific columns from database.
         
         Args:
             feature_columns: List of column names to select from train_features/test_features
@@ -374,16 +394,17 @@ class AutoGluonEvaluator:
         if eval_config is None:
             eval_config = self.get_current_config()
         
-        # Ensure we have DuckDB manager
-        if not hasattr(self, 'duckdb_manager') or self.duckdb_manager is None:
-            raise ValueError("DuckDB manager not available for column-based loading")
+        # Ensure we have database manager
+        if not hasattr(self, 'db_manager') or self.db_manager is None:
+            raise ValueError("Database manager not available for column-based loading")
         
         # Get available columns from train_features to validate
-        available_columns_result = self.duckdb_manager.connection.execute("""
+        columns_query = """
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'train_features'
-        """).fetchall()
-        available_columns = {col[0] for col in available_columns_result}
+        """
+        available_columns_result = self.db_manager.execute_query(columns_query)
+        available_columns = {row['column_name'] for row in available_columns_result}
         
         # Always include ID and target columns
         required_columns = [self.id_column, self.target_column]
@@ -403,7 +424,7 @@ class AutoGluonEvaluator:
         
         # Load train data with specific columns
         train_query = f"SELECT {column_list} FROM train_features"
-        train_data = self.duckdb_manager.connection.execute(train_query).df()
+        train_data = self.db_manager.execute_query_df(train_query)
         
         # Apply train_size sampling if configured
         train_size = eval_config.get('train_size')
@@ -446,7 +467,7 @@ class AutoGluonEvaluator:
         return train_dataset
     
     def _prepare_autogluon_data(self, features_df: pd.DataFrame, eval_config: Dict[str, Any] = None) -> TabularDataset:
-        """Prepare training and validation data for AutoGluon with DuckDB sampling support."""
+        """Prepare training and validation data for AutoGluon with database sampling support."""
         
         # Get current configuration if not provided
         if eval_config is None:
@@ -456,18 +477,28 @@ class AutoGluonEvaluator:
         train_size = eval_config.get('train_size')
         
         if train_size is not None:
-            # Use DuckDB for efficient sampling if available
-            if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+            # Use database-specific efficient sampling if available
+            if hasattr(self, 'db_manager') and self.db_manager is not None:
                 try:
-                    logger.info(f"🚀 Using DuckDB efficient sampling: train_size={train_size}")
-                    train_data = self.duckdb_manager.sample_dataset(
-                        file_path=self.database_path,
-                        train_size=train_size,
-                        stratify_column=self.target_column
-                    )
-                    logger.info(f"✅ DuckDB sampled: {len(train_data)} rows")
+                    logger.info(f"🚀 Using database efficient sampling: train_size={train_size}")
+                    
+                    # Calculate sample size
+                    total_rows = len(train_data)
+                    sample_rows = int(total_rows * train_size)
+                    
+                    # Use database-specific sampling
+                    if hasattr(self.db_manager, 'sample_reservoir'):
+                        # Database has advanced sampling
+                        sample_query = self.db_manager.sample_reservoir(train_query.replace("SELECT *", "SELECT *"), sample_rows)
+                        train_data = self.db_manager.execute_query_df(sample_query)
+                    else:
+                        # Use standard SQL sampling for other databases
+                        sample_query = f"{train_query} ORDER BY RANDOM() LIMIT {sample_rows}"
+                        train_data = self.db_manager.execute_query_df(sample_query)
+                    
+                    logger.info(f"✅ Database sampled: {len(train_data)} rows")
                 except Exception as e:
-                    logger.warning(f"DuckDB sampling failed, falling back to in-memory: {e}")
+                    logger.warning(f"Database sampling failed, falling back to in-memory: {e}")
                     # Fallback to in-memory sampling
                     from .data_utils import prepare_training_data
                     train_data = self.base_train_data.copy()
@@ -651,7 +682,7 @@ class AutoGluonEvaluator:
             'best_score': self.best_score,
             'cache_size': len(self.evaluation_cache),
             'cache_hit_rate': 0.0,  # Would need to track cache hits vs misses
-            'duckdb_available': hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None
+            'database_available': hasattr(self, 'db_manager') and self.db_manager is not None
         }
     
     def cleanup(self) -> None:
@@ -669,13 +700,13 @@ class AutoGluonEvaluator:
         # Clear cache
         self.evaluation_cache.clear()
         
-        # Close DuckDB connection if available
-        if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
+        # Close database connection if available
+        if hasattr(self, 'db_manager') and self.db_manager is not None:
             try:
-                self.duckdb_manager.close()
-                logger.info("Closed DuckDB connection")
+                self.db_manager.close()
+                logger.info("Closed database connection")
             except Exception as e:
-                logger.warning(f"Failed to close DuckDB connection: {e}")
+                logger.warning(f"Failed to close database connection: {e}")
         
         # Remove base temp directory if configured
         if self.resource_config.get('cleanup_temp_on_exit', True):

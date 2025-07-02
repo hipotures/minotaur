@@ -11,6 +11,8 @@ autogluon:
   - XGB
   time_limit: 60
   verbosity: 2
+  train_size: 0.7
+  holdout_frac: 0.2
 feature_space:
   max_features_per_node: 50
   max_cache_size_mb: 256

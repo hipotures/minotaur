@@ -2,7 +2,7 @@
 Database migration tool for moving data between different database engines
 """
 
-from sqlalchemy import inspect, MetaData, Table, create_engine
+from sqlalchemy import inspect, MetaData, Table, create_engine, text
 from sqlalchemy.engine import Engine
 import pandas as pd
 import logging
@@ -75,7 +75,7 @@ class DatabaseMigrator:
             
             # Count total rows in source
             with self.source_engine.connect() as conn:
-                count_result = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+                count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
                 stats['source_rows'] = count_result.scalar()
             
             if dry_run:

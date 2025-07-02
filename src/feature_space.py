@@ -91,7 +91,7 @@ class FeatureSpace:
         self._load_feature_operations()
         
         # Load feature performance stats from exploration history if we have DuckDB access
-        # Temporarily disabled due to connection conflicts between DuckDBDataManager and DuckDBConnectionManager
+        # Temporarily disabled due to connection conflicts between DuckDBDataManager and DatabaseConnectionManager
         # if self.duckdb_manager:
         #     self._load_feature_stats_from_history()
         

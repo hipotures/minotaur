@@ -143,9 +143,9 @@ class RunCommand(BaseSelfCheckCommand):
     
     def _reinitialize_db_pool(self):
         """Reinitialize database connection pool after closing it for subprocess."""
-        from src.db import DuckDBConnectionManager
+        from src.db import DatabaseConnectionManager
         # Get the config and reinitialize the connection pool
-        db_manager = DuckDBConnectionManager(self.config)
+        db_manager = DatabaseConnectionManager(self.config)
         return db_manager.pool
     
     def _test_mcts_integration(self, dataset: str, dataset_info: Dict, verbose: bool, config_file: Optional[str] = None) -> Tuple[bool, Optional[Tuple[str, str]]]:
@@ -245,7 +245,7 @@ class RunCommand(BaseSelfCheckCommand):
                 'max_nodes_in_memory': 1000
             },
             'autogluon': {
-                'dataset_name': dataset_info['dataset_name'],
+                'dataset_name': dataset_info['name'],
                 'target_metric': dataset_info.get('metric', 'accuracy'),
                 'included_model_types': ['XGB'],
                 'enable_gpu': True,

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Test script for persistent DuckDB implementation.
+DEPRECATED: Test script for persistent DuckDB implementation.
+
+⚠️  This test uses legacy DuckDBDataManager. For new tests, use SQLAlchemyDataManager.
 
 Tests:
 1. Database path generation with MD5 hash
@@ -33,7 +35,7 @@ def test_database_path_generation():
     logger.info("🧪 Testing database path generation...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager
+        from src.legacy.duckdb_data_manager import DuckDBDataManager
         
         # Test configuration
         config = {
@@ -79,7 +81,7 @@ def test_database_schema():
     logger.info("🧪 Testing database schema initialization...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager
+        from src.legacy.duckdb_data_manager import DuckDBDataManager
         
         # Create temporary test configuration
         config = {
@@ -154,7 +156,7 @@ def test_data_loading():
     logger.info("🧪 Testing CSV data loading...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager
+        from src.legacy.duckdb_data_manager import DuckDBDataManager
         import pandas as pd
         
         # Create test data
@@ -218,7 +220,7 @@ def test_data_sampling():
     logger.info("🧪 Testing data sampling from database...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager
+        from src.legacy.duckdb_data_manager import DuckDBDataManager
         import pandas as pd
         
         # Use the data from previous test
@@ -285,7 +287,7 @@ def test_feature_caching():
     logger.info("🧪 Testing feature caching...")
     
     try:
-        from src.duckdb_data_manager import DuckDBDataManager
+        from src.legacy.duckdb_data_manager import DuckDBDataManager
         import pandas as pd
         
         config = {

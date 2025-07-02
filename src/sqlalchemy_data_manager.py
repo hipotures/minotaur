@@ -28,7 +28,10 @@ class SQLAlchemyDataManager:
     def __init__(self, config: Dict[str, Any]):
         """Initialize SQLAlchemy data manager with database configuration."""
         self.config = config
-        self.duckdb_config = config.get('data', {}).get('duckdb', {})
+        # Get database-specific config based on current database type
+        db_config = config.get('database', {})
+        db_type = db_config.get('type', 'duckdb')
+        self.database_config = config.get('data', {}).get('database_configs', {}).get(db_type, {})
         self.autogluon_config = config.get('autogluon', {})
         
         # Database configuration
@@ -676,6 +679,23 @@ class SQLAlchemyDataManager:
         try:
             start_time = time.time()
             result = self.db_manager.execute_query_df(query)
+            query_time = time.time() - start_time
+            
+            self.total_query_time += query_time
+            self.query_count += 1
+            
+            logger.debug(f"Executed custom query in {query_time:.3f}s, returned {len(result)} rows")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Query execution failed: {e}")
+            raise
+    
+    def execute_query_dict(self, query: str) -> List[Dict[str, Any]]:
+        """Execute arbitrary SQL query and return list of dictionaries."""
+        try:
+            start_time = time.time()
+            result = self.db_manager.execute_query(query)
             query_time = time.time() - start_time
             
             self.total_query_time += query_time

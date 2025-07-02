@@ -18,18 +18,19 @@ import numpy as np
 from .timing import timed, timing_context, record_timing
 from .feature_cache import FeatureCacheManager
 
-# Import DuckDB manager
+# Import SQLAlchemy data manager
 try:
-    from .duckdb_data_manager import DuckDBDataManager, is_duckdb_available, get_duckdb_version
-    DUCKDB_INTEGRATION_AVAILABLE = True
+    from .sqlalchemy_data_manager import SQLAlchemyDataManager
+    from .database.engine_factory import DatabaseFactory
+    DATABASE_INTEGRATION_AVAILABLE = True
 except ImportError:
-    DUCKDB_INTEGRATION_AVAILABLE = False
-    DuckDBDataManager = None
+    DATABASE_INTEGRATION_AVAILABLE = False
+    SQLAlchemyDataManager = None
 
 logger = logging.getLogger(__name__)
 
 class DataManager:
-    """Optimized data manager with parquet support, caching, and DuckDB backend."""
+    """Optimized data manager with parquet support, caching, and database backend."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize data manager."""
@@ -44,17 +45,22 @@ class DataManager:
         
         # Backend configuration
         data_config = config.get('data', {})
-        self.backend = data_config.get('backend', 'auto')  # 'auto', 'pandas', 'duckdb'
-        self.enable_duckdb_sampling = data_config.get('duckdb', {}).get('enable_sampling', True)
+        self.backend = data_config.get('backend', 'auto')  # 'auto', 'pandas', 'database'
         
-        # Initialize DuckDB backend if available and configured
-        self.duckdb_manager = None
-        if self._should_use_duckdb():
+        # Get database config
+        db_config = config.get('database', {})
+        db_type = db_config.get('type', 'duckdb')
+        database_configs = data_config.get('database_configs', {})
+        self.enable_database_sampling = database_configs.get(db_type, {}).get('enable_sampling', True)
+        
+        # Initialize database backend if available and configured
+        self.database_manager = None
+        if self._should_use_database():
             try:
-                self.duckdb_manager = DuckDBDataManager(config)
-                logger.info(f"✅ DuckDB backend initialized (v{get_duckdb_version()})")
+                self.database_manager = SQLAlchemyDataManager(config)
+                logger.info(f"✅ Database backend initialized ({db_type})")
             except Exception as e:
-                logger.warning(f"DuckDB initialization failed, falling back to pandas: {e}")
+                logger.warning(f"Database initialization failed, falling back to pandas: {e}")
                 self.backend = 'pandas'
         
         # Memory tracking
@@ -63,18 +69,18 @@ class DataManager:
         
         logger.info(f"Initialized DataManager with backend='{self.backend}', cache at: {self.cache_dir}")
     
-    def _should_use_duckdb(self) -> bool:
-        """Determine if DuckDB backend should be used."""
-        if not DUCKDB_INTEGRATION_AVAILABLE:
+    def _should_use_database(self) -> bool:
+        """Determine if database backend should be used."""
+        if not DATABASE_INTEGRATION_AVAILABLE:
             return False
         
         if self.backend == 'pandas':
             return False
-        elif self.backend == 'duckdb':
+        elif self.backend in ['duckdb', 'database']:
             return True
         elif self.backend == 'auto':
             # Auto-detect based on availability and configuration
-            return is_duckdb_available() and self.enable_duckdb_sampling
+            return DATABASE_INTEGRATION_AVAILABLE and self.enable_database_sampling
         
         return False
     
@@ -96,10 +102,10 @@ class DataManager:
         Returns:
             Sampled DataFrame
         """
-        if self.duckdb_manager and self.enable_duckdb_sampling:
-            # Use DuckDB for efficient sampling
+        if self.database_manager and self.enable_database_sampling:
+            # Use database for efficient sampling
             try:
-                return self.duckdb_manager.sample_dataset(
+                return self.database_manager.sample_dataset(
                     file_path=file_path,
                     train_size=train_size,
                     stratify_column=stratify_column
@@ -460,19 +466,19 @@ class DataManager:
         stats = {
             'backend': self.backend,
             'cache_stats': self.get_cache_stats(),
-            'duckdb_available': DUCKDB_INTEGRATION_AVAILABLE,
-            'duckdb_enabled': self.duckdb_manager is not None
+            'database_available': DATABASE_INTEGRATION_AVAILABLE,
+            'database_enabled': self.database_manager is not None
         }
         
-        if self.duckdb_manager:
-            stats['duckdb_stats'] = self.duckdb_manager.get_performance_stats()
+        if self.database_manager:
+            stats['database_stats'] = self.database_manager.get_performance_stats()
         
         return stats
     
     def close(self) -> None:
         """Close all backend connections."""
-        if self.duckdb_manager:
-            self.duckdb_manager.close()
+        if self.database_manager:
+            self.database_manager.close()
     
     def __enter__(self):
         return self

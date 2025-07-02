@@ -15,7 +15,7 @@ import json
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.db.core.connection import DuckDBConnectionManager
+from src.db.core.connection import DatabaseConnectionManager
 
 try:
     from rich.console import Console
@@ -44,7 +44,7 @@ class MCTSTreeVisualizer:
                 'pool_size': 1
             }
         }
-        self.conn_manager = DuckDBConnectionManager(
+        self.conn_manager = DatabaseConnectionManager(
             main_config=config,
             read_only=True
         )

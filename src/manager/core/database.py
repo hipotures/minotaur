@@ -192,11 +192,11 @@ class DatabasePool:
                 sys.path.insert(0, str(src_path))
             
             from db.migrations.migration_runner import MigrationRunner
-            from db.core.connection import DuckDBConnectionManager
+            from db.core.connection import DatabaseConnectionManager
             
             # Create connection manager for migrations
             config = {'database': {'db_path': str(self.db_path)}}
-            conn_manager = DuckDBConnectionManager(config)
+            conn_manager = DatabaseConnectionManager(config)
             
             # Run migrations
             migration_runner = MigrationRunner(conn_manager)

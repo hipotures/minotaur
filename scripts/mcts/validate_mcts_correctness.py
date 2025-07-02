@@ -31,7 +31,7 @@ import math
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.db.core.connection import DuckDBConnectionManager
+from src.db.core.connection import DatabaseConnectionManager
 from src.db.models.exploration import ExplorationStep
 
 class MCTSCorrectnessValidator:
@@ -49,7 +49,7 @@ class MCTSCorrectnessValidator:
                 'level': 'WARNING'  # Suppress verbose DB logs in scripts
             }
         }
-        self.conn_manager = DuckDBConnectionManager(config)
+        self.conn_manager = DatabaseConnectionManager(config)
         self.validation_results = {}
         
     def validate_session(self, session_name: str) -> Dict[str, bool]:

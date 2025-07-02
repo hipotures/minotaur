@@ -99,6 +99,11 @@ class Config:
             'threads': self._config.get('database', {}).get('threads', 4)
         }
     
+    @property
+    def database_settings(self) -> Dict[str, Any]:
+        """Get database settings (alias for duckdb_settings for compatibility)."""
+        return self.duckdb_settings
+    
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by dot-separated key.
         

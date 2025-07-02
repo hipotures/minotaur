@@ -296,7 +296,7 @@ def create_session_resolver(config: Dict[str, Any]) -> SessionResolver:
     Returns:
         Configured SessionResolver instance
     """
-    from src.db import DuckDBConnectionManager
+    from src.db import DatabaseConnectionManager
     
-    connection_manager = DuckDBConnectionManager(config, read_only=True)
+    connection_manager = DatabaseConnectionManager(config, read_only=True)
     return SessionResolver(connection_manager)

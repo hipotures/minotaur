@@ -25,22 +25,13 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.manager.core import Config, DatabaseConnection, DatabasePool, ModuleInterface
-from src.manager.repositories import (
-    SessionRepository, FeatureRepository, 
-    MetricsRepository
-)
-from src.db.repositories.dataset_repository import DatasetRepository
-from src.db.core.connection import DuckDBConnectionManager
-from src.manager.services import (
-    SessionService, FeatureService,
-    DatasetService, AnalyticsService, BackupService
-)
+from src.database.engine_factory import DatabaseFactory
 
 
 from rich.console import Console
 from rich.table import Table
 
-class ModularDuckDBManager:
+class ModularDatabaseManager:
     """Universal database manager with modern architecture."""
     
     def __init__(self):
@@ -56,7 +47,7 @@ class ModularDuckDBManager:
         # Initialize database connection pool
         self.db_pool = DatabasePool(
             self.config.database_path,
-            self.config.duckdb_settings,
+            self.config.database_settings,
             max_connections=3
         )
         
@@ -104,50 +95,36 @@ class ModularDuckDBManager:
         logging.getLogger('seaborn').setLevel(logging.WARNING)
     
     def _init_repositories(self) -> None:
-        """Initialize repository instances."""
-        # Create connection manager for new repository system
-        main_config = {
-            'database': {
-                'path': str(self.config.database_path)
-            }
+        """Initialize repository instances using new database abstraction."""
+        # Create database manager using factory
+        db_config = {
+            'type': 'duckdb',
+            'path': str(self.config.database_path)
         }
-        self.conn_manager = DuckDBConnectionManager(main_config)
         
-        # Run migrations to ensure schema is up to date
-        try:
-            from src.db.migrations.migration_runner import MigrationRunner
-            migration_runner = MigrationRunner(self.conn_manager)
-            status = migration_runner.get_migration_status()
-            
-            if not status['is_up_to_date']:
-                logger = logging.getLogger(__name__)
-                logger.info(f"Running {status['pending_migrations']} pending migrations...")
-                applied = migration_runner.run_migrations()
-                if applied:
-                    logger.info(f"Applied {len(applied)} migrations successfully")
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Migration failed: {e}")
-        
-        # Repositories will get connections from the pool as needed
-        self.repositories = {
-            'session': SessionRepository(self.db_pool),
-            'feature': FeatureRepository(self.db_pool),
-            'dataset': DatasetRepository(self.conn_manager),
-            'metrics': MetricsRepository(self.db_pool)
+        connection_params = {
+            'database': str(self.config.database_path)
         }
+        
+        self.db_manager = DatabaseFactory.create_manager(db_config['type'], connection_params)
+        
+        # Note: Migrations are handled by the new database abstraction layer
     
     def _init_services(self) -> None:
-        """Initialize service instances."""
+        """Initialize service instances using new database abstraction."""
+        # Create services directly with database manager
+        from src.manager.services.dataset_service import DatasetService
+        from src.manager.services.session_service import SessionService
+        from src.manager.services.backup_service import BackupService
+        from src.manager.services.feature_service import FeatureService
+        from src.manager.services.analytics_service import AnalyticsService
+        
         self.services = {
-            'session_service': SessionService(self.repositories['session']),
-            'feature_service': FeatureService(self.repositories['feature']),
-            'dataset_service': DatasetService(self.repositories['dataset']),
-            'analytics_service': AnalyticsService(
-                self.repositories['session'],
-                self.repositories['feature'],
-                self.repositories['metrics']
-            ),
-            'backup_service': BackupService(self.config, self.db_pool)
+            'dataset_service': DatasetService(self.db_manager),
+            'session_service': SessionService(self.db_manager),
+            'backup_service': BackupService(self.config, self.db_manager),
+            'feature_service': FeatureService(self.db_manager),
+            'analytics_service': AnalyticsService(self.db_manager),
         }
     
     def _discover_modules(self) -> None:
@@ -214,7 +191,7 @@ class ModularDuckDBManager:
                     return 0
         
         parser = argparse.ArgumentParser(
-            description="Modular DuckDB Manager - Database management and analytics",
+            description="Modular Database Manager - Database management and analytics",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=self._get_epilog(),
             add_help=False  # Disable automatic help to handle it manually
@@ -348,7 +325,7 @@ For module-specific help:
 
 def main():
     """Main entry point."""
-    manager = ModularDuckDBManager()
+    manager = ModularDatabaseManager()
     
     try:
         return manager.run(sys.argv[1:])

@@ -1,26 +1,54 @@
 """
-Service layer for dataset-related business logic
+Service layer for dataset-related business logic using SQLAlchemy abstraction layer.
 """
 
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import logging
 import json
-from ...db.repositories.dataset_repository import DatasetRepository
+from datetime import datetime
+from ...database.engine_factory import DatabaseFactory
 from ..core.utils import format_number, format_bytes, format_datetime
 
 
 class DatasetService:
-    """Handles dataset-related business logic."""
+    """Handles dataset-related business logic using new database abstraction."""
     
-    def __init__(self, dataset_repository: DatasetRepository):
-        """Initialize service with repository.
+    def __init__(self, db_manager):
+        """Initialize service with database manager.
         
         Args:
-            dataset_repository: Dataset repository instance
+            db_manager: Database manager instance from factory
         """
-        self.repository = dataset_repository
+        self.db_manager = db_manager
         self.logger = logging.getLogger(__name__)
+        
+        # Ensure datasets table exists
+        self._ensure_datasets_table()
+        
+        # Legacy compatibility - modules expect a repository attribute
+        self.repository = self
+    
+    def _ensure_datasets_table(self):
+        """Ensure datasets table exists."""
+        self.logger.info("Creating datasets table if not exists...")
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS datasets (
+            name VARCHAR UNIQUE NOT NULL,
+            dataset_path VARCHAR NOT NULL,
+            target_column VARCHAR,
+            dataset_type VARCHAR DEFAULT 'csv',
+            description VARCHAR,
+            rows_count INTEGER,
+            columns_count INTEGER,
+            file_size_bytes INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT true
+        )
+        """
+        self.db_manager.execute_ddl(create_table_query)
+        self.logger.info("Datasets table creation completed")
     
     def list_datasets(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
         """List all datasets with formatted information.
@@ -29,175 +57,215 @@ class DatasetService:
             include_inactive: Whether to include inactive datasets
             
         Returns:
-            List of formatted dataset summaries
+            List of dataset dictionaries with formatted information
         """
-        datasets = self.repository.get_all_datasets(include_inactive)
+        where_clause = "" if include_inactive else "WHERE is_active = true"
+        query = f"""
+        SELECT * FROM datasets 
+        {where_clause}
+        ORDER BY created_at DESC
+        """
         
+        datasets = self.db_manager.execute_query(query)
+        
+        # Format datasets for display
         formatted_datasets = []
         for dataset in datasets:
-            # Parse metadata
-            metadata = json.loads(dataset['metadata']) if dataset['metadata'] else {}
+            formatted = dict(dataset)
             
-            formatted_datasets.append({
-                'name': dataset['name'],
-                'description': dataset.get('description', 'No description'),
-                'created': format_datetime(dataset['created_at'], 'short'),
-                'last_used': format_datetime(dataset['last_used'], 'relative') if dataset['last_used'] else 'Never',
-                'sessions': format_number(dataset['session_count']),
-                'status': 'Active' if dataset['is_active'] else 'Inactive',
-                'size': format_bytes(metadata.get('file_size_bytes', 0)),
-                'records': format_number(metadata.get('record_count', 0))
-            })
+            # Format file size
+            if formatted.get('file_size_bytes'):
+                formatted['file_size_display'] = format_bytes(formatted['file_size_bytes'])
+            
+            # Format dates
+            if formatted.get('created_at'):
+                formatted['created_at_display'] = format_datetime(formatted['created_at'])
+            
+            # Add row/column count display
+            if formatted.get('rows_count') and formatted.get('columns_count'):
+                formatted['shape_display'] = f"{format_number(formatted['rows_count'])} × {formatted['columns_count']}"
+            
+            formatted_datasets.append(formatted)
         
         return formatted_datasets
     
-    def get_dataset_details(self, dataset_name: str) -> Optional[Dict[str, Any]]:
-        """Get detailed information about a dataset.
-        
-        Args:
-            dataset_name: Name of the dataset
-            
-        Returns:
-            Detailed dataset information or None
-        """
-        dataset = self.repository.get_dataset_by_name(dataset_name)
-        
-        if not dataset:
-            return None
-        
-        # Get statistics
-        stats = self.repository.get_dataset_statistics(dataset_name)
-        
-        # Parse metadata
-        metadata = json.loads(dataset['metadata']) if dataset['metadata'] else {}
-        
-        return {
-            'basic_info': {
-                'name': dataset['name'],
-                'id': dataset['dataset_id'],
-                'description': dataset.get('description', 'No description'),
-                'file_path': dataset['file_path'],
-                'created': format_datetime(dataset['created_at'], 'long'),
-                'updated': format_datetime(dataset['updated_at'], 'long'),
-                'status': 'Active' if dataset['is_active'] else 'Inactive'
-            },
-            'metadata': {
-                'file_size': format_bytes(metadata.get('file_size_bytes', 0)),
-                'record_count': format_number(metadata.get('record_count', 0)),
-                'column_count': metadata.get('column_count', 0),
-                'file_format': metadata.get('file_format', 'Unknown'),
-                'target_column': metadata.get('target_column'),
-                'id_column': metadata.get('id_column')
-            },
-            'usage_statistics': {
-                'total_sessions': stats['session_statistics']['total_sessions'],
-                'completed_sessions': stats['session_statistics']['completed_sessions'],
-                'failed_sessions': stats['session_statistics']['failed_sessions'],
-                'success_rate': (stats['session_statistics']['completed_sessions'] / 
-                               max(1, stats['session_statistics']['total_sessions'])),
-                'avg_score': stats['session_statistics']['avg_score'],
-                'max_score': stats['session_statistics']['max_score']
-            },
-            'feature_statistics': stats['feature_statistics'],
-            'top_features': stats['top_features'][:5]  # Top 5 features
-        }
-    
-    def register_dataset(self, name: str, file_path: str, 
-                        description: Optional[str] = None,
-                        metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Register a new dataset.
+    def get_dataset(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get dataset by name.
         
         Args:
             name: Dataset name
-            file_path: Path to dataset file
-            description: Optional description
-            metadata: Optional metadata
             
         Returns:
-            Registration result
+            Dataset dictionary or None if not found
         """
+        query = "SELECT * FROM datasets WHERE name = :name"
+        results = self.db_manager.execute_query(query, {'name': name})
+        return results[0] if results else None
+    
+    def register_dataset(self, name: str, dataset_path: str, target_column: str = None,
+                        description: str = None, auto_analyze: bool = True) -> Dict[str, Any]:
+        """Register a new dataset.
+        
+        Args:
+            name: Dataset name (must be unique)
+            dataset_path: Path to dataset file
+            target_column: Target column for ML tasks
+            description: Optional description
+            auto_analyze: Whether to automatically analyze dataset
+            
+        Returns:
+            Dictionary with registration result
+        """
+        # Ensure table exists first  
+        self._ensure_datasets_table()
+        
+        path = Path(dataset_path)
+        
+        # Validate path exists
+        if not path.exists():
+            raise ValueError(f"Dataset path does not exist: {dataset_path}")
+        
+        # Auto-analyze if requested
+        rows_count = None
+        columns_count = None
+        file_size_bytes = None
+        
+        if auto_analyze:
+            try:
+                file_size_bytes = path.stat().st_size
+                
+                # Basic dataset analysis
+                if path.suffix.lower() == '.csv':
+                    import pandas as pd
+                    # Read just a sample to get column count
+                    df_sample = pd.read_csv(path, nrows=0)
+                    columns_count = len(df_sample.columns)
+                    
+                    # Estimate row count efficiently
+                    import subprocess
+                    result = subprocess.run(['wc', '-l', str(path)], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        rows_count = int(result.stdout.split()[0]) - 1  # Subtract header
+                        
+            except Exception as e:
+                self.logger.warning(f"Could not analyze dataset {name}: {e}")
+        
+        # Insert dataset record (id will be auto-generated)
+        insert_query = """
+        INSERT INTO datasets 
+        (name, dataset_path, target_column, description, rows_count, columns_count, file_size_bytes)
+        VALUES (:name, :dataset_path, :target_column, :description, :rows_count, :columns_count, :file_size_bytes)
+        """
+        
+        params = {
+            'name': name,
+            'dataset_path': str(path.resolve()),
+            'target_column': target_column,
+            'description': description,
+            'rows_count': rows_count,
+            'columns_count': columns_count,
+            'file_size_bytes': file_size_bytes
+        }
+        
         try:
-            # Check if dataset already exists
-            existing = self.repository.get_dataset_by_name(name)
-            if existing:
-                return {
-                    'success': False,
-                    'error': f'Dataset {name} already exists'
-                }
-            
-            # Validate file exists
-            file_path_obj = Path(file_path)
-            if not file_path_obj.exists():
-                return {
-                    'success': False,
-                    'error': f'File not found: {file_path}'
-                }
-            
-            # Add file info to metadata
-            if metadata is None:
-                metadata = {}
-            
-            metadata['file_size_bytes'] = file_path_obj.stat().st_size
-            metadata['file_name'] = file_path_obj.name
-            
-            # Create dataset
-            dataset_data = {
-                'dataset_name': name,
-                'train_path': str(file_path),
-                'description': description,
-                'target_column': 'unknown',  # Will be overridden by auto/manual registration
-                'metadata': json.dumps(metadata, default=str) if metadata else None
-            }
-            dataset_id = self.repository.create_dataset(dataset_data)
+            self.db_manager.execute_dml(insert_query, params)
+            self.logger.info(f"Registered dataset: {name}")
             
             return {
                 'success': True,
-                'dataset_id': dataset_id,
-                'message': f'Successfully registered dataset: {name}'
+                'message': f"Dataset '{name}' registered successfully",
+                'dataset': self.get_dataset(name)
             }
             
         except Exception as e:
-            self.logger.error(f"Failed to register dataset: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            if "UNIQUE constraint failed" in str(e):
+                raise ValueError(f"Dataset with name '{name}' already exists")
+            else:
+                raise
     
-    def update_dataset(self, dataset_name: str, **updates) -> Dict[str, Any]:
+    def update_dataset(self, name: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Update dataset information.
         
         Args:
-            dataset_name: Name of dataset to update
-            **updates: Fields to update
+            name: Dataset name
+            updates: Dictionary of fields to update
             
         Returns:
-            Update result
+            Updated dataset information
         """
-        dataset = self.repository.get_dataset_by_name(dataset_name)
+        if not updates:
+            return self.get_dataset(name)
         
-        if not dataset:
-            return {
-                'success': False,
-                'error': f'Dataset {dataset_name} not found'
-            }
+        # Build update query
+        set_clauses = []
+        params = {'name': name}
         
-        try:
-            success = self.repository.update_dataset(dataset['dataset_id'], **updates)
+        for key, value in updates.items():
+            if key != 'name':  # Don't allow name changes
+                set_clauses.append(f"{key} = :{key}")
+                params[key] = value
+        
+        if set_clauses:
+            # Add updated_at timestamp
+            set_clauses.append("updated_at = :updated_at")
+            params['updated_at'] = datetime.now()
             
-            return {
-                'success': success,
-                'message': f'Successfully updated dataset: {dataset_name}' if success 
-                          else 'No changes made'
-            }
-        except Exception as e:
-            self.logger.error(f"Failed to update dataset: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            query = f"UPDATE datasets SET {', '.join(set_clauses)} WHERE name = :name"
+            self.db_manager.execute_query(query, params)
+            
+            self.logger.info(f"Updated dataset: {name}")
+        
+        return self.get_dataset(name)
+    
+    def deactivate_dataset(self, name: str) -> Dict[str, Any]:
+        """Deactivate a dataset (soft delete).
+        
+        Args:
+            name: Dataset name
+            
+        Returns:
+            Result of deactivation
+        """
+        query = "UPDATE datasets SET is_active = false, updated_at = :updated_at WHERE name = :name"
+        params = {'name': name, 'updated_at': datetime.now()}
+        
+        self.db_manager.execute_query(query, params)
+        self.logger.info(f"Deactivated dataset: {name}")
+        
+        return {'success': True, 'message': f"Dataset '{name}' deactivated"}
+    
+    def get_dataset_stats(self) -> Dict[str, Any]:
+        """Get overall dataset statistics.
+        
+        Returns:
+            Dictionary with dataset statistics
+        """
+        stats_query = """
+        SELECT 
+            COUNT(*) as total_datasets,
+            COUNT(CASE WHEN is_active = true THEN 1 END) as active_datasets,
+            SUM(file_size_bytes) as total_size_bytes,
+            SUM(rows_count) as total_rows,
+            AVG(columns_count) as avg_columns
+        FROM datasets
+        """
+        
+        results = self.db_manager.execute_query(stats_query)
+        stats = results[0] if results else {}
+        
+        # Format results
+        formatted_stats = {
+            'total_datasets': stats.get('total_datasets', 0),
+            'active_datasets': stats.get('active_datasets', 0),
+            'total_size_display': format_bytes(stats.get('total_size_bytes', 0)),
+            'total_rows_display': format_number(stats.get('total_rows', 0)),
+            'avg_columns': round(stats.get('avg_columns', 0), 1) if stats.get('avg_columns') else 0
+        }
+        
+        return formatted_stats
     
     def search_datasets(self, query: str) -> List[Dict[str, Any]]:
-        """Search for datasets by name or description.
+        """Search datasets by name or description.
         
         Args:
             query: Search query
@@ -205,334 +273,106 @@ class DatasetService:
         Returns:
             List of matching datasets
         """
-        results = self.repository.search_datasets(query)
-        
-        return [
-            {
-                'name': r['name'],
-                'description': r.get('description', 'No description'),
-                'created': format_datetime(r['created_at'], 'short'),
-                'file_path': r['file_path']
-            }
-            for r in results
-        ]
-    
-    def get_dataset_comparisons(self) -> Dict[str, Any]:
-        """Compare performance across all datasets.
-        
-        Returns:
-            Dataset comparison data
+        search_query = """
+        SELECT * FROM datasets 
+        WHERE (name LIKE :query OR description LIKE :query)
+        AND is_active = true
+        ORDER BY created_at DESC
         """
-        all_datasets = self.repository.get_all_datasets()
         
-        comparisons = []
-        for dataset in all_datasets:
-            stats = self.repository.get_dataset_statistics(dataset['name'])
-            
-            comparisons.append({
-                'dataset': dataset['name'],
-                'sessions': stats['session_statistics']['total_sessions'],
-                'avg_score': stats['session_statistics']['avg_score'],
-                'max_score': stats['session_statistics']['max_score'],
-                'unique_features': stats['feature_statistics']['unique_features'],
-                'avg_feature_impact': stats['feature_statistics']['avg_feature_impact']
-            })
-        
-        # Sort by average score
-        comparisons.sort(key=lambda x: x['avg_score'], reverse=True)
-        
-        return {
-            'datasets': comparisons,
-            'summary': {
-                'total_datasets': len(comparisons),
-                'best_performing': comparisons[0]['dataset'] if comparisons else None,
-                'most_active': max(comparisons, key=lambda x: x['sessions'])['dataset'] 
-                             if comparisons else None
-            }
-        }
+        params = {'query': f'%{query}%'}
+        return self.db_manager.execute_query(search_query, params)
     
-    def register_dataset_auto(self, name: str, path: str, 
-                             target_column: Optional[str] = None,
-                             id_column: Optional[str] = None,
-                             competition_name: Optional[str] = None,
-                             description: Optional[str] = None,
-                             force_update: bool = False,
+    def get_all_datasets(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+        """Legacy compatibility method - same as list_datasets."""
+        return self.list_datasets(include_inactive)
+    
+    def register_dataset_auto(self, name: str, path: str, target_column: str = None,
+                             id_column: str = None, competition_name: str = None,
+                             description: str = None, force_update: bool = False,
                              mcts_feature: bool = False) -> Dict[str, Any]:
-        """Auto-register dataset by detecting files in directory.
+        """Auto-register dataset with full analysis and feature extraction.
         
         Args:
             name: Dataset name
-            path: Path to dataset directory
-            target_column: Target column name (CLI parameter)
-            id_column: ID column name (CLI parameter)
-            competition_name: Competition name
+            path: Dataset path
+            target_column: Target column for ML
+            id_column: ID column (optional)
+            competition_name: Competition name (optional)
             description: Dataset description
+            force_update: Whether to update if exists
+            mcts_feature: Whether to enable MCTS features
             
         Returns:
-            Registration result
+            Registration result dictionary
         """
         try:
-            path_obj = Path(path)
-            if not path_obj.exists():
-                return {
-                    'success': False,
-                    'error': f'Directory not found: {path}'
-                }
-            
-            # Import dataset importer dynamically
-            import sys
-            import os
-            # Get the absolute path to src directory
-            current_dir = Path(__file__).resolve()
-            src_dir = current_dir.parent.parent.parent
-            if str(src_dir) not in sys.path:
-                sys.path.insert(0, str(src_dir))
-            
-            from dataset_importer import DatasetImporter
-            
-            # Initialize importer and auto-detect files
-            importer = DatasetImporter(name)
-            file_mappings = importer.auto_detect_files(str(path_obj))
-            
-            if 'train' not in file_mappings:
-                return {
-                    'success': False,
-                    'error': 'No training file found in directory'
-                }
-            
-            # Load config file values (if exists)
-            config_target_column = None
-            config_id_column = None
-            try:
-                import yaml
-                config_path = src_dir / 'config' / 'mcts_config.yaml'
-                if config_path.exists():
-                    with open(config_path, 'r') as f:
-                        config = yaml.safe_load(f)
-                    config_target_column = config.get('autogluon', {}).get('target_column')
-                    config_id_column = config.get('autogluon', {}).get('id_column')
-            except Exception:
-                pass  # Config loading optional
-            
-            # Priority logic: Config → CLI → Auto-detection
-            
-            # TARGET COLUMN
-            final_target_column = config_target_column  # Start with config
-            if target_column:  # CLI overrides config
-                final_target_column = target_column
-            if not final_target_column:  # Auto-detect if both missing
-                final_target_column = importer.detect_target_column(file_mappings['train'])
-                if not final_target_column:
-                    return {
-                        'success': False,
-                        'error': 'Could not auto-detect target column. Please specify --target-column or add target_column to config file'
-                    }
-            
-            # ID COLUMN  
-            final_id_column = config_id_column  # Start with config
-            if id_column:  # CLI overrides config
-                final_id_column = id_column
-            if not final_id_column:  # Auto-detect if both missing
-                final_id_column = importer.detect_id_column(file_mappings['train'])
-                # ID column is optional - just log warning if not found
-                if not final_id_column:
-                    print(f"⚠️  WARNING: Could not auto-detect ID column. Continuing without ID column.")
-            
-            # Update variables for rest of function (lowercase to match database)
-            target_column = final_target_column.lower() if final_target_column else None
-            id_column = final_id_column.lower() if final_id_column else None
-            
-            # Analyze files for metadata
-            metadata = {}
-            for table_name, file_path in file_mappings.items():
-                try:
-                    file_metadata = importer.analyze_file(file_path)
-                    metadata[table_name] = file_metadata
-                except Exception as e:
-                    metadata[table_name] = {'error': str(e)}
-            
-            # Generate dataset ID BEFORE processing to check for duplicates
-            dataset_id = importer.generate_dataset_id(file_mappings)
+            # Ensure table exists first
+            self._ensure_datasets_table()
             
             # Check if dataset already exists
-            existing_dataset = self.repository.get_dataset_by_name(name)
-            if existing_dataset:
-                if not force_update:
-                    return {
-                        'success': False,
-                        'error': f'Dataset with name "{name}" already exists'
-                    }
-                else:
-                    # Force update: remove existing dataset
-                    self.repository.delete(existing_dataset.dataset_id, 'dataset_id')
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"Force update: removed existing dataset '{name}' (ID: {existing_dataset.dataset_id[:8]})")
-            
-            # Check if dataset ID already exists (same data, different name)
-            existing_by_id = self.repository.get_dataset_by_id(dataset_id)
-            if existing_by_id:
+            existing = self.get_dataset(name)
+            if existing and not force_update:
                 return {
                     'success': False,
-                    'error': f'Dataset with identical data already exists as "{existing_by_id["name"]}"'
+                    'message': f"Dataset '{name}' already exists. Use --force-update to overwrite.",
+                    'dataset': existing
                 }
             
-            # Import data to DuckDB (only if no conflicts)
-            duckdb_path = importer.create_duckdb_dataset(file_mappings, target_column, id_column, mcts_feature=mcts_feature)
+            # Build description
+            if not description:
+                description = f"Auto-registered dataset from {path}"
+                if competition_name:
+                    description += f" (Competition: {competition_name})"
             
-            # Build metadata
-            full_metadata = {
-                'auto_detected': True,
-                'source_directory': str(path_obj),
-                'duckdb_path': str(duckdb_path),
-                'file_mappings': file_mappings,
-                'file_analysis': metadata,
-                'target_column': target_column,
-                'id_column': id_column,
-                'competition_name': competition_name
-            }
-            
-            # Register dataset
-            dataset_data = {
-                'dataset_id': dataset_id,
-                'dataset_name': name,
-                'train_path': file_mappings.get('train', ''),
-                'test_path': file_mappings.get('test'),
-                'submission_path': file_mappings.get('submission'),
-                'validation_path': file_mappings.get('validation'),
-                'target_column': target_column,
-                'id_column': id_column,
-                'competition_name': competition_name,
-                'description': description or f'Auto-detected dataset from {path}',
-                'metadata': json.dumps(full_metadata, default=str) if full_metadata else None
-            }
-            dataset_id = self.repository.create_dataset(dataset_data)
-            
-            return {
-                'success': True,
-                'dataset_id': dataset_id,
-                'message': f'Successfully registered dataset: {name}'
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Auto-registration failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def register_dataset_manual(self, name: str, train_path: str,
-                               test_path: Optional[str] = None,
-                               submission_path: Optional[str] = None,
-                               validation_path: Optional[str] = None,
-                               target_column: Optional[str] = None,
-                               id_column: Optional[str] = None,
-                               competition_name: Optional[str] = None,
-                               description: Optional[str] = None,
-                               mcts_feature: bool = False) -> Dict[str, Any]:
-        """Manually register dataset with specified file paths.
-        
-        Args:
-            name: Dataset name
-            train_path: Training data file path
-            test_path: Test data file path
-            submission_path: Submission template file path
-            validation_path: Validation data file path
-            target_column: Target column name
-            id_column: ID column name
-            competition_name: Competition name
-            description: Dataset description
-            
-        Returns:
-            Registration result
-        """
-        try:
-            # Validate train file exists
-            if not Path(train_path).exists():
+            # Register using standard method
+            if existing and force_update:
+                # Update existing dataset
+                updates = {
+                    'dataset_path': str(Path(path).resolve()),
+                    'target_column': target_column,
+                    'description': description
+                }
+                
+                # Re-analyze if requested
+                if force_update:
+                    dataset_path = Path(path)
+                    if dataset_path.exists() and dataset_path.suffix.lower() == '.csv':
+                        try:
+                            import pandas as pd
+                            df_sample = pd.read_csv(dataset_path, nrows=0)
+                            updates['columns_count'] = len(df_sample.columns)
+                            
+                            # Estimate row count
+                            import subprocess
+                            result = subprocess.run(['wc', '-l', str(dataset_path)], capture_output=True, text=True)
+                            if result.returncode == 0:
+                                updates['rows_count'] = int(result.stdout.split()[0]) - 1
+                                
+                            updates['file_size_bytes'] = dataset_path.stat().st_size
+                        except Exception as e:
+                            self.logger.warning(f"Could not re-analyze dataset {name}: {e}")
+                
+                updated_dataset = self.update_dataset(name, updates)
                 return {
-                    'success': False,
-                    'error': f'Training file not found: {train_path}'
+                    'success': True,
+                    'message': f"Dataset '{name}' updated successfully",
+                    'dataset': updated_dataset
                 }
-            
-            # Build metadata
-            metadata = {
-                'auto_detected': False,
-                'train_file': train_path,
-                'test_file': test_path,
-                'submission_file': submission_path,
-                'validation_file': validation_path,
-                'target_column': target_column,
-                'id_column': id_column,
-                'competition_name': competition_name
-            }
-            
-            # Register using the train file
-            dataset_data = {
-                'dataset_name': name,
-                'train_path': train_path,
-                'test_path': test_path,
-                'submission_path': submission_path,
-                'validation_path': validation_path,
-                'target_column': target_column,
-                'id_column': id_column,
-                'competition_name': competition_name,
-                'description': description or f'Manually registered dataset: {name}',
-                'metadata': json.dumps(metadata, default=str) if metadata else None
-            }
-            dataset_id = self.repository.create_dataset(dataset_data)
-            
-            return {
-                'success': True,
-                'dataset_id': dataset_id,
-                'message': f'Successfully registered dataset: {name}'
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Manual registration failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def cleanup_dataset(self, dataset_name: str, remove_sessions: bool = False) -> Dict[str, Any]:
-        """Clean up dataset and optionally remove associated sessions.
-        
-        Args:
-            dataset_name: Name of dataset to clean up
-            remove_sessions: Whether to remove associated sessions
-            
-        Returns:
-            Cleanup result
-        """
-        dataset = self.repository.get_dataset_by_name(dataset_name)
-        
-        if not dataset:
-            return {
-                'success': False,
-                'error': f'Dataset {dataset_name} not found'
-            }
-        
-        try:
-            # Mark dataset as inactive
-            self.repository.update_dataset(dataset['dataset_id'], is_active=False)
-            
-            result = {
-                'success': True,
-                'dataset_deactivated': True,
-                'sessions_removed': 0
-            }
-            
-            if remove_sessions:
-                # This would require session repository access
-                # For now, just return the intent
-                result['message'] = 'Dataset deactivated. Session removal requires manual intervention.'
             else:
-                result['message'] = f'Dataset {dataset_name} has been deactivated.'
-            
-            return result
-            
+                # Register new dataset
+                return self.register_dataset(
+                    name=name,
+                    dataset_path=path,
+                    target_column=target_column,
+                    description=description,
+                    auto_analyze=True
+                )
+                
         except Exception as e:
-            self.logger.error(f"Failed to cleanup dataset: {e}")
+            self.logger.error(f"Auto-registration failed for {name}: {e}")
             return {
                 'success': False,
+                'message': f"Auto-registration failed: {str(e)}",
                 'error': str(e)
             }

@@ -123,21 +123,39 @@ data:
   memory_limit_mb: 500
   use_small_dataset: false
   small_dataset_size: 5000
-  duckdb:
-    enable_sampling: true
-    max_memory_gb: 4
-    temp_directory: /tmp/duckdb_temp
-    use_memory_limit: true
-    persistent_storage: true
-    database_name: features.duckdb
-    auto_load_data: true
-    enable_feature_cache: true
-    max_cached_features: 1000
-    cache_cleanup_threshold: 0.8
-    cache_min_score: 0.1
-    enable_object_cache: true
-    force_compression: zstd
-    enable_progress_bar: false
+  # Database-specific configurations
+  database_configs:
+    duckdb:
+      enable_sampling: true
+      max_memory_gb: 4
+      temp_directory: /tmp/duckdb_temp
+      use_memory_limit: true
+      persistent_storage: true
+      database_name: features.duckdb
+      auto_load_data: true
+      enable_feature_cache: true
+      max_cached_features: 1000
+      cache_cleanup_threshold: 0.8
+      cache_min_score: 0.1
+      enable_object_cache: true
+      force_compression: zstd
+    sqlite:
+      enable_sampling: true
+      database_name: features.sqlite
+      journal_mode: WAL
+      synchronous: NORMAL
+      cache_size: 10000
+      temp_store: MEMORY
+      enable_feature_cache: true
+      max_cached_features: 500
+    postgresql:
+      enable_sampling: true
+      max_connections: 10
+      connection_timeout: 30
+      enable_feature_cache: true
+      max_cached_features: 2000
+      use_connection_pooling: true
+  enable_progress_bar: false
 llm:
   enabled: false
   provider: openai
