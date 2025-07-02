@@ -8,17 +8,14 @@ analysis of MCTS performance.
 import argparse
 from typing import Dict
 try:
-    from manager.core.module_base import ModuleInterface
-    from manager.core.database import DatabaseConnection
-    from manager.repositories import SessionRepository, FeatureRepository, MetricsRepository
-    from manager.services import AnalyticsService
-except ImportError:
+    from src.manager.core.module_base import ModuleInterface
+    from src.manager.core.database import DatabaseConnection
+    from src.manager.services.analytics_service import AnalyticsService
+except ImportError as e:
+    print(f"DEBUG: Import failed: {e}")
     # Skip if dependencies not available
     ModuleInterface = object
     DatabaseConnection = None
-    SessionRepository = None
-    FeatureRepository = None
-    MetricsRepository = None
     AnalyticsService = None
 
 # Import command handlers
