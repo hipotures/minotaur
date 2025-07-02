@@ -174,10 +174,16 @@ class DisplayFormatter:
         markup_pattern = re.compile(r'\[/?[^\]]*\]')
         text = markup_pattern.sub('', text)
         
-        # Clean up extra whitespace
-        text = ' '.join(text.split())
+        # Clean up extra whitespace but preserve line breaks
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Remove extra spaces within each line but keep the line structure
+            cleaned_line = ' '.join(line.split())
+            if cleaned_line.strip():  # Only add non-empty lines
+                cleaned_lines.append(cleaned_line)
         
-        return text
+        return '\n'.join(cleaned_lines)
     
     def _plain_table(self, data: List[Dict[str, Any]], title: str, 
                     headers: Optional[List[str]]) -> str:
