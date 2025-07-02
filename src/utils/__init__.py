@@ -8,6 +8,7 @@ Provides common functionality used across the system including:
 """
 
 from .session_resolver import SessionResolver, SessionInfo, SessionResolutionError, create_session_resolver
+from .display_formatter import DisplayFormatter, get_formatter, set_plain_mode, is_plain_mode
 from .session_args import (
     add_session_argument,
     add_multiple_sessions_argument, 
@@ -31,6 +32,12 @@ __all__ = [
     'SessionInfo', 
     'SessionResolutionError',
     'create_session_resolver',
+    
+    # Display formatting
+    'DisplayFormatter',
+    'get_formatter',
+    'set_plain_mode',
+    'is_plain_mode',
     
     # Session arguments
     'add_session_argument',

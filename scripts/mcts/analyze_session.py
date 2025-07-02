@@ -11,6 +11,7 @@ Usage:
 """
 
 import sys
+import os
 import json
 import argparse
 import logging
@@ -29,7 +30,11 @@ from rich.text import Text
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.discovery_db import FeatureDiscoveryDB
-from src.utils import create_session_resolver, SessionResolutionError, add_universal_optional_session_args, validate_optional_session_args
+from src.utils import (
+    create_session_resolver, SessionResolutionError, 
+    add_universal_optional_session_args, validate_optional_session_args,
+    get_formatter
+)
 
 
 def calculate_tree_depth(db: FeatureDiscoveryDB, session_id: str) -> int:
@@ -498,142 +503,172 @@ def export_analysis(analysis: Dict[str, Any], session_id: str, output_dir: str =
     print(f"📁 Analysis exported to: {filename}")
 
 
-def print_analysis_summary(analysis: Dict[str, Any]):
-    """Print formatted analysis summary using Rich."""
-    console = Console()
+def print_analysis_summary(analysis: Dict[str, Any], use_plain: bool = False):
+    """Print formatted analysis summary using universal formatter."""
+    formatter = get_formatter(force_plain=use_plain)
     
     # Check if this is a resumed session by looking for continuation data
     overview = analysis.get("overview", {})
     is_resumed_session = overview.get('session_resumed', False)
     
     # Main header
-    console.print(Panel.fit("📊 ANALIZA SESJI MCTS", style="bold blue"))
+    header_title = f"{formatter.emoji('📊', '[MCTS]')} ANALIZA SESJI MCTS"
+    formatter.print(formatter.header(header_title, "bold blue"))
     
     if is_resumed_session:
         # For resumed sessions: show global stats first, then continuation stats
-        console.print(Panel.fit("📈 STATYSTYKI CAŁEJ SESJI (WSZYSTKIE URUCHOMIENIA)", style="bold green"))
-        _print_session_overview(console, overview, "global")
-        _print_convergence_pattern(console, analysis.get("convergence", {}), "global")
-        _print_top_operations(console, analysis.get("operations", {}), "global")
-        _print_mcts_behavior(console, analysis.get("mcts_behavior", {}), "global")
+        section_title = f"{formatter.emoji('📈', '[GLOBAL]')} STATYSTYKI CAŁEJ SESJI (WSZYSTKIE URUCHOMIENIA)"
+        formatter.print(formatter.section_header(section_title, "bold green"))
+        _print_session_overview(formatter, overview, "global")
+        _print_convergence_pattern(formatter, analysis.get("convergence", {}), "global")
+        _print_top_operations(formatter, analysis.get("operations", {}), "global")
+        _print_mcts_behavior(formatter, analysis.get("mcts_behavior", {}), "global")
         
-        console.print("\n")
-        console.print(Panel.fit("🔄 STATYSTYKI BIEŻĄCEJ KONTYNUACJI", style="bold yellow"))
-        # TODO: Add continuation-specific stats here when available
-        console.print("[italic]Statystyki kontynuacji będą dostępne po implementacji[/italic]")
+        continuation_title = f"{formatter.emoji('🔄', '[CONTINUATION]')} STATYSTYKI BIEŻĄCEJ KONTYNUACJI"
+        formatter.print(formatter.section_header(continuation_title, "bold yellow"))
+        formatter.print(formatter._format_text("Statystyki kontynuacji będą dostępne po implementacji", "italic"))
     else:
         # For new sessions: show normal stats
-        _print_session_overview(console, overview, "normal")
-        _print_convergence_pattern(console, analysis.get("convergence", {}), "normal")
-        _print_top_operations(console, analysis.get("operations", {}), "normal")
-        _print_mcts_behavior(console, analysis.get("mcts_behavior", {}), "normal")
+        _print_session_overview(formatter, overview, "normal")
+        _print_convergence_pattern(formatter, analysis.get("convergence", {}), "normal")
+        _print_top_operations(formatter, analysis.get("operations", {}), "normal")
+        _print_mcts_behavior(formatter, analysis.get("mcts_behavior", {}), "normal")
     
     # Timeline (always shown at the end)
-    _print_timeline(console, analysis.get("timeline", []))
+    _print_timeline(formatter, analysis.get("timeline", []))
 
 
-def _print_session_overview(console: Console, overview: Dict[str, Any], mode: str):
+def _print_session_overview(formatter, overview: Dict[str, Any], mode: str):
     """Print session overview section."""
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_column("Label", style="cyan")
-    table.add_column("Value", style="white")
+    data = {
+        "Session ID": overview.get('session_id', 'N/A'),
+        "Status": overview.get('status', 'N/A'),
+        "Iterations": str(overview.get('total_iterations', 0)),
+        "Unique Nodes": str(overview.get('unique_nodes', 0)),
+        "Max Depth": str(overview.get('max_tree_depth', 0)),
+        "Best Score": f"{overview.get('best_score_observed', 0):.5f}",
+        "Total Eval Time": f"{overview.get('total_evaluation_time', 0):.1f}s"
+    }
     
-    table.add_row("Session ID:", overview.get('session_id', 'N/A'))
-    table.add_row("Status:", overview.get('status', 'N/A'))
-    table.add_row("Iterations:", str(overview.get('total_iterations', 0)))
-    table.add_row("Unique Nodes:", str(overview.get('unique_nodes', 0)))
-    table.add_row("Max Depth:", str(overview.get('max_tree_depth', 0)))
-    table.add_row("Best Score:", f"{overview.get('best_score_observed', 0):.5f}")
-    table.add_row("Total Eval Time:", f"{overview.get('total_evaluation_time', 0):.1f}s")
-    
-    console.print(Panel(table, title="🔍 Przegląd Sesji", border_style="blue"))
+    title = f"{formatter.emoji('🔍', '[OVERVIEW]')} Przegląd Sesji"
+    formatter.print(formatter.key_value_pairs(data, title, "blue"))
 
 
-def _print_convergence_pattern(console: Console, convergence: Dict[str, Any], mode: str):
+def _print_convergence_pattern(formatter, convergence: Dict[str, Any], mode: str):
     """Print convergence pattern section."""
     if not convergence or "error" in convergence:
         return
-        
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_column("Label", style="cyan")
-    table.add_column("Value", style="white")
     
-    table.add_row("Total Evaluations:", str(convergence.get('total_evaluations', 0)))
-    table.add_row("Improvement Points:", str(convergence.get('improvement_points', 0)))
-    table.add_row("Last Improvement:", f"Iteration {convergence.get('last_improvement_iteration', 0)}")
+    data = {
+        "Total Evaluations": str(convergence.get('total_evaluations', 0)),
+        "Improvement Points": str(convergence.get('improvement_points', 0)),
+        "Last Improvement": f"Iteration {convergence.get('last_improvement_iteration', 0)}"
+    }
     
     score_range = convergence.get('score_range', {})
     if score_range:
-        table.add_row("Score Range:", f"{score_range.get('min', 0):.5f} - {score_range.get('max', 0):.5f}")
+        data["Score Range"] = f"{score_range.get('min', 0):.5f} - {score_range.get('max', 0):.5f}"
     
     eval_times = convergence.get('evaluation_times', {})
     if eval_times:
-        table.add_row("Avg Eval Time:", f"{eval_times.get('avg_time', 0):.2f}s")
+        data["Avg Eval Time"] = f"{eval_times.get('avg_time', 0):.2f}s"
     
-    console.print(Panel(table, title="📈 Wzorzec Konwergencji", border_style="green"))
+    title = f"{formatter.emoji('📈', '[CONVERGENCE]')} Wzorzec Konwergencji"
+    formatter.print(formatter.key_value_pairs(data, title, "green"))
 
 
-def _print_top_operations(console: Console, operations: Dict[str, Any], mode: str):
+def _print_top_operations(formatter, operations: Dict[str, Any], mode: str):
     """Print top performing operations section."""
     if not operations:
         return
-        
-    table = Table(show_header=True, box=None)
-    table.add_column("Rank", style="bold cyan", width=4)
-    table.add_column("Operation", style="white")
-    table.add_column("Avg Score", style="green", justify="right")
-    table.add_column("Uses", style="yellow", justify="right")
     
+    table_data = []
     for i, (op_name, stats) in enumerate(list(operations.items())[:5]):
-        table.add_row(
-            f"{i+1}.",
-            op_name,
-            f"{stats.get('avg_score', 0):.5f}",
-            str(stats.get('usage_count', 0))
-        )
+        table_data.append({
+            "Rank": f"{i+1}.",
+            "Operation": op_name,
+            "Avg Score": f"{stats.get('avg_score', 0):.5f}",
+            "Uses": str(stats.get('usage_count', 0))
+        })
     
-    console.print(Panel(table, title="🎯 Najlepsze Operacje", border_style="yellow"))
+    title = f"{formatter.emoji('🎯', '[OPERATIONS]')} Najlepsze Operacje"
+    headers = ["Rank", "Operation", "Avg Score", "Uses"]
+    
+    table_content = formatter.table(table_data, title, headers)
+    
+    if formatter.plain_mode:
+        formatter.print(table_content)
+    else:
+        # For Rich mode, create Rich table for better styling
+        from rich.table import Table
+        from rich.panel import Panel
+        
+        table = Table(show_header=True, box=None)
+        table.add_column("Rank", style="bold cyan", width=4)
+        table.add_column("Operation", style="white")
+        table.add_column("Avg Score", style="green", justify="right")
+        table.add_column("Uses", style="yellow", justify="right")
+        
+        for row in table_data:
+            table.add_row(row["Rank"], row["Operation"], row["Avg Score"], row["Uses"])
+        
+        formatter.print(Panel(table, title="🎯 Najlepsze Operacje", border_style="yellow"))
 
 
-def _print_mcts_behavior(console: Console, behavior: Dict[str, Any], mode: str):
+def _print_mcts_behavior(formatter, behavior: Dict[str, Any], mode: str):
     """Print MCTS behavior section."""
     if not behavior or "error" in behavior:
         return
-        
+    
     node_stats = behavior.get("node_statistics", {})
     
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_column("Label", style="cyan")
-    table.add_column("Value", style="white")
-    
-    table.add_row("Exploration Ratio:", f"{behavior.get('exploration_ratio', 0):.3f}")
-    table.add_row("Max Node Visits:", str(node_stats.get('max_visits', 0)))
-    table.add_row("Multi-visit Nodes:", str(node_stats.get('multi_visit_nodes', 0)))
+    data = {
+        "Exploration Ratio": f"{behavior.get('exploration_ratio', 0):.3f}",
+        "Max Node Visits": str(node_stats.get('max_visits', 0)),
+        "Multi-visit Nodes": str(node_stats.get('multi_visit_nodes', 0))
+    }
     
     if 'visit_data_source' in node_stats:
-        table.add_row("Visit Data Source:", node_stats['visit_data_source'])
+        data["Visit Data Source"] = node_stats['visit_data_source']
     
-    console.print(Panel(table, title="🌳 Zachowanie MCTS", border_style="magenta"))
+    title = f"{formatter.emoji('🌳', '[MCTS]')} Zachowanie MCTS"
+    formatter.print(formatter.key_value_pairs(data, title, "magenta"))
 
 
-def _print_timeline(console: Console, timeline: List[Dict[str, Any]]):
+def _print_timeline(formatter, timeline: List[Dict[str, Any]]):
     """Print session timeline section."""
     if not timeline:
         return
-        
-    table = Table(show_header=True, box=None)
-    table.add_column("Iteration", style="bold cyan", width=8)
-    table.add_column("Operation", style="white")
-    table.add_column("Score", style="green", justify="right")
     
+    table_data = []
     for event in timeline[:5]:
-        table.add_row(
-            f"Iter {event.get('iteration', 0)}",
-            event.get('operation', 'N/A'),
-            f"{event.get('score', 0):.5f}"
-        )
+        table_data.append({
+            "Iteration": f"Iter {event.get('iteration', 0)}",
+            "Operation": event.get('operation', 'N/A'),
+            "Score": f"{event.get('score', 0):.5f}"
+        })
     
-    console.print(Panel(table, title="⏱️ Timeline Sesji (pierwsze 5 iteracji)", border_style="blue"))
+    title = f"{formatter.emoji('⏱️', '[TIMELINE]')} Timeline Sesji (pierwsze 5 iteracji)"
+    headers = ["Iteration", "Operation", "Score"]
+    
+    table_content = formatter.table(table_data, title, headers)
+    
+    if formatter.plain_mode:
+        formatter.print(table_content)
+    else:
+        # For Rich mode, create Rich table for better styling
+        from rich.table import Table
+        from rich.panel import Panel
+        
+        table = Table(show_header=True, box=None)
+        table.add_column("Iteration", style="bold cyan", width=8)
+        table.add_column("Operation", style="white")
+        table.add_column("Score", style="green", justify="right")
+        
+        for row in table_data:
+            table.add_row(row["Iteration"], row["Operation"], row["Score"])
+        
+        formatter.print(Panel(table, title="⏱️ Timeline Sesji (pierwsze 5 iteracji)", border_style="blue"))
 
 
 def main():
@@ -648,6 +683,7 @@ def main():
     parser.add_argument("--tree", action="store_true", help="Show tree structure in console")
     parser.add_argument("--timeline-limit", type=int, default=20, help="Timeline events to show")
     parser.add_argument("--resumed", action="store_true", help="Indicate this session was resumed")
+    parser.add_argument("--plain", action="store_true", help="Plain text output (no Rich formatting or emoji)")
     
     args = parser.parse_args()
     
@@ -674,7 +710,12 @@ def main():
         session_info = resolver.resolve_session(session_identifier)
         session_id = session_info.session_id
         
-        print(f"📊 Analyzing session: {session_id[:8]}... ({session_info.session_name})")
+        # Use formatter for session info display (respect environment variable if --plain not explicitly set)
+        use_plain = args.plain or os.environ.get('MINOTAUR_PLAIN_OUTPUT', '').lower() in ('1', 'true', 'yes', 'on')
+        formatter = get_formatter(force_plain=use_plain)
+        
+        session_header = f"{formatter.emoji('📊', '[ANALYSIS]')} Analyzing session: {session_id[:8]}... ({session_info.session_name})"
+        print(session_header)
         print(f"   Started: {session_info.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"   Iterations: {session_info.total_iterations}")
         if session_info.best_score is not None:
@@ -708,7 +749,7 @@ def main():
             return 1
         
         # Print summary
-        print_analysis_summary(analysis)
+        print_analysis_summary(analysis, use_plain=use_plain)
         
         # Show tree structure if requested
         if args.tree:
