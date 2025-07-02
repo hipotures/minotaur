@@ -374,6 +374,12 @@ def main():
     # Load configuration and initialize database
     try:
         config = load_default_config()
+        
+        # Suppress verbose logging for cleaner script output
+        logging.getLogger('DB').setLevel(logging.WARNING)
+        logging.getLogger().setLevel(logging.WARNING)
+        logging.getLogger('src').setLevel(logging.WARNING)
+        
         db = FeatureDiscoveryDB(config, read_only=True)
     except Exception as e:
         print(f"❌ Failed to connect to database: {e}")

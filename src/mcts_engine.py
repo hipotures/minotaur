@@ -854,7 +854,7 @@ class MCTSEngine:
         # Try to rebuild tree from database if resuming
         tree_rebuilt = False
         if resume_params['has_history'] and db:
-            session_id = db.current_session_id
+            session_id = db.session_id
             logger.info(f"Attempting to rebuild MCTS tree from database for session {session_id}")
             tree_rebuilt = self.rebuild_tree_from_database(db, session_id, initial_features)
             

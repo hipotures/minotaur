@@ -21,6 +21,10 @@ from .db import (
     Dataset, DatasetCreate
 )
 from .session_output_manager import SessionOutputManager
+from .utils.config_validator import (
+    ConfigValidator, CompatibilityLevel, ValidationResult,
+    validate_configuration, check_config_compatibility, calculate_configuration_hash
+)
 
 
 class DatabaseService:
@@ -54,6 +58,9 @@ class DatabaseService:
         self.feature_impact_repo = FeatureImpactRepository(self.connection_manager)
         self.operation_perf_repo = OperationPerformanceRepository(self.connection_manager)
         self.dataset_repo = DatasetRepository(self.connection_manager)
+        
+        # Configuration validator
+        self.config_validator = ConfigValidator()
         
         # Run migrations to ensure schema is up to date (only for read-write connections)
         if not read_only:
@@ -95,13 +102,15 @@ class DatabaseService:
             raise
     
     def initialize_session(self, session_mode: str = 'new', 
-                         resume_session_id: Optional[str] = None) -> str:
+                         resume_session_id: Optional[str] = None,
+                         force_resume: bool = False) -> str:
         """
         Initialize a new session or resume existing one.
         
         Args:
             session_mode: Session mode ('new', 'continue', 'resume_best')
             resume_session_id: Specific session ID to resume
+            force_resume: Force resume despite configuration warnings
             
         Returns:
             Session ID
@@ -109,7 +118,7 @@ class DatabaseService:
         if session_mode == 'new':
             return self._create_new_session()
         elif session_mode in ['continue', 'resume_best']:
-            return self._resume_session(resume_session_id)
+            return self._resume_session(resume_session_id, force_resume)
         else:
             raise ValueError(f"Unknown session mode: {session_mode}")
     
@@ -124,19 +133,48 @@ class DatabaseService:
         is_test_mode = self.config.get('test_mode', False)
         self.logger.info(f"📊 Creating session with test_mode={is_test_mode}")
         
-        # Calculate dataset hash
+        # Validate configuration values
+        config_dict = self.config.get_config() if hasattr(self.config, 'get_config') else self.config
+        validation_result = self.config_validator.validate_values(config_dict)
+        
+        if not validation_result.is_valid:
+            error_msg = "Configuration validation failed:\n" + "\n".join(validation_result.errors)
+            self.logger.error(error_msg)
+            raise ValueError(f"Invalid configuration: {validation_result.errors[0]}")
+        
+        if validation_result.has_warnings:
+            for warning in validation_result.warnings:
+                self.logger.warning(f"Configuration warning: {warning}")
+        
+        # Calculate configuration hash and dataset hash
+        config_hash = self.config_validator.calculate_config_hash(config_dict)
         dataset_hash = self._calculate_dataset_hash()
+        
+        # Prepare validation errors for storage (warnings only, since errors would block creation)
+        validation_errors = None
+        if validation_result.has_warnings:
+            validation_errors = {
+                'warnings': validation_result.warnings,
+                'validation_timestamp': datetime.now().isoformat()
+            }
         
         # Create session
         session_create = SessionCreate(
             session_id=session_id,
             session_name=session_name,
-            config_snapshot=self.config.get_config() if hasattr(self.config, 'get_config') else self.config,
+            config_snapshot=config_dict,
+            config_hash=config_hash,
             is_test_mode=is_test_mode,
             dataset_hash=dataset_hash
         )
         
         session = self.session_repo.create_session(session_create)
+        
+        # Update session with validation information
+        if validation_errors:
+            self.session_repo.update_session_config_validation(
+                session_id, config_hash, validation_errors
+            )
         
         # Initialize output manager
         self.output_manager = SessionOutputManager(
@@ -160,8 +198,9 @@ class DatabaseService:
         self.logger.info(f"Created new session: {session_name} (ID: {session_id[:8]}...)")
         return session_id
     
-    def _resume_session(self, resume_session_id: Optional[str] = None) -> str:
-        """Resume an existing session."""
+    def _resume_session(self, resume_session_id: Optional[str] = None, 
+                      force_resume: bool = False) -> str:
+        """Resume an existing session with configuration compatibility checking."""
         if resume_session_id:
             # Resume specific session
             session = self.session_repo.find_by_id(resume_session_id, 'session_id')
@@ -175,6 +214,54 @@ class DatabaseService:
                 raise ValueError("No recent sessions found to resume. "
                                "Use --new-session to start a new session.")
             session = recent_sessions[0]
+        
+        # Get current configuration
+        current_config = self.config.get_config() if hasattr(self.config, 'get_config') else self.config
+        
+        # Validate current configuration values first
+        validation_result = self.config_validator.validate_values(current_config)
+        if not validation_result.is_valid:
+            error_msg = "Current configuration validation failed:\n" + "\n".join(validation_result.errors)
+            self.logger.error(error_msg)
+            raise ValueError(f"Invalid current configuration: {validation_result.errors[0]}")
+        
+        # Check configuration compatibility if session has stored config
+        if session.config_snapshot:
+            compatibility_result = self.config_validator.check_compatibility(
+                session.config_snapshot, current_config
+            )
+            
+            # Log compatibility check results
+            for message in compatibility_result.messages:
+                if compatibility_result.level == CompatibilityLevel.INCOMPATIBLE:
+                    self.logger.error(message)
+                elif compatibility_result.level == CompatibilityLevel.WARNING:
+                    self.logger.warning(message)
+                else:
+                    self.logger.info(message)
+            
+            # Handle incompatible configurations
+            if compatibility_result.level == CompatibilityLevel.INCOMPATIBLE:
+                error_msg = f"Cannot resume session {session.session_id[:8]}... due to incompatible configuration changes:\n"
+                error_msg += "\n".join(f"  • {change}" for change in compatibility_result.critical_changes)
+                error_msg += "\n\n💡 Solution: Start a new session with --new-session"
+                raise ValueError(error_msg)
+            
+            # Handle warning-level changes
+            elif compatibility_result.level == CompatibilityLevel.WARNING and not force_resume:
+                warning_msg = f"Session {session.session_id[:8]}... has configuration changes that may affect results:\n"
+                warning_msg += "\n".join(f"  • {change}" for change in compatibility_result.warning_changes)
+                warning_msg += "\n\n💡 Use --force-resume to continue anyway"
+                raise ValueError(warning_msg)
+            
+            # Log successful compatibility check
+            if compatibility_result.is_compatible:
+                self.logger.info(f"✅ Configuration is compatible with session {session.session_id[:8]}...")
+            elif force_resume:
+                self.logger.warning(f"⚠️  Forcing resume of session {session.session_id[:8]}... despite configuration warnings")
+        else:
+            # Legacy session without stored config - log warning
+            self.logger.warning(f"⚠️  Session {session.session_id[:8]}... has no stored configuration - cannot validate compatibility")
         
         # Load resume parameters from database view
         self._load_resume_parameters(session.session_id)

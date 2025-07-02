@@ -81,7 +81,8 @@ class SessionRepository(BaseRepository[Session]):
             columns = [
                 'session_id', 'session_name', 'start_time', 'end_time',
                 'total_iterations', 'best_score', 'config_snapshot', 'status',
-                'strategy', 'is_test_mode', 'notes', 'dataset_hash'
+                'strategy', 'is_test_mode', 'notes', 'dataset_hash',
+                'config_hash', 'validation_errors'
             ]
             data = dict(zip(columns, row))
         
@@ -92,6 +93,12 @@ class SessionRepository(BaseRepository[Session]):
             except (json.JSONDecodeError, TypeError):
                 data['config_snapshot'] = {}
         
+        if isinstance(data.get('validation_errors'), str):
+            try:
+                data['validation_errors'] = json.loads(data['validation_errors'])
+            except (json.JSONDecodeError, TypeError):
+                data['validation_errors'] = None
+        
         # Convert string timestamps to datetime objects
         for field in ['start_time', 'end_time']:
             if field in data and isinstance(data[field], str):
@@ -101,7 +108,7 @@ class SessionRepository(BaseRepository[Session]):
                     data[field] = None
         
         # Handle None values for optional fields
-        for field in ['session_name', 'end_time', 'notes', 'dataset_hash']:
+        for field in ['session_name', 'end_time', 'notes', 'dataset_hash', 'config_hash', 'validation_errors']:
             if field not in data:
                 data[field] = None
         
@@ -490,3 +497,122 @@ class SessionRepository(BaseRepository[Session]):
             })
         
         return trend_data
+    
+    def find_sessions_by_config_hash(self, config_hash: str) -> List[Session]:
+        """
+        Find sessions with matching configuration hash.
+        
+        Args:
+            config_hash: Configuration hash to search for
+            
+        Returns:
+            List of sessions with matching config hash
+        """
+        query = "SELECT * FROM sessions WHERE config_hash = ? ORDER BY start_time DESC"
+        results = self.execute_custom_query(query, (config_hash,), fetch='all')
+        
+        return [self._row_to_model(row) for row in results]
+    
+    def get_session_with_config_info(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get session with configuration validation information.
+        
+        Args:
+            session_id: Session ID to retrieve
+            
+        Returns:
+            Dictionary with session and config info, or None if not found
+        """
+        query = """
+        SELECT session_id, session_name, start_time, config_hash, 
+               config_snapshot, validation_errors, status, dataset_hash
+        FROM sessions 
+        WHERE session_id = ?
+        """
+        
+        result = self.execute_custom_query(query, (session_id,), fetch='one')
+        if not result:
+            return None
+        
+        return {
+            'session_id': result[0],
+            'session_name': result[1],
+            'start_time': result[2],
+            'config_hash': result[3],
+            'config_snapshot': json.loads(result[4]) if result[4] else {},
+            'validation_errors': json.loads(result[5]) if result[5] else None,
+            'status': result[6],
+            'dataset_hash': result[7]
+        }
+    
+    def update_session_config_validation(self, 
+                                       session_id: str,
+                                       config_hash: str,
+                                       validation_errors: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Update session configuration validation information.
+        
+        Args:
+            session_id: Session ID to update
+            config_hash: Configuration hash
+            validation_errors: Validation errors/warnings (if any)
+            
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            update_query = """
+            UPDATE sessions 
+            SET config_hash = ?, validation_errors = ?
+            WHERE session_id = ?
+            """
+            
+            validation_json = json.dumps(validation_errors) if validation_errors else None
+            
+            self.execute_custom_query(
+                update_query, 
+                (config_hash, validation_json, session_id),
+                fetch='none'
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update config validation for session {session_id}: {e}")
+            return False
+    
+    def get_compatible_sessions(self, config_hash: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Find sessions with compatible configuration (same config hash).
+        
+        Args:
+            config_hash: Configuration hash to match
+            limit: Maximum number of sessions to return
+            
+        Returns:
+            List of compatible session information
+        """
+        query = """
+        SELECT session_id, session_name, start_time, end_time, 
+               total_iterations, best_score, status
+        FROM sessions 
+        WHERE config_hash = ? 
+        ORDER BY start_time DESC 
+        LIMIT ?
+        """
+        
+        results = self.execute_custom_query(query, (config_hash, limit), fetch='all')
+        
+        sessions = []
+        for row in results:
+            sessions.append({
+                'session_id': row[0],
+                'session_name': row[1],
+                'start_time': row[2],
+                'end_time': row[3],
+                'total_iterations': row[4] or 0,
+                'best_score': row[5] or 0.0,
+                'status': row[6]
+            })
+        
+        return sessions

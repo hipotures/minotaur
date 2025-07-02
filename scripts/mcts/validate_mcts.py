@@ -359,8 +359,10 @@ def main():
     try:
         config = load_default_config()
         
-        # Disable DB logging
-        logging.getLogger('DB').setLevel(logging.ERROR)
+        # Suppress verbose logging for cleaner script output
+        logging.getLogger('DB').setLevel(logging.WARNING)
+        logging.getLogger().setLevel(logging.WARNING)
+        logging.getLogger('src').setLevel(logging.WARNING)
         
         # Suppress stdout temporarily for FeatureDiscoveryDB creation
         import io, contextlib

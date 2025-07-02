@@ -691,12 +691,14 @@ def main():
     
     args = parser.parse_args()
     
+    # Suppress verbose logging for cleaner script output (BEFORE loading anything)
+    logging.getLogger('DB').setLevel(logging.WARNING)
+    logging.getLogger().setLevel(logging.WARNING)
+    logging.getLogger('src').setLevel(logging.WARNING)
+    
     # Load configuration and initialize database
     try:
         config = load_default_config()
-        
-        # Disable DB logging
-        logging.getLogger('DB').setLevel(logging.ERROR)
         
         # Suppress stdout temporarily for FeatureDiscoveryDB creation
         import io, contextlib

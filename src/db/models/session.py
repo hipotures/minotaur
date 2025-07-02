@@ -47,6 +47,8 @@ class Session(BaseModel):
     is_test_mode: bool = Field(default=False, description="Whether session is in test mode")
     notes: Optional[str] = Field(None, description="Additional session notes")
     dataset_hash: Optional[str] = Field(None, description="Hash of dataset used")
+    config_hash: Optional[str] = Field(None, description="Hash of critical configuration parameters")
+    validation_errors: Optional[Dict[str, Any]] = Field(None, description="Configuration validation errors/warnings")
     
     @field_validator('session_id')
     @classmethod
@@ -110,7 +112,8 @@ class Session(BaseModel):
                 "status": "completed",
                 "strategy": "ucb1",
                 "is_test_mode": True,
-                "dataset_hash": "abc123def456"
+                "dataset_hash": "abc123def456",
+                "config_hash": "def789abc123"
             }
         }
     }
@@ -175,6 +178,7 @@ class SessionCreate(BaseModel):
     strategy: SessionStrategy = Field(default=SessionStrategy.DEFAULT, description="MCTS strategy to use")
     is_test_mode: bool = Field(default=False, description="Whether session is in test mode")
     dataset_hash: Optional[str] = Field(None, description="Hash of dataset to use")
+    config_hash: Optional[str] = Field(None, description="Hash of critical configuration parameters")
     notes: Optional[str] = Field(None, description="Initial session notes")
     
     @field_validator('config_snapshot')

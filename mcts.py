@@ -1002,6 +1002,11 @@ def main():
         help='Start new session (overrides config session mode)'
     )
     parser.add_argument(
+        '--force-resume',
+        action='store_true',
+        help='Force resume session despite configuration warnings'
+    )
+    parser.add_argument(
         '--list-sessions',
         action='store_true',
         help='List recent sessions and exit'
@@ -1033,7 +1038,22 @@ def main():
         config = load_config_with_overrides(args.config)
         
         if args.validate_config:
-            print("Configuration validation passed ✓")
+            # Validate configuration using Pydantic schema
+            from src.utils.config_validator import validate_configuration
+            validation_result = validate_configuration(config)
+            
+            if validation_result.is_valid:
+                print("✅ Configuration validation passed")
+                if validation_result.has_warnings:
+                    print("\n⚠️  Warnings:")
+                    for warning in validation_result.warnings:
+                        print(f"  • {warning}")
+            else:
+                print("❌ Configuration validation failed:")
+                for error in validation_result.errors:
+                    print(f"  • {error}")
+                sys.exit(1)
+            
             sys.exit(0)
         
         # Handle session management with universal resolver
@@ -1059,6 +1079,7 @@ def main():
                 
                 config['session']['mode'] = 'continue'
                 config['session']['resume_session_id'] = session_id_to_continue
+                config['session']['force_resume'] = args.force_resume
                 
                 # Close resolver connection to avoid conflicts with main MCTS database connection
                 resolver.connection_manager.close()

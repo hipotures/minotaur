@@ -9,6 +9,14 @@ Provides common functionality used across the system including:
 
 from .session_resolver import SessionResolver, SessionInfo, SessionResolutionError, create_session_resolver
 from .display_formatter import DisplayFormatter, get_formatter, set_plain_mode, is_plain_mode
+from .config_validator import (
+    ConfigValidator, CompatibilityLevel, CompatibilityResult, ValidationResult,
+    validate_configuration, check_config_compatibility, calculate_configuration_hash
+)
+from .config_schema import (
+    MCTSConfigurationSchema, validate_config_dict, get_validation_errors,
+    LogLevel, SessionMode, SelectionStrategy, AutoGluonPreset, DataBackend, ExportFormat
+)
 from .session_args import (
     add_session_argument,
     add_multiple_sessions_argument, 
@@ -38,6 +46,24 @@ __all__ = [
     'get_formatter',
     'set_plain_mode',
     'is_plain_mode',
+    
+    # Configuration validation
+    'ConfigValidator',
+    'CompatibilityLevel',
+    'CompatibilityResult',
+    'ValidationResult',
+    'validate_configuration',
+    'check_config_compatibility',
+    'calculate_configuration_hash',
+    'MCTSConfigurationSchema',
+    'validate_config_dict',
+    'get_validation_errors',
+    'LogLevel',
+    'SessionMode',
+    'SelectionStrategy',
+    'AutoGluonPreset',
+    'DataBackend',
+    'ExportFormat',
     
     # Session arguments
     'add_session_argument',

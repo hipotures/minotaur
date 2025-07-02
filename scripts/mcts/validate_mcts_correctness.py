@@ -529,6 +529,12 @@ def main():
     
     args = parser.parse_args()
     
+    # Suppress verbose logging for cleaner script output
+    import logging
+    logging.getLogger('DB').setLevel(logging.WARNING)
+    logging.getLogger().setLevel(logging.WARNING)
+    logging.getLogger('src').setLevel(logging.WARNING)
+    
     validator = MCTSCorrectnessValidator(args.db_path)
     
     if args.session:

@@ -64,7 +64,8 @@ class FeatureDiscoveryDB:
         if not self.session_id and not read_only:
             session_mode = config.get('session', {}).get('mode', 'new')
             resume_session_id = config.get('session', {}).get('resume_session_id')
-            self.session_id = self.db_service.initialize_session(session_mode, resume_session_id)
+            force_resume = config.get('session', {}).get('force_resume', False)
+            self.session_id = self.db_service.initialize_session(session_mode, resume_session_id, force_resume)
             self.session_name = self.db_service.session_name
             self.output_manager = self.db_service.output_manager
         
