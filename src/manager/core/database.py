@@ -139,14 +139,15 @@ class DatabasePool:
         # self._ensure_migrations()
     
     def _setup_database_logging(self):
-        """Setup advanced database logging with context."""
+        """Setup database logging with fallback to basic logging."""
         try:
-            # Try to load the advanced logging configuration
+            # Try to load the main logging configuration
             src_path = Path(__file__).parent.parent.parent
             if str(src_path) not in sys.path:
                 sys.path.insert(0, str(src_path))
             
-            from db.config.logging_config import setup_db_logging, DatabaseLoggerAdapter
+            # Try to use logging_utils from main application
+            from logging_utils import setup_main_logging, set_session_context
             
             # Load main config for logging setup
             try:
@@ -154,24 +155,21 @@ class DatabasePool:
                 config_path = src_path.parent / 'config' / 'mcts_config.yaml'
                 with open(config_path, 'r') as f:
                     main_config = yaml.safe_load(f)
+                setup_main_logging(main_config)
+                set_session_context('manager')
             except Exception:
-                # Fallback config
-                main_config = {'logging': {'level': 'INFO'}}
+                # Fallback to basic configuration
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                )
             
-            # Setup database logger
-            base_logger = setup_db_logging(main_config)
-            
-            # Create adapter with database context
-            db_name = self.db_path.stem  # Extract database name from path
-            adapter = DatabaseLoggerAdapter(
-                base_logger, 
-                {'component': 'manager', 'db_path': str(self.db_path)}
-            )
-            
-            return adapter
+            # Return a properly configured logger
+            logger = logging.getLogger('manager.database')
+            return logger
             
         except Exception as e:
-            # Fallback to simple logger if advanced logging fails
+            # Final fallback to simple logger if all else fails
             fallback_logger = logging.getLogger('manager.database')
             fallback_logger.warning(f"Could not setup advanced logging: {e}")
             return fallback_logger
@@ -182,25 +180,12 @@ class DatabasePool:
             return
             
         try:
-            # Import migration runner
-            from pathlib import Path
-            import sys
+            # Try to use new database migration system
+            from database.migrations.migration_tool import MigrationTool
             
-            # Add src to path if needed
-            src_path = Path(__file__).parent.parent.parent
-            if str(src_path) not in sys.path:
-                sys.path.insert(0, str(src_path))
-            
-            from db.migrations.migration_runner import MigrationRunner
-            from db.core.connection import DatabaseConnectionManager
-            
-            # Create connection manager for migrations
-            config = {'database': {'db_path': str(self.db_path)}}
-            conn_manager = DatabaseConnectionManager(config)
-            
-            # Run migrations
-            migration_runner = MigrationRunner(conn_manager)
-            applied = migration_runner.run_migrations()
+            # Run migrations using new system
+            migration_tool = MigrationTool(str(self.db_path))
+            applied = migration_tool.run_migrations()
             
             if applied:
                 self.logger.info(f"Applied {len(applied)} database migrations")
@@ -209,7 +194,8 @@ class DatabasePool:
             
         except Exception as e:
             self.logger.warning(f"Could not run migrations: {e}")
-            # Don't fail - maybe table exists from old system
+            # Don't fail - the new SQLAlchemy services handle table creation
+            self._migrations_run = True  # Skip future attempts
     
     @contextmanager
     def get_connection(self) -> DatabaseConnection:
