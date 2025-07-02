@@ -598,10 +598,9 @@ def _print_top_operations(formatter, operations: Dict[str, Any], mode: str):
     title = f"{formatter.emoji('🎯', '[OPERATIONS]')} Najlepsze Operacje"
     headers = ["Rank", "Operation", "Avg Score", "Uses"]
     
-    table_content = formatter.table(table_data, title, headers)
-    
     if formatter.plain_mode:
-        formatter.print(table_content)
+        formatter.print(formatter.table(table_data, title, headers))
+        print()  # Add extra newline in plain mode
     else:
         # For Rich mode, create Rich table for better styling
         from rich.table import Table
@@ -617,9 +616,6 @@ def _print_top_operations(formatter, operations: Dict[str, Any], mode: str):
             table.add_row(row["Rank"], row["Operation"], row["Avg Score"], row["Uses"])
         
         formatter.print(Panel(table, title="🎯 Najlepsze Operacje", border_style="yellow"))
-    
-    if formatter.plain_mode:
-        print()  # Add extra newline in plain mode
 
 
 def _print_mcts_behavior(formatter, behavior: Dict[str, Any], mode: str):
@@ -660,10 +656,9 @@ def _print_timeline(formatter, timeline: List[Dict[str, Any]]):
     title = f"{formatter.emoji('⏱️', '[TIMELINE]')} Timeline Sesji (pierwsze 5 iteracji)"
     headers = ["Iteration", "Operation", "Score"]
     
-    table_content = formatter.table(table_data, title, headers)
-    
     if formatter.plain_mode:
-        formatter.print(table_content)
+        formatter.print(formatter.table(table_data, title, headers))
+        print()  # Add extra newline in plain mode
     else:
         # For Rich mode, create Rich table for better styling
         from rich.table import Table
@@ -678,9 +673,6 @@ def _print_timeline(formatter, timeline: List[Dict[str, Any]]):
             table.add_row(row["Iteration"], row["Operation"], row["Score"])
         
         formatter.print(Panel(table, title="⏱️ Timeline Sesji (pierwsze 5 iteracji)", border_style="blue"))
-    
-    if formatter.plain_mode:
-        print()  # Add extra newline in plain mode
 
 
 def main():

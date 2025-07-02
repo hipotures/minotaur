@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from strip_ansi import strip_ansi
 
 # Check environment variable for plain output mode
 PLAIN_OUTPUT = os.environ.get('MINOTAUR_PLAIN_OUTPUT', '').lower() in ('1', 'true', 'yes', 'on')
@@ -129,7 +130,19 @@ class DisplayFormatter:
             if isinstance(content, str):
                 print(self._clean_text(content))
             else:
-                print(content)
+                # For Rich objects in plain mode, render them with Rich and then strip formatting
+                import io
+                import contextlib
+                from rich.console import Console
+                
+                # Capture Rich output to string
+                temp_console = Console(file=io.StringIO(), width=120, legacy_windows=False)
+                temp_console.print(content, **kwargs)
+                rich_output = temp_console.file.getvalue()
+                
+                # Strip ANSI codes and clean the output
+                clean_output = self._clean_text(rich_output)
+                print(clean_output)
         else:
             if self.console:
                 self.console.print(content, **kwargs)
@@ -137,10 +150,13 @@ class DisplayFormatter:
                 print(content)
     
     def _clean_text(self, text: str) -> str:
-        """Remove emoji and special characters for plain text output."""
+        """Remove ANSI codes, emoji and special characters for plain text output."""
         if not isinstance(text, str):
             return str(text)
-            
+        
+        # First strip ANSI escape codes using strip_ansi library
+        text = strip_ansi(text)
+        
         # Remove emoji (basic pattern - matches most common emoji)
         emoji_pattern = re.compile(
             "["
