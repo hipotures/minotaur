@@ -170,9 +170,13 @@ class ExplorationRepository(BaseRepository[ExplorationStep]):
         WHERE session_id = ?
         """
         
+        # Add 1 to iteration to convert from 0-indexed to count
+        # (iteration 0 = 1 total iteration, iteration 9 = 10 total iterations)
+        total_iterations_count = iteration + 1
+        
         self.execute_custom_query(
             update_query,
-            (iteration, score, score, session_id),
+            (total_iterations_count, score, score, session_id),
             fetch='none'
         )
     

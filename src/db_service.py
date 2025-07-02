@@ -166,21 +166,82 @@ class DatabaseService:
             # Resume specific session
             session = self.session_repo.find_by_id(resume_session_id, 'session_id')
             if not session:
-                self.logger.warning(f"Session {resume_session_id[:8]}... not found, creating new session")
-                return self._create_new_session()
+                raise ValueError(f"Session {resume_session_id} not found. Cannot resume non-existent session. "
+                               f"Use --list-sessions to see available sessions.")
         else:
             # Resume most recent session
             recent_sessions = self.session_repo.get_recent_sessions(days=7, limit=1)
             if not recent_sessions:
-                self.logger.info("No recent sessions found, creating new session")
-                return self._create_new_session()
+                raise ValueError("No recent sessions found to resume. "
+                               "Use --new-session to start a new session.")
             session = recent_sessions[0]
+        
+        # Load resume parameters from database view
+        self._load_resume_parameters(session.session_id)
         
         self.current_session_id = session.session_id
         self.session_name = session.session_name
         
         self.logger.info(f"Resumed session: {session.session_name} (ID: {session.session_id[:8]}...)")
         return session.session_id
+    
+    def _load_resume_parameters(self, session_id: str) -> None:
+        """Load MCTS resume parameters from session_resume_params view."""
+        query = """
+        SELECT next_iteration, total_evaluations, best_observed_score, 
+               root_evaluation_score, has_exploration_history,
+               total_evaluation_time, unique_nodes_count, last_iteration,
+               session_total_iterations
+        FROM session_resume_params 
+        WHERE session_id = ?
+        """
+        
+        with self.connection_manager.get_connection() as conn:
+            result = conn.execute(query, [session_id]).fetchone()
+            
+            if result:
+                self.resume_next_iteration = result[0]
+                self.resume_total_evaluations = result[1] 
+                self.resume_best_score = result[2]
+                self.resume_root_score = result[3]
+                self.resume_has_history = result[4]
+                self.resume_total_eval_time = result[5]
+                self.resume_unique_nodes = result[6]
+                self.resume_last_iteration = result[7]
+                self.resume_session_iterations = result[8]
+                
+                self.logger.info(f"Loaded resume parameters: next_iteration={self.resume_next_iteration}, "
+                               f"total_evaluations={self.resume_total_evaluations}, "
+                               f"best_score={self.resume_best_score:.5f}, "
+                               f"root_score={self.resume_root_score:.5f}, "
+                               f"eval_time={self.resume_total_eval_time:.1f}s, "
+                               f"unique_nodes={self.resume_unique_nodes}")
+            else:
+                # Fallback for sessions without exploration history
+                self.resume_next_iteration = 0
+                self.resume_total_evaluations = 0
+                self.resume_best_score = 0.0
+                self.resume_root_score = None
+                self.resume_has_history = False
+                self.resume_total_eval_time = 0.0
+                self.resume_unique_nodes = 0
+                self.resume_last_iteration = -1
+                self.resume_session_iterations = 0
+                self.logger.warning(f"No resume parameters found for session {session_id[:8]}...")
+    
+    def get_resume_parameters(self) -> dict:
+        """Get resume parameters for MCTS engine."""
+        return {
+            'next_iteration': getattr(self, 'resume_next_iteration', 0),
+            'total_evaluations': getattr(self, 'resume_total_evaluations', 0),
+            'best_score': getattr(self, 'resume_best_score', 0.0),
+            'root_score': getattr(self, 'resume_root_score', None),
+            'has_history': getattr(self, 'resume_has_history', False),
+            'total_eval_time': getattr(self, 'resume_total_eval_time', 0.0),
+            'unique_nodes': getattr(self, 'resume_unique_nodes', 0),
+            'last_iteration': getattr(self, 'resume_last_iteration', -1),
+            'session_iterations': getattr(self, 'resume_session_iterations', 0)
+        }
     
     def _calculate_dataset_hash(self) -> str:
         """Calculate dataset hash from configuration."""

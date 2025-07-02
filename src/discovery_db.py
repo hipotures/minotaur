@@ -238,6 +238,18 @@ class FeatureDiscoveryDB:
             features_before, features_after, base_features, applied_operations,
             evaluation_score, evaluation_time, memory_usage_mb
         )
+    
+    def get_resume_parameters(self) -> dict:
+        """Get resume parameters for MCTS engine - delegates to DatabaseService."""
+        if self.db_service:
+            return self.db_service.get_resume_parameters()
+        return {
+            'next_iteration': 0,
+            'total_evaluations': 0,
+            'best_score': 0.0,
+            'root_score': None,
+            'has_history': False
+        }
         
     def __enter__(self):
         return self

@@ -20,6 +20,11 @@ from typing import Dict, List, Optional, Any, Tuple
 from collections import defaultdict, Counter
 import statistics
 
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -65,7 +70,7 @@ def load_default_config() -> Dict[str, Any]:
         sys.exit(1)
 
 
-def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[str, Any]:
+def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str, resumed: bool = False) -> Dict[str, Any]:
     """Get session overview and basic statistics."""
     
     # Session info
@@ -95,6 +100,22 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
     # Calculate actual tree depth
     max_tree_depth = calculate_tree_depth(db, session_id)
     
+    # Detect if session was resumed (can be passed as parameter or detected from data)
+    first_iteration = exploration_stats[2] if exploration_stats else 0
+    last_iteration = exploration_stats[3] if exploration_stats else 0
+    
+    # Detection logic: look for multiple distinct iteration ranges or gaps
+    gap_query = """
+    SELECT COUNT(DISTINCT iteration) as iteration_count,
+           MAX(iteration) - MIN(iteration) + 1 as expected_count
+    FROM exploration_history WHERE session_id = ?
+    """
+    gap_stats = db.db_service.connection_manager.execute_query(gap_query, params=(session_id,), fetch='one')
+    
+    # If there are fewer iterations than expected range, there might be gaps (indicating resume)
+    has_gaps = gap_stats and gap_stats[0] < gap_stats[1]
+    session_resumed = resumed or (first_iteration is not None and first_iteration > 0) or has_gaps
+    
     overview = {
         "session_id": session_info[0],
         "start_time": session_info[1],
@@ -108,14 +129,16 @@ def analyze_session_overview(db: FeatureDiscoveryDB, session_id: str) -> Dict[st
         "max_tree_depth": max_tree_depth,
         "avg_score": round(exploration_stats[4], 5) if exploration_stats and exploration_stats[4] else 0,
         "best_score_observed": round(exploration_stats[5], 5) if exploration_stats and exploration_stats[5] else 0,
-        "total_evaluation_time": round(exploration_stats[6], 2) if exploration_stats and exploration_stats[6] else 0
+        "total_evaluation_time": round(exploration_stats[6], 2) if exploration_stats and exploration_stats[6] else 0,
+        "session_resumed": session_resumed,
+        "first_iteration": first_iteration
     }
     
     return overview
 
 
-def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
-    """Draw ASCII tree structure showing MCTS exploration."""
+def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str, max_lines: int = 50) -> str:
+    """Draw ASCII tree structure showing MCTS exploration (limited to max_lines for readability)."""
     
     # Always get base data from exploration_history for complete tree structure
     base_query = """
@@ -179,8 +202,19 @@ def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
     if root_id is None:
         return "❌ No root node found"
     
+    # Counter for lines to respect max_lines limit
+    line_counter = [0]  # Using list to allow mutation in nested function
+    truncated = [False]
+    
     # Recursive function to draw tree
-    def draw_node(node_id, prefix="", is_last=True):
+    def draw_node(node_id, prefix="", is_last=True, depth=0):
+        # Stop if we've reached max lines
+        if line_counter[0] >= max_lines:
+            if not truncated[0]:
+                truncated[0] = True
+                return [f"{prefix}... (tree truncated at {max_lines} lines, showing depth {depth})"]
+            return []
+            
         node = nodes[node_id]
         connector = "└── " if is_last else "├── "
         
@@ -189,17 +223,26 @@ def draw_tree_structure(db: FeatureDiscoveryDB, session_id: str) -> str:
         stats = f"[score:{node['score']:.5f}, visits:{node['visits']}]"
         
         lines = [f"{prefix}{connector}{node_info} {stats}"]
+        line_counter[0] += 1
         
-        # Draw children
+        # Draw children (no limit on depth, only on total lines)
         node_children = children.get(node_id, [])
         for i, child_id in enumerate(node_children):
+            if line_counter[0] >= max_lines:
+                break
             is_child_last = (i == len(node_children) - 1)
             child_prefix = prefix + ("    " if is_last else "│   ")
-            lines.extend(draw_node(child_id, child_prefix, is_child_last))
+            lines.extend(draw_node(child_id, child_prefix, is_child_last, depth + 1))
         
         return lines
     
     tree_lines = draw_node(root_id)
+    
+    # Add summary if truncated
+    if truncated[0]:
+        total_nodes = len(nodes)
+        tree_lines.append(f"\n📊 Tree summary: {total_nodes} total nodes, showing first {max_lines} lines")
+    
     return "\n".join(tree_lines)
 
 
@@ -455,58 +498,141 @@ def export_analysis(analysis: Dict[str, Any], session_id: str, output_dir: str =
 
 
 def print_analysis_summary(analysis: Dict[str, Any]):
-    """Print formatted analysis summary."""
+    """Print formatted analysis summary using Rich."""
+    console = Console()
     
-    print("\n" + "="*60)
-    print("📊 MCTS SESSION ANALYSIS")
-    print("="*60)
-    
-    # Session Overview
+    # Check if this is a resumed session by looking for continuation data
     overview = analysis.get("overview", {})
-    print(f"\n🔍 Session Overview:")
-    print(f"  Session ID: {overview.get('session_id', 'N/A')}")
-    print(f"  Status: {overview.get('status', 'N/A')}")
-    print(f"  Iterations: {overview.get('total_iterations', 0)}")
-    print(f"  Unique Nodes: {overview.get('unique_nodes', 0)}")
-    print(f"  Max Depth: {overview.get('max_tree_depth', 0)}")
-    print(f"  Best Score: {overview.get('best_score_observed', 0)}")
-    print(f"  Total Eval Time: {overview.get('total_evaluation_time', 0)}s")
+    is_resumed_session = overview.get('session_resumed', False)
     
-    # Convergence
-    convergence = analysis.get("convergence", {})
-    if convergence and "error" not in convergence:
-        print(f"\n📈 Convergence Pattern:")
-        print(f"  Total Evaluations: {convergence.get('total_evaluations', 0)}")
-        print(f"  Improvement Points: {convergence.get('improvement_points', 0)}")
-        print(f"  Last Improvement: Iteration {convergence.get('last_improvement_iteration', 0)}")
-        print(f"  Score Range: {convergence.get('score_range', {}).get('min', 0)} - {convergence.get('score_range', {}).get('max', 0)}")
-        print(f"  Avg Eval Time: {convergence.get('evaluation_times', {}).get('avg_time', 0)}s")
+    # Main header
+    console.print(Panel.fit("📊 ANALIZA SESJI MCTS", style="bold blue"))
     
-    # Top Operations
-    operations = analysis.get("operations", {})
-    if operations:
-        print(f"\n🎯 Top Performing Operations:")
-        for i, (op_name, stats) in enumerate(list(operations.items())[:5]):
-            print(f"  {i+1}. {op_name}: {stats.get('avg_score', 0)} avg score ({stats.get('usage_count', 0)} uses)")
+    if is_resumed_session:
+        # For resumed sessions: show global stats first, then continuation stats
+        console.print(Panel.fit("📈 STATYSTYKI CAŁEJ SESJI (WSZYSTKIE URUCHOMIENIA)", style="bold green"))
+        _print_session_overview(console, overview, "global")
+        _print_convergence_pattern(console, analysis.get("convergence", {}), "global")
+        _print_top_operations(console, analysis.get("operations", {}), "global")
+        _print_mcts_behavior(console, analysis.get("mcts_behavior", {}), "global")
+        
+        console.print("\n")
+        console.print(Panel.fit("🔄 STATYSTYKI BIEŻĄCEJ KONTYNUACJI", style="bold yellow"))
+        # TODO: Add continuation-specific stats here when available
+        console.print("[italic]Statystyki kontynuacji będą dostępne po implementacji[/italic]")
+    else:
+        # For new sessions: show normal stats
+        _print_session_overview(console, overview, "normal")
+        _print_convergence_pattern(console, analysis.get("convergence", {}), "normal")
+        _print_top_operations(console, analysis.get("operations", {}), "normal")
+        _print_mcts_behavior(console, analysis.get("mcts_behavior", {}), "normal")
     
-    # MCTS Behavior
-    behavior = analysis.get("mcts_behavior", {})
-    if behavior and "error" not in behavior:
-        node_stats = behavior.get("node_statistics", {})
-        print(f"\n🌳 MCTS Behavior:")
-        print(f"  Exploration Ratio: {behavior.get('exploration_ratio', 0)}")
-        print(f"  Max Node Visits: {node_stats.get('max_visits', 0)}")
-        print(f"  Multi-visit Nodes: {node_stats.get('multi_visit_nodes', 0)}")
-        if 'visit_data_source' in node_stats:
-            print(f"  Visit Data Source: {node_stats['visit_data_source']}")
+    # Timeline (always shown at the end)
+    _print_timeline(console, analysis.get("timeline", []))
+
+
+def _print_session_overview(console: Console, overview: Dict[str, Any], mode: str):
+    """Print session overview section."""
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Label", style="cyan")
+    table.add_column("Value", style="white")
     
-    # Timeline Sample
-    timeline = analysis.get("timeline", [])
-    if timeline:
-        print(f"\n⏱️  Session Timeline (first 5 iterations):")
-        for event in timeline[:5]:
-            print(f"  Iter {event.get('iteration', 0)}: {event.get('operation', 'N/A')} "
-                  f"(score: {event.get('score', 0)})")
+    table.add_row("Session ID:", overview.get('session_id', 'N/A'))
+    table.add_row("Status:", overview.get('status', 'N/A'))
+    table.add_row("Iterations:", str(overview.get('total_iterations', 0)))
+    table.add_row("Unique Nodes:", str(overview.get('unique_nodes', 0)))
+    table.add_row("Max Depth:", str(overview.get('max_tree_depth', 0)))
+    table.add_row("Best Score:", f"{overview.get('best_score_observed', 0):.5f}")
+    table.add_row("Total Eval Time:", f"{overview.get('total_evaluation_time', 0):.1f}s")
+    
+    console.print(Panel(table, title="🔍 Przegląd Sesji", border_style="blue"))
+
+
+def _print_convergence_pattern(console: Console, convergence: Dict[str, Any], mode: str):
+    """Print convergence pattern section."""
+    if not convergence or "error" in convergence:
+        return
+        
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Label", style="cyan")
+    table.add_column("Value", style="white")
+    
+    table.add_row("Total Evaluations:", str(convergence.get('total_evaluations', 0)))
+    table.add_row("Improvement Points:", str(convergence.get('improvement_points', 0)))
+    table.add_row("Last Improvement:", f"Iteration {convergence.get('last_improvement_iteration', 0)}")
+    
+    score_range = convergence.get('score_range', {})
+    if score_range:
+        table.add_row("Score Range:", f"{score_range.get('min', 0):.5f} - {score_range.get('max', 0):.5f}")
+    
+    eval_times = convergence.get('evaluation_times', {})
+    if eval_times:
+        table.add_row("Avg Eval Time:", f"{eval_times.get('avg_time', 0):.2f}s")
+    
+    console.print(Panel(table, title="📈 Wzorzec Konwergencji", border_style="green"))
+
+
+def _print_top_operations(console: Console, operations: Dict[str, Any], mode: str):
+    """Print top performing operations section."""
+    if not operations:
+        return
+        
+    table = Table(show_header=True, box=None)
+    table.add_column("Rank", style="bold cyan", width=4)
+    table.add_column("Operation", style="white")
+    table.add_column("Avg Score", style="green", justify="right")
+    table.add_column("Uses", style="yellow", justify="right")
+    
+    for i, (op_name, stats) in enumerate(list(operations.items())[:5]):
+        table.add_row(
+            f"{i+1}.",
+            op_name,
+            f"{stats.get('avg_score', 0):.5f}",
+            str(stats.get('usage_count', 0))
+        )
+    
+    console.print(Panel(table, title="🎯 Najlepsze Operacje", border_style="yellow"))
+
+
+def _print_mcts_behavior(console: Console, behavior: Dict[str, Any], mode: str):
+    """Print MCTS behavior section."""
+    if not behavior or "error" in behavior:
+        return
+        
+    node_stats = behavior.get("node_statistics", {})
+    
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Label", style="cyan")
+    table.add_column("Value", style="white")
+    
+    table.add_row("Exploration Ratio:", f"{behavior.get('exploration_ratio', 0):.3f}")
+    table.add_row("Max Node Visits:", str(node_stats.get('max_visits', 0)))
+    table.add_row("Multi-visit Nodes:", str(node_stats.get('multi_visit_nodes', 0)))
+    
+    if 'visit_data_source' in node_stats:
+        table.add_row("Visit Data Source:", node_stats['visit_data_source'])
+    
+    console.print(Panel(table, title="🌳 Zachowanie MCTS", border_style="magenta"))
+
+
+def _print_timeline(console: Console, timeline: List[Dict[str, Any]]):
+    """Print session timeline section."""
+    if not timeline:
+        return
+        
+    table = Table(show_header=True, box=None)
+    table.add_column("Iteration", style="bold cyan", width=8)
+    table.add_column("Operation", style="white")
+    table.add_column("Score", style="green", justify="right")
+    
+    for event in timeline[:5]:
+        table.add_row(
+            f"Iter {event.get('iteration', 0)}",
+            event.get('operation', 'N/A'),
+            f"{event.get('score', 0):.5f}"
+        )
+    
+    console.print(Panel(table, title="⏱️ Timeline Sesji (pierwsze 5 iteracji)", border_style="blue"))
 
 
 def main():
@@ -518,6 +644,7 @@ def main():
     parser.add_argument("--export", action="store_true", help="Export analysis to JSON")
     parser.add_argument("--tree", action="store_true", help="Show tree structure in console")
     parser.add_argument("--timeline-limit", type=int, default=20, help="Timeline events to show")
+    parser.add_argument("--resumed", action="store_true", help="Indicate this session was resumed")
     
     args = parser.parse_args()
     
@@ -552,7 +679,7 @@ def main():
         # Perform analysis
         analysis = {
             "session_id": session_id,
-            "overview": analyze_session_overview(db, session_id),
+            "overview": analyze_session_overview(db, session_id, args.resumed),
             "convergence": analyze_convergence_pattern(db, session_id),
             "operations": analyze_operation_performance(db, session_id),
             "mcts_behavior": analyze_mcts_behavior(db, session_id),

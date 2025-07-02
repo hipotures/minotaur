@@ -507,8 +507,22 @@ class FeatureDiscoveryRunner:
         from dataclasses import is_dataclass, asdict
         
         if isinstance(obj, dict):
-            return {key: self._serialize_for_json(value) for key, value in obj.items()}
+            # Handle dicts with non-string keys (like tuple keys in _ucb1_cache)
+            result = {}
+            for key, value in obj.items():
+                # Convert non-string keys to strings
+                if isinstance(key, tuple):
+                    str_key = str(key)  # e.g., (1.4, 100) -> "(1.4, 100)"
+                elif not isinstance(key, (str, int, float, bool, type(None))):
+                    str_key = str(key)
+                else:
+                    str_key = key
+                result[str_key] = self._serialize_for_json(value)
+            return result
         elif isinstance(obj, (list, tuple)):
+            return [self._serialize_for_json(item) for item in obj]
+        elif hasattr(obj, '__class__') and obj.__class__.__name__ == 'deque':
+            # Handle collections.deque
             return [self._serialize_for_json(item) for item in obj]
         elif isinstance(obj, set):
             try:
@@ -940,7 +954,12 @@ def get_session_to_continue(config_path: str, session_id: str = None) -> str:
         print(f"\n🔄 Continuing Session:")
         print(f"   ID: {short_id}... ({full_session_id})")
         print(f"   Name: {name or 'unnamed'}")
-        print(f"   Started: {start_time[:19] if start_time else 'unknown'}")
+        # Handle datetime object properly
+        if start_time:
+            start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(start_time, 'strftime') else str(start_time)[:19]
+        else:
+            start_time_str = 'unknown'
+        print(f"   Started: {start_time_str}")
         print(f"   Status: {status or 'unknown'}")
         print(f"   Previous iterations: {iterations or 0}")
         best_score_display = f"{best_score:.5f}" if best_score is not None else "0.00000"

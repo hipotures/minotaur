@@ -275,6 +275,11 @@ class MCTSEngine:
         self.best_iteration: int = 0
         self.total_evaluations = 0
         
+        # Session tracking for proper iteration counting
+        self.session_start_iteration = 0
+        self.iterations_this_session = 0
+        self.is_resumed_session = False
+        
         # Memory management
         self.max_nodes_in_memory = self.mcts_config.get('max_nodes_in_memory', 1000)
         self.prune_threshold = self.mcts_config.get('prune_threshold', 0.01)
@@ -324,6 +329,159 @@ class MCTSEngine:
         logger.info(f"Initialized MCTS tree with {len(base_features)} base features")
         mcts_logger.debug(f"Root node {self.root.node_id} initialized with features: {base_features_list}")
         return self.root
+    
+    def rebuild_tree_from_database(self, db, session_id: str, base_features: Set[str]) -> bool:
+        """
+        Rebuild MCTS tree from database for session resumption.
+        
+        Args:
+            db: Database service instance
+            session_id: Session ID to rebuild tree for
+            base_features: Base features for the dataset
+            
+        Returns:
+            True if tree was successfully rebuilt, False otherwise
+        """
+        try:
+            # First initialize empty tree
+            self.initialize_tree(base_features)
+            
+            # Query all nodes from database
+            query = """
+            SELECT node_id, parent_node_id, operation_applied, 
+                   features_before, features_after, applied_operations,
+                   visit_count, total_reward, evaluation_score, depth
+            FROM mcts_tree_nodes 
+            WHERE session_id = ?
+            ORDER BY depth, node_id
+            """
+            
+            with db.connection_manager.get_connection() as conn:
+                nodes_data = conn.execute(query, [session_id]).fetchall()
+            
+            if not nodes_data:
+                logger.warning(f"No tree nodes found for session {session_id}")
+                return False
+            
+            # Find max node_id to update counter
+            max_node_id = max(row[0] for row in nodes_data)
+            FeatureNode._node_counter = max_node_id  # Set counter to continue from last ID
+            
+            # Create mapping of node_id to FeatureNode
+            node_map = {}
+            
+            # Find and update root node
+            root_found = False
+            for row in nodes_data:
+                node_id, parent_id, operation, features_before, features_after, applied_ops, visits, reward, score, depth = row
+                
+                if parent_id is None:  # This is root
+                    # Update existing root with database values
+                    self.root.node_id = node_id
+                    self.root.visit_count = visits or 0
+                    self.root.total_reward = reward or 0.0
+                    self.root.total_score = reward or 0.0
+                    self.root.evaluation_score = score
+                    self.root.depth = 0
+                    node_map[node_id] = self.root
+                    root_found = True
+                    logger.debug(f"Updated root node {node_id} with {visits} visits")
+                    break
+            
+            if not root_found:
+                # No root in database - this is common for older sessions
+                # Use the node with smallest ID that has no parent as implied root
+                logger.warning("No explicit root node in database, searching for implicit root")
+                
+                # Find nodes without parent in DB (parent_node_id points to non-existent node)
+                all_node_ids = {row[0] for row in nodes_data}
+                parent_ids = {row[1] for row in nodes_data if row[1] is not None}
+                
+                # Find parent IDs that don't exist as nodes (these point to missing root)
+                missing_parents = parent_ids - all_node_ids
+                
+                if missing_parents:
+                    # Assume the missing parent is root
+                    implied_root_id = min(missing_parents)
+                    logger.info(f"Found implied root ID: {implied_root_id}")
+                    
+                    # Update our root node to have this ID
+                    self.root.node_id = implied_root_id
+                    node_map[implied_root_id] = self.root
+                    root_found = True
+                else:
+                    logger.error("Could not determine root node")
+                    return False
+            
+            # Build remaining nodes
+            for row in nodes_data:
+                node_id, parent_id, operation, features_before, features_after, applied_ops, visits, reward, score, depth = row
+                
+                if parent_id is None:  # Skip root, already processed
+                    continue
+                
+                # Find parent node
+                if parent_id not in node_map:
+                    logger.error(f"Parent node {parent_id} not found for node {node_id}")
+                    continue
+                
+                parent_node = node_map[parent_id]
+                
+                # Parse JSON fields
+                import json
+                features_before_list = json.loads(features_before) if features_before else []
+                features_after_list = json.loads(features_after) if features_after else []
+                applied_ops_list = json.loads(applied_ops) if applied_ops else []
+                
+                # Create child node
+                child = FeatureNode(
+                    base_features=set(self.root.features_after),  # Use root's features as base
+                    applied_operations=applied_ops_list,
+                    features_before=features_before_list,
+                    features_after=features_after_list,
+                    operation_that_created_this=operation,
+                    parent=parent_node,
+                    depth=depth or (parent_node.depth + 1)
+                )
+                
+                # Update node properties from database
+                child.node_id = node_id
+                child.visit_count = visits or 0
+                child.total_reward = reward or 0.0
+                child.total_score = reward or 0.0
+                child.evaluation_score = score
+                
+                # Add to parent's children if not already there
+                if child not in parent_node.children:
+                    parent_node.children.append(child)
+                
+                # Add to node map
+                node_map[node_id] = child
+                
+                logger.debug(f"Rebuilt node {node_id} (op: {operation}) with {visits} visits, parent: {parent_id}")
+            
+            # Update tree statistics
+            total_nodes = len(node_map)
+            max_depth = max(node.depth for node in node_map.values())
+            total_visits = sum(node.visit_count for node in node_map.values())
+            
+            logger.info(f"Successfully rebuilt MCTS tree: {total_nodes} nodes, max depth: {max_depth}, total visits: {total_visits}")
+            
+            # Find best score in tree
+            best_score = 0.0
+            for node in node_map.values():
+                if node.evaluation_score is not None and node.evaluation_score > best_score:
+                    best_score = node.evaluation_score
+                    self.best_node = node
+                    self.best_score = best_score
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to rebuild tree from database: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return False
     
     @timed("mcts.selection")
     def selection(self) -> FeatureNode:
@@ -689,25 +847,65 @@ class MCTSEngine:
         """
         logger.info("Starting MCTS feature discovery search")
         
-        # Initialize tree
-        self.initialize_tree(initial_features)
+        # Check if we're resuming a session with existing root evaluation
+        resume_params = db.get_resume_parameters() if db else {'has_history': False}
+        logger.debug(f"Resume params: {resume_params}")
         
-        # Evaluate root node first (iteration 0)
-        self.current_iteration = 0
-        root_score, root_time = self.simulation(self.root, evaluator, feature_space)
-        self.root.evaluation_score = root_score
-        self.root.update_reward(root_score, root_time)
-        self.total_evaluations = 1  # Count root evaluation
+        # Try to rebuild tree from database if resuming
+        tree_rebuilt = False
+        if resume_params['has_history'] and db:
+            session_id = db.current_session_id
+            logger.info(f"Attempting to rebuild MCTS tree from database for session {session_id}")
+            tree_rebuilt = self.rebuild_tree_from_database(db, session_id, initial_features)
+            
+        if not tree_rebuilt:
+            # Initialize new tree if not rebuilt from database
+            self.initialize_tree(initial_features)
         
-        # Log root evaluation to database
-        if db:
+        if resume_params['has_history'] and resume_params['root_score'] is not None:
+            # Resume from existing session - use stored root score
+            self.current_iteration = resume_params['next_iteration']
+            self.session_start_iteration = self.current_iteration
+            self.iterations_this_session = 0
+            self.is_resumed_session = True
+            self.total_evaluations = resume_params['total_evaluations'] 
+            self.best_score = resume_params['best_score']
+            
+            # Set root node score from database
+            self.root.evaluation_score = resume_params['root_score']
+            self.root.update_reward(resume_params['root_score'], 0.0)
+            
+            target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
+            logger.info(f"Resumed session: continuing from iteration {self.current_iteration} "
+                       f"(root score: {resume_params['root_score']:.5f} {target_metric}, "
+                       f"total evaluations: {self.total_evaluations})")
+        else:
+            # New session - check if root already has evaluation score (from tree rebuild)
+            if self.root.evaluation_score is None:
+                # Need to evaluate root node first (iteration 0)
+                self.current_iteration = 0
+                root_score, root_time = self.simulation(self.root, evaluator, feature_space)
+                self.root.evaluation_score = root_score
+                self.root.update_reward(root_score, root_time)
+                self.total_evaluations = 1  # Count root evaluation
+                
+                target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
+                logger.info(f"Root evaluation (iteration 0): {root_score:.5f} ({target_metric})")
+            else:
+                # Root already evaluated (from database), don't re-evaluate
+                self.current_iteration = 0
+                logger.info(f"Root already evaluated from database: {self.root.evaluation_score:.5f}")
+                root_time = 0.0  # No time spent on evaluation
+        
+        # Log root evaluation to database (only if we just evaluated it)
+        if db and not resume_params['has_history'] and self.root.evaluation_score is not None and 'root_time' in locals():
             try:
                 db.log_exploration_step(
                     iteration=0,
                     operation='root',
                     features_before=self.root.features_before,
                     features_after=self.root.features_after,
-                    score=root_score,
+                    score=self.root.evaluation_score,
                     eval_time=root_time,
                     autogluon_config=evaluator.get_current_config(),
                     ucb1_score=0.0,
@@ -716,19 +914,36 @@ class MCTSEngine:
                     mcts_node_id=self.root.node_id,
                     node_visits=self.root.visit_count
                 )
+                
+                # Also ensure root node exists in mcts_tree_nodes table
+                db.ensure_mcts_node_exists(
+                    node_id=self.root.node_id,
+                    parent_node_id=None,
+                    depth=0,
+                    operation_applied=None,
+                    features_before=[],
+                    features_after=self.root.features_after,
+                    base_features=self.root.features_after,
+                    applied_operations=[],
+                    evaluation_score=self.root.evaluation_score,
+                    evaluation_time=root_time,
+                    memory_usage_mb=self._get_memory_usage()
+                )
             except Exception as e:
                 logger.error(f"Failed to log root evaluation: {e}")
         
-        target_metric = self.config.get('autogluon', {}).get('target_metric', 'unknown')
-        logger.info(f"Root evaluation (iteration 0): {root_score:.5f} ({target_metric})")
+        # Main MCTS loop - start from appropriate iteration
+        # For resumed sessions, current_iteration is already set to next_iteration from DB
+        start_iteration = self.current_iteration if resume_params['has_history'] else 1
+        end_iteration = start_iteration + self.max_iterations - 1
         
-        # Main MCTS loop
-        for iteration in range(1, self.max_iterations + 1):
+        for iteration in range(start_iteration, end_iteration + 1):
             self.current_iteration = iteration
+            self.iterations_this_session += 1
             
             # Check termination conditions
             if self._should_terminate():
-                logger.info(f"Terminating search at iteration {iteration}")
+                logger.info(f"Terminating search at iteration {iteration} (completed {self.iterations_this_session} iterations this session)")
                 break
             
             # Execute MCTS iteration
@@ -749,8 +964,16 @@ class MCTSEngine:
                 continue
         
         # Final results
+        # Just use current_iteration - it already represents the correct count
+        total_iterations_count = self.current_iteration
+        
+        logger.debug(f"Final iteration count: current_iteration={self.current_iteration}, "
+                    f"session_start_iteration={self.session_start_iteration}, "
+                    f"is_resumed_session={self.is_resumed_session}, "
+                    f"total_iterations_count={total_iterations_count}")
+            
         results = {
-            'total_iterations': self.current_iteration,
+            'total_iterations': total_iterations_count,
             'total_evaluations': self.total_evaluations,
             'best_score': self.best_score,
             'best_node': self.best_node,
@@ -847,8 +1070,8 @@ class MCTSEngine:
     
     def _should_terminate(self) -> bool:
         """Check if search should terminate based on configured conditions."""
-        # Iteration limit
-        if self.current_iteration >= self.max_iterations:
+        # Iteration limit - check iterations done in this session, not global count
+        if self.iterations_this_session >= self.max_iterations:
             return True
             
         # Time limit

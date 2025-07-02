@@ -18,6 +18,14 @@
 - [ ] Add progress bars for long operations
 - [ ] Implement background processing for dataset registration
 
+### Database Refactoring
+- [ ] Refactor SQL to use Views for complex queries
+- [ ] Implement VIRTUAL columns for computed values (e.g., derived metrics)
+- [ ] Add STORED columns for frequently accessed calculations
+- [ ] Create materialized views for performance-critical aggregations
+- [ ] Optimize session_resume_params view with proper indexing
+- [ ] Consider using generated/computed columns for total_iterations to avoid off-by-one errors
+
 ### Features
 - [ ] Add dataset comparison functionality
 - [ ] Implement dataset versioning system

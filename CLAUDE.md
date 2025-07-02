@@ -125,6 +125,8 @@ pytest                                                       # Full test suite
 pytest tests/unit/                                          # Unit tests only
 pytest tests/integration/                                   # Integration tests only
 pytest --cov=src --cov-report=html                         # Coverage report
+pytest -k "test_mcts"                                      # Run specific test patterns
+pytest -m "not slow"                                        # Skip slow tests
 
 # Development workflow
 ./mcts.py --test-mode --validate-config                     # Validate config without running
@@ -139,6 +141,26 @@ bin/duckdb data/minotaur.duckdb                            # Direct DuckDB acces
 ./manager.py verification --verify-latest                   # Data integrity check
 ./manager.py analytics --summary                            # Performance summary
 ./manager.py backup --create                                # Create database backup
+
+# Session analysis
+python scripts/mcts/analyze_session.py --latest             # Analyze latest session
+python scripts/mcts/analyze_session.py SESSION_ID --tree    # Show MCTS tree structure
+python scripts/mcts/monitor_live.py SESSION_ID              # Live monitoring
+```
+
+### Debugging and Troubleshooting
+```bash
+# Check logs
+tail -f logs/minotaur.log                                  # Main application log
+tail -f logs/mcts/session_*.log                           # Session-specific MCTS logs
+
+# Database inspection
+bin/duckdb data/minotaur.duckdb -c "SELECT * FROM sessions ORDER BY start_time DESC LIMIT 5"
+bin/duckdb data/minotaur.duckdb -c "SELECT * FROM exploration_history WHERE session_id = 'SESSION_ID' ORDER BY iteration"
+
+# Feature catalog inspection
+./manager.py features --search "keyword"                    # Search features by name
+./manager.py features --show FEATURE_NAME                  # Show feature details
 ```
 
 ## Custom Claude Code Commands
@@ -193,6 +215,7 @@ Base + override pattern:
 - **Early iterations**: High expansion rate, many evaluations per iteration
 - **Later iterations**: Exploitation focus, fewer new evaluations (normal)
 - **Tree depth limits**: `max_tree_depth` affects exploration scope
+- **Iteration counting**: Iterations are 0-indexed (root evaluation is iteration 0)
 
 ### Memory and Resource Management
 - **Feature catalog caching**: Thread-safe lazy loading for 50-100x speedup
@@ -204,6 +227,38 @@ Base + override pattern:
 - **Parquet caching**: 4.2x faster than CSV loading
 - **DuckDB sampling**: Efficient random sampling without full data loading
 - **Column masking**: Use DuckDB queries instead of DataFrame copies in memory
+
+## Common Issues and Solutions
+
+### Dataset Registration Issues
+```bash
+# Error: "Dataset 'name' not found in registry"
+./manager.py datasets --register --dataset-name NAME --auto --dataset-path /path/to/data/
+
+# Verify registration
+./manager.py datasets --show NAME
+```
+
+### Session Resume Issues
+```bash
+# Check session state
+./manager.py sessions --show SESSION_ID
+
+# If corrupted, analyze what can be salvaged
+python scripts/mcts/analyze_session.py SESSION_ID
+```
+
+### Performance Issues
+```bash
+# Check system health
+./manager.py selfcheck --run
+
+# Analyze slow operations
+./manager.py analytics --operation-timings
+
+# Optimize by reducing sample size in config
+# autogluon.sample_size: 1000  # Reduce for faster testing
+```
 
 ## Memories
 
@@ -221,6 +276,11 @@ Base + override pattern:
 - System actually performs 200+ total evaluations across all iterations
 - Early iterations do more expansion, later focus on exploitation
 - Configuration optimization: `expansion_budget` should be ≤ `max_children_per_node`
+
+### Iteration Counting Fix (2025-07-02)
+- Fixed off-by-one error in `total_iterations` display
+- Root evaluation (iteration 0) is now properly included in count
+- Sessions table shows correct iteration count (e.g., 10 instead of 9)
 
 ### Documentation Guidelines
 - Features problems: Must read `docs/features/FEATURES_OVERVIEW.md`

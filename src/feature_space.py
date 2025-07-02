@@ -489,31 +489,49 @@ class FeatureSpace:
         Get list of feature column names for a given MCTS node.
         Uses dynamic database lookup to resolve operation features.
         
-        CRITICAL FIX: Uses operation_that_created_this instead of applied_operations
-        to ensure each node gets different feature sets for proper MCTS evaluation.
+        CRITICAL: Accumulates features from all ancestors to ensure proper
+        MCTS evaluation with complete feature sets.
         """
-        # Get the current operation for this node (FIX THE CORE BUG)
-        current_operation = getattr(node, 'operation_that_created_this', None)
+        # Start with base features
+        base_features = list(getattr(node, 'base_features', []))
+        accumulated_features = base_features.copy()
         
-        # For root node, return base features
-        if current_operation is None or current_operation == 'root':
-            base_features = list(getattr(node, 'base_features', []))
-            logger.debug(f"Root node - returning {len(base_features)} base features")
-            return base_features
+        # Build path from root to current node
+        path_to_node = []
+        current = node
+        while current.parent is not None:
+            path_to_node.append(current)
+            current = current.parent
         
-        # Check if this is a custom domain operation
-        is_custom_op = current_operation in self.operations and self.operations[current_operation].category == 'custom_domain'
+        # Reverse to go from root to node
+        path_to_node.reverse()
         
-        # Use cached lookup for feature columns
-        operation_features = self._get_feature_columns_cached(current_operation, is_custom=is_custom_op)
+        # Accumulate features along the path
+        for path_node in path_to_node:
+            operation = getattr(path_node, 'operation_that_created_this', None)
+            if operation and operation != 'root':
+                # Check if this is a custom domain operation
+                is_custom_op = operation in self.operations and self.operations[operation].category == 'custom_domain'
+                
+                # Use cached lookup for feature columns
+                operation_features = self._get_feature_columns_cached(operation, is_custom=is_custom_op)
+                
+                if operation_features:
+                    # Add new features not already in accumulated list
+                    for feat in operation_features:
+                        if feat not in accumulated_features:
+                            accumulated_features.append(feat)
+                    logger.debug(f"Added {len(operation_features)} features from operation '{operation}'")
+                else:
+                    logger.warning(f"No features found for operation '{operation}' - using pattern fallback")
+                    # Fallback to pattern-based detection if no database entries
+                    fallback_features = self._get_features_by_pattern_fallback(operation, path_node)
+                    for feat in fallback_features:
+                        if feat not in accumulated_features:
+                            accumulated_features.append(feat)
         
-        if operation_features:
-            logger.debug(f"Node operation '{current_operation}' - found {len(operation_features)} features from cache")
-            return operation_features
-        else:
-            logger.warning(f"No features found for operation '{current_operation}' - falling back to pattern matching")
-            # Fallback to pattern-based detection if no database entries
-            return self._get_features_by_pattern_fallback(current_operation, node)
+        logger.debug(f"Node {node.node_id} has {len(accumulated_features)} total features (base: {len(base_features)})")
+        return accumulated_features
     
     def _get_features_by_pattern_fallback(self, operation_name: str, node) -> List[str]:
         """
