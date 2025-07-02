@@ -1,8 +1,8 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 23:40
-Compatible with commit: bcc1217
-Changes: Added origin field classification system and auto-registration API documentation
+Last Updated: 2025-07-02 13:00
+Compatible with commit: 9baad51
+Changes: Added train-only security, operation name standardization, dynamic categorization, and MCTS feature mode
 -->
 
 # Feature Operations - Comprehensive Catalog
@@ -16,26 +16,90 @@ All features in the Minotaur system are automatically classified by **origin** d
 - **`origin='generic'`**: Domain-agnostic operations (statistical, polynomial, binning, ranking, etc.)
 - **`origin='custom'`**: Domain-specific operations (competition/problem-specific features)
 
-### Auto-Registration
+### Auto-Registration Security
+Auto-registration is restricted to training data only to prevent data leakage:
+
+```python
+# ✅ Training data - auto-registration enabled
+features = operation.generate_features(
+    train_df, 
+    auto_register=True,     # Features added to catalog
+    origin='generic'
+)
+
+# ❌ Test data - auto-registration must be disabled
+features = operation.generate_features(
+    test_df,
+    auto_register=False,    # Prevents test data contamination
+    origin='generic'
+)
+```
+
+### Operation Name Standardization
+The system uses standardized operation names with automatic mapping:
+
+```python
+# Human-readable names in code
+operation.get_operation_name()  # Returns: "Statistical Aggregations"
+
+# Automatically mapped to metadata keys
+metadata_key = "statistical_aggregations"  # Used internally
+
+# Mapping handled by _map_operation_name_to_key()
+name_mapping = {
+    "Statistical Aggregations": "statistical_aggregations",
+    "Polynomial Features": "polynomial_features",
+    "Binning Features": "binning_features",
+    "Ranking Features": "ranking_features",
+    # ... more mappings
+}
+```
+
+### Dynamic Feature Categorization
+Categories are now dynamically loaded from the database:
+
+```sql
+-- operation_categories table drives categorization
+INSERT INTO operation_categories (operation_name, category, description, is_generic)
+VALUES ('Statistical Aggregations', 'statistical', 'Group-based statistics', true);
+
+-- Custom categories can be added per dataset
+INSERT INTO operation_categories (operation_name, category, dataset_name, is_generic)
+VALUES ('Agricultural Indicators', 'agricultural_domain', 'fertilizer-s5e6', false);
+```
+
+### Auto-Registration Process
 All feature operations support automatic registration in the feature catalog with:
 - **Origin classification** based on operation type
 - **Operation metadata** including name, category, and description
 - **Dynamic categorization** using database-driven category mapping
+- **Signal validation** - only features with discriminative value are registered
+- **MCTS feature mode** - individual features can be registered as separate operations
 
 ```python
-# Example: Generic operation with auto-registration
+# Example: Generic operation with auto-registration (TRAINING DATA ONLY)
 features = statistical_op.generate_features(
-    df, 
+    train_df, 
     auto_register=True,     # Automatically add to feature catalog
     origin='generic'        # Classify as generic features
 )
 
-# Example: Custom operation with auto-registration  
+# Example: Custom operation with auto-registration (TRAINING DATA ONLY)
 features = titanic_op.generate_features(
-    df,
+    train_df,
     auto_register=True,     # Automatically add to feature catalog
     origin='custom'         # Classify as custom features
 )
+
+# Example: MCTS feature-level exploration
+features = statistical_op.generate_features(
+    train_df,
+    auto_register=True,
+    mcts_feature=True,      # Each feature gets its own operation_name
+    origin='generic'
+)
+# Result: feature_catalog entries with operation_name = feature_name
+# e.g., operation_name = "age_mean_by_sex" instead of "Statistical Aggregations"
 ```
 
 ## 🔧 Generic Feature Operations

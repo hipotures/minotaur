@@ -1,7 +1,7 @@
 <!-- 
 Documentation Status: CURRENT
-Last Updated: 2025-06-30 23:40
-Compatible with commit: bcc1217
+Last Updated: 2025-07-02 13:00
+Compatible with commit: 9baad51
 Changes: Added origin field and auto-registration API guide for developers
 -->
 
