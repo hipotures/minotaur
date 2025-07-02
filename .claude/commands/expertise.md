@@ -1,1 +1,1 @@
-Create 5 different experts (sub-agents) in parallel to review this work. Make each an expert in a different category. Summarize the findings. Create an improvement plan based on information from experts.
+Create 5 different experts (sub-agents) in parallel to review this work. Make each an expert in a different category. Summarize the findings. Create an improvement plan based on information from experts. Write detailed review to docs/EXPERTS-REVIEW-[CURRENT_DATE_WITH_FORAMT+YYYYYMMDD].md file.
