@@ -35,6 +35,11 @@ from src import (
     AnalyticsGenerator,
     AUTOGLUON_AVAILABLE
 )
+from src.utils import (
+    create_session_resolver, SessionResolutionError,
+    add_legacy_resume_argument, add_universal_optional_session_args, 
+    resolve_session_from_args
+)
 from src.logging_utils import setup_session_logging, set_session_context, clear_session_context
 
 # Setup logging
@@ -985,14 +990,12 @@ def main():
         action='store_true',
         help='Validate configuration and exit'
     )
-    parser.add_argument(
-        '--resume',
-        type=str,
-        nargs='?',
-        const='',
-        metavar='SESSION_ID',
-        help='Resume session: --resume (last session) or --resume SESSION_ID (specific session)'
-    )
+    # Add universal optional session argument (defaults to latest)
+    add_universal_optional_session_args(parser, "MCTS")
+    
+    # Add legacy resume argument for backward compatibility
+    add_legacy_resume_argument(parser)
+    
     parser.add_argument(
         '--new-session',
         action='store_true',
@@ -1033,25 +1036,40 @@ def main():
             print("Configuration validation passed ✓")
             sys.exit(0)
         
-        # Handle session management
+        # Handle session management with universal resolver
         session_id_to_continue = None
-        if args.resume is not None:
-            # --resume was used (either with or without SESSION_ID)
-            if args.resume:
-                # Specific session ID provided: --resume SESSION_ID
-                session_id_to_continue = get_session_to_continue(args.config, args.resume)
-                if not session_id_to_continue:
-                    sys.exit(1)
-            else:
-                # No session ID provided: --resume (continue last session)
-                session_id_to_continue = get_session_to_continue(args.config)
-                if not session_id_to_continue:
-                    print("🆕 No sessions found to resume. Starting new session instead.")
-                    config['session']['mode'] = 'new'
-            
-            if session_id_to_continue:
+        session_identifier = resolve_session_from_args(args)
+        
+        if session_identifier and not args.new_session:
+            # Session resumption requested
+            try:
+                resolver = create_session_resolver(config)
+                session_info = resolver.resolve_session(session_identifier)
+                session_id_to_continue = session_info.session_id
+                
+                print(f"\n🔄 Resuming Session:")
+                print(f"   ID: {session_info.session_id[:8]}... ({session_info.session_id})")
+                print(f"   Name: {session_info.session_name}")
+                print(f"   Started: {session_info.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"   Status: {session_info.status}")
+                print(f"   Previous iterations: {session_info.total_iterations}")
+                if session_info.best_score is not None:
+                    print(f"   Best score so far: {session_info.best_score:.5f}")
+                print()
+                
                 config['session']['mode'] = 'continue'
                 config['session']['resume_session_id'] = session_id_to_continue
+                
+                # Close resolver connection to avoid conflicts with main MCTS database connection
+                resolver.connection_manager.close()
+                
+            except SessionResolutionError as e:
+                print(f"❌ Session resolution failed: {e}")
+                sys.exit(1)
+            except Exception as e:
+                print(f"❌ Unexpected error resolving session: {e}")
+                sys.exit(1)
+                
         elif args.new_session:
             config['session']['mode'] = 'new'
         

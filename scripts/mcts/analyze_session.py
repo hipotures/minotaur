@@ -29,6 +29,7 @@ from rich.text import Text
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.discovery_db import FeatureDiscoveryDB
+from src.utils import create_session_resolver, SessionResolutionError, add_universal_optional_session_args, validate_optional_session_args
 
 
 def calculate_tree_depth(db: FeatureDiscoveryDB, session_id: str) -> int:
@@ -638,8 +639,10 @@ def _print_timeline(console: Console, timeline: List[Dict[str, Any]]):
 def main():
     """Main analysis function."""
     parser = argparse.ArgumentParser(description="Analyze MCTS session performance")
-    parser.add_argument("session_id", nargs="?", help="Session ID to analyze")
-    parser.add_argument("--latest", action="store_true", help="Analyze latest session")
+    
+    # Add universal optional session argument
+    add_universal_optional_session_args(parser, "Session analysis")
+    
     parser.add_argument("--detailed", action="store_true", help="Include detailed analysis")
     parser.add_argument("--export", action="store_true", help="Export analysis to JSON")
     parser.add_argument("--tree", action="store_true", help="Show tree structure in console")
@@ -664,16 +667,26 @@ def main():
         print(f"❌ Failed to connect to database: {e}")
         return 1
     
-    # Get session ID
-    if args.latest or not args.session_id:
-        session_id = get_latest_session_id(db)
-        if not session_id:
-            print("❌ No sessions found in database")
-            return 1
-        print(f"📊 Analyzing latest session: {session_id}")
-    else:
-        session_id = args.session_id
-        print(f"📊 Analyzing session: {session_id}")
+    # Resolve session using universal resolver (with optional fallback)
+    try:
+        session_identifier = validate_optional_session_args(args)
+        resolver = create_session_resolver(config)
+        session_info = resolver.resolve_session(session_identifier)
+        session_id = session_info.session_id
+        
+        print(f"📊 Analyzing session: {session_id[:8]}... ({session_info.session_name})")
+        print(f"   Started: {session_info.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Iterations: {session_info.total_iterations}")
+        if session_info.best_score is not None:
+            print(f"   Best score: {session_info.best_score:.5f}")
+        print()
+        
+    except SessionResolutionError as e:
+        print(f"❌ Session resolution failed: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error resolving session: {e}")
+        return 1
     
     try:
         # Perform analysis

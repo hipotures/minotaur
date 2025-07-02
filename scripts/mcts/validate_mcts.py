@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.discovery_db import FeatureDiscoveryDB
+from src.utils import create_session_resolver, SessionResolutionError, add_universal_optional_session_args, validate_optional_session_args
 from src.mcts_engine import FeatureNode, MCTSEngine
 
 
@@ -346,8 +347,9 @@ def print_validation_summary(results: Dict[str, Dict[str, Any]]):
 def main():
     """Main validation function."""
     parser = argparse.ArgumentParser(description="Validate MCTS implementation fixes")
-    parser.add_argument("session_id", nargs="?", help="Session ID to validate")
-    parser.add_argument("--latest", action="store_true", help="Validate latest session")
+    
+    # Add universal optional session argument
+    add_universal_optional_session_args(parser, "MCTS validation")
     
     args = parser.parse_args()
     
@@ -369,16 +371,27 @@ def main():
         print(f"❌ Failed to connect to database: {e}")
         return 1
     
-    # Get session ID
-    if args.latest or not args.session_id:
-        session_id = get_latest_session_id(db)
-        if not session_id:
-            print("❌ No sessions found in database")
-            return 1
-        print(f"🔍 Validating latest session: {session_id}")
-    else:
-        session_id = args.session_id
-        print(f"🔍 Validating session: {session_id}")
+    # Resolve session using universal resolver (with optional fallback)
+    try:
+        session_identifier = validate_optional_session_args(args)
+        resolver = create_session_resolver(config)
+        session_info = resolver.resolve_session(session_identifier)
+        session_id = session_info.session_id
+        
+        print(f"🔍 Validating session: {session_id[:8]}... ({session_info.session_name})")
+        print(f"   Started: {session_info.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Iterations: {session_info.total_iterations}")
+        print()
+        
+        # Close resolver connection to avoid conflicts
+        resolver.connection_manager.close()
+        
+    except SessionResolutionError as e:
+        print(f"❌ Session resolution failed: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error resolving session: {e}")
+        return 1
     
     # Run validation tests
     validation_results = {}

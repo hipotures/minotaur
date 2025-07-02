@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Any, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.discovery_db import FeatureDiscoveryDB
+from src.utils import create_session_resolver, SessionResolutionError, add_universal_optional_session_args, validate_optional_session_args
 
 
 def load_default_config() -> Dict[str, Any]:
@@ -273,8 +274,10 @@ def get_latest_session_id(db: FeatureDiscoveryDB) -> Optional[str]:
 def main():
     """Main visualization function."""
     parser = argparse.ArgumentParser(description="Visualize MCTS tree structure")
-    parser.add_argument("session_id", nargs="?", help="Session ID to visualize")
-    parser.add_argument("--latest", action="store_true", help="Visualize latest session")
+    
+    # Add universal optional session argument
+    add_universal_optional_session_args(parser, "Tree visualization")
+    
     parser.add_argument("--depth", type=int, help="Maximum depth to display")
     parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     parser.add_argument("--features", action="store_true", help="Show feature count changes")
@@ -291,16 +294,27 @@ def main():
         print(f"❌ Failed to connect to database: {e}")
         return 1
     
-    # Get session ID
-    if args.latest or not args.session_id:
-        session_id = get_latest_session_id(db)
-        if not session_id:
-            print("❌ No sessions found in database")
-            return 1
-        print(f"🌳 Visualizing latest session: {session_id}")
-    else:
-        session_id = args.session_id
-        print(f"🌳 Visualizing session: {session_id}")
+    # Resolve session using universal resolver (with optional fallback)
+    try:
+        session_identifier = validate_optional_session_args(args)
+        resolver = create_session_resolver(config)
+        session_info = resolver.resolve_session(session_identifier)
+        session_id = session_info.session_id
+        
+        print(f"🌳 Visualizing session: {session_id[:8]}... ({session_info.session_name})")
+        print(f"   Started: {session_info.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Iterations: {session_info.total_iterations}")
+        print()
+        
+        # Close resolver connection to avoid conflicts
+        resolver.connection_manager.close()
+        
+    except SessionResolutionError as e:
+        print(f"❌ Session resolution failed: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error resolving session: {e}")
+        return 1
     
     try:
         # Load tree
