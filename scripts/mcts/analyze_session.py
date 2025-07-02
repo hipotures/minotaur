@@ -552,6 +552,8 @@ def _print_session_overview(formatter, overview: Dict[str, Any], mode: str):
     
     title = f"{formatter.emoji('🔍', '[OVERVIEW]')} Przegląd Sesji"
     formatter.print(formatter.key_value_pairs(data, title, "blue"))
+    if formatter.plain_mode:
+        print()  # Add extra newline in plain mode
 
 
 def _print_convergence_pattern(formatter, convergence: Dict[str, Any], mode: str):
@@ -575,6 +577,8 @@ def _print_convergence_pattern(formatter, convergence: Dict[str, Any], mode: str
     
     title = f"{formatter.emoji('📈', '[CONVERGENCE]')} Wzorzec Konwergencji"
     formatter.print(formatter.key_value_pairs(data, title, "green"))
+    if formatter.plain_mode:
+        print()  # Add extra newline in plain mode
 
 
 def _print_top_operations(formatter, operations: Dict[str, Any], mode: str):
@@ -613,6 +617,9 @@ def _print_top_operations(formatter, operations: Dict[str, Any], mode: str):
             table.add_row(row["Rank"], row["Operation"], row["Avg Score"], row["Uses"])
         
         formatter.print(Panel(table, title="🎯 Najlepsze Operacje", border_style="yellow"))
+    
+    if formatter.plain_mode:
+        print()  # Add extra newline in plain mode
 
 
 def _print_mcts_behavior(formatter, behavior: Dict[str, Any], mode: str):
@@ -633,6 +640,8 @@ def _print_mcts_behavior(formatter, behavior: Dict[str, Any], mode: str):
     
     title = f"{formatter.emoji('🌳', '[MCTS]')} Zachowanie MCTS"
     formatter.print(formatter.key_value_pairs(data, title, "magenta"))
+    if formatter.plain_mode:
+        print()  # Add extra newline in plain mode
 
 
 def _print_timeline(formatter, timeline: List[Dict[str, Any]]):
@@ -669,6 +678,9 @@ def _print_timeline(formatter, timeline: List[Dict[str, Any]]):
             table.add_row(row["Iteration"], row["Operation"], row["Score"])
         
         formatter.print(Panel(table, title="⏱️ Timeline Sesji (pierwsze 5 iteracji)", border_style="blue"))
+    
+    if formatter.plain_mode:
+        print()  # Add extra newline in plain mode
 
 
 def main():

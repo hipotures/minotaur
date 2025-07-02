@@ -223,10 +223,8 @@ class DisplayFormatter:
         if title:
             result.append(f"\n{self._clean_text(title)}")
         
-        max_key_len = max(len(str(k)) for k in pairs.keys()) if pairs else 0
-        
         for key, value in pairs.items():
-            result.append(f"{str(key).ljust(max_key_len)}: {value}")
+            result.append(f"{str(key)}: {value}")
         
         return "\n".join(result)
     
