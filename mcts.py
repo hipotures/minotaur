@@ -1001,6 +1001,50 @@ def main():
     
     args = parser.parse_args()
     
+    # If no arguments provided, show help and ask about continuing last session
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print("\n" + "="*60)
+        
+        # Check if there are any sessions to continue
+        try:
+            # Load config to check for sessions
+            default_config = load_config_with_overrides("config/mcts_config.yaml")
+            resolver = create_session_resolver(default_config)
+            
+            # Try to get the latest session
+            try:
+                latest_session = resolver.resolve_session("latest")
+                print(f"\n📊 Ostatnia sesja:")
+                print(f"   ID: {latest_session.session_id[:8]}...")
+                print(f"   Nazwa: {latest_session.session_name}")
+                print(f"   Status: {latest_session.status}")
+                print(f"   Iteracje: {latest_session.total_iterations}")
+                print(f"   Najlepszy wynik: {latest_session.best_score:.5f}" if latest_session.best_score else "   Najlepszy wynik: brak")
+                
+                # Ask user if they want to continue
+                response = input("\n🔄 Czy chcesz kontynuować tę sesję? [t/N]: ").strip().lower()
+                
+                if response in ['t', 'tak', 'y', 'yes']:
+                    # Set args to continue the session
+                    sys.argv.extend(['--resume', 'latest'])
+                    args = parser.parse_args()
+                else:
+                    print("\n💡 Aby rozpocząć nową sesję, użyj: ./mcts.py --config config/mcts_config.yaml --new")
+                    print("💡 Aby kontynuować konkretną sesję: ./mcts.py --resume SESSION_ID")
+                    sys.exit(0)
+                    
+            except (SessionResolutionError, Exception):
+                print("\n📊 Brak poprzednich sesji.")
+                print("\n💡 Aby rozpocząć nową sesję, użyj: ./mcts.py --config config/mcts_config.yaml")
+                sys.exit(0)
+                
+        except Exception as e:
+            # If anything fails, just show the help
+            print(f"\n⚠️ Nie można sprawdzić sesji: {e}")
+            print("\n💡 Aby rozpocząć nową sesję, użyj: ./mcts.py --config config/mcts_config.yaml")
+            sys.exit(0)
+    
     # Handle list sessions command
     if args.list_sessions:
         if not os.path.exists(args.config):
@@ -1039,12 +1083,9 @@ def main():
         
         # Handle session management with universal resolver
         session_id_to_continue = None
+        session_identifier = resolve_session_from_args(args)
         
-        # Check if user explicitly requested resume (not just default behavior)
-        explicitly_requested_resume = hasattr(args, 'resume') and args.resume is not None
-        
-        if explicitly_requested_resume and not args.new_session:
-            session_identifier = resolve_session_from_args(args)
+        if session_identifier and not args.new_session:
             # Session resumption requested
             try:
                 resolver = create_session_resolver(config)
