@@ -718,15 +718,15 @@ class FeatureSpace:
                 # Get feature columns for this node (includes base + generated)
                 feature_columns = self.get_feature_columns_for_node(node)
                 
-                # Filter to only include available columns
-                available_columns = [col for col in feature_columns if col in result_df.columns]
+                # Return all columns from result_df (includes base + generated)
+                available_columns = list(result_df.columns)
                 
                 # Update node's features_after to reflect actual features
                 node.features_after = available_columns
                 
                 logger.info(f"Generated {len(available_columns)} features for node {node.node_id} (added {len(available_columns) - len(base_df.columns)} new)")
                 
-                return result_df[available_columns]
+                return result_df
                 
             except Exception as e:
                 logger.error(f"Failed to generate features for node: {e}")
