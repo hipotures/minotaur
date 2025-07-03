@@ -222,9 +222,9 @@ class FeatureDiscoveryRunner:
             logger.info("Initializing AutoGluon evaluator...")
             self.evaluator = AutoGluonEvaluator(self.config, db_service=self.db.db_service)
             
-            # Initialize feature space with DuckDB manager from evaluator
+            # Initialize feature space with DuckDB manager from db
             logger.info("Initializing feature space...")
-            self.feature_space = FeatureSpace(self.config, duckdb_manager=getattr(self.evaluator, 'duckdb_manager', None))
+            self.feature_space = FeatureSpace(self.config, duckdb_manager=self.db.db_service.db_manager)
             
             # Initialize MCTS engine
             logger.info("Initializing MCTS engine...")
