@@ -662,15 +662,15 @@ class FeatureSpace:
         if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
             try:
                 # Load train data from file
-                dataset_info = self.duckdb_manager.connection.execute(
-                    "SELECT dataset_path, train_path FROM datasets WHERE name = ?", 
-                    [self.dataset_name]
-                ).fetchone()
+                dataset_query = "SELECT dataset_path, train_path FROM datasets WHERE name = :name"
+                dataset_result = self.duckdb_manager.execute_query(dataset_query, {'name': self.dataset_name})
                 
-                if not dataset_info:
+                if not dataset_result:
                     raise ValueError(f"Dataset '{self.dataset_name}' not found in registry")
                 
-                dataset_path, train_path = dataset_info
+                dataset_info = dataset_result[0]
+                dataset_path = dataset_info['dataset_path']
+                train_path = dataset_info.get('train_path')
                 
                 # Determine full path to train file
                 if train_path:
