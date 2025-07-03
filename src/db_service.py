@@ -405,6 +405,12 @@ class DatabaseService:
             return output_file
         return None
     
+    def update_feature_impact(self, features: List[str], improvement: float, session_id: str = None):
+        """Update feature impact statistics - stub for compatibility."""
+        # This is a stub method to prevent errors
+        # Feature impact tracking could be implemented later
+        pass
+    
     def close(self) -> None:
         """Close database connections."""
         if hasattr(self.db_manager, 'close'):

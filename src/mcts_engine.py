@@ -611,19 +611,14 @@ class MCTSEngine:
         start_time = time.time()
         
         try:
-            # Get feature columns for this node
-            feature_columns = feature_space.get_feature_columns_for_node(node)
+            # Generate features for this node (applies operations dynamically)
+            features = feature_space.generate_features_for_node(node)
             
-            # Update features_after on the node
-            node.features_after = feature_columns
+            # Update features_after on the node (done inside generate_features_for_node)
+            # node.features_after is already set
             
-            # Evaluate using AutoGluon with column-based loading
-            if hasattr(evaluator, 'evaluate_features_from_columns'):
-                score = evaluator.evaluate_features_from_columns(feature_columns, node.depth, self.current_iteration)
-            else:
-                # Fallback to old method if new method not available
-                features = feature_space.generate_features_for_node(node)
-                score = evaluator.evaluate_features(features, node.depth, self.current_iteration)
+            # Evaluate using AutoGluon
+            score = evaluator.evaluate_features(features, node.depth, self.current_iteration)
             
             evaluation_time = time.time() - start_time
             self.total_evaluations += 1
