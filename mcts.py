@@ -747,16 +747,9 @@ class FeatureDiscoveryRunner:
             # Build feature definitions for cache manager
             feature_definitions = []
             
-            for operation_name in all_operations:
-                for data_type, df in [('train', train_full_df), ('test', test_full_df)]:
-                    def build_func():
-                        return self.feature_space._apply_domain_operation(df, operation_name)
-                    
-                    feature_definitions.append({
-                        'name': operation_name,
-                        'data_type': data_type,
-                        'build_func': build_func
-                    })
+            # Skip pre-building for now - operations structure has changed
+            # This would need to be reimplemented with the new modular feature system
+            feature_definitions = []
             
             # Batch build all missing features
             cache_manager.batch_build_features(feature_definitions)

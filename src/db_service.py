@@ -262,11 +262,13 @@ class DatabaseService:
         self.logger.debug(f"Logging exploration step: {kwargs.get('operation', 'unknown')}")
         return 0
     
-    def ensure_mcts_node_exists(self, node_id: int, parent_id: Optional[int] = None,
-                               operation: Optional[str] = None, depth: int = 0) -> None:
+    def ensure_mcts_node_exists(self, **kwargs) -> None:
         """Ensure MCTS node exists in the database."""
         # Placeholder implementation - would need proper MCTS nodes table
-        self.logger.debug(f"Ensuring MCTS node exists: {node_id} (parent={parent_id}, op={operation})")
+        node_id = kwargs.get('node_id')
+        parent_node_id = kwargs.get('parent_node_id')
+        operation = kwargs.get('operation_applied')
+        self.logger.debug(f"Ensuring MCTS node exists: {node_id} (parent={parent_node_id}, op={operation})")
     
     def update_session_progress(self, iteration: int, best_score: float) -> None:
         """Update session progress with current iteration and best score."""
@@ -322,7 +324,9 @@ class DatabaseService:
                 'loaded_node_count': 0,
                 'best_score': 0.0,
                 'resume_operation': None,
-                'has_history': False
+                'has_history': False,
+                'root_score': None,
+                'total_evaluations': 0
             }
         
         # Get session info
@@ -341,7 +345,9 @@ class DatabaseService:
                 'loaded_node_count': 0,  # Would need exploration history to get this
                 'best_score': session.get('best_score', 0.0),
                 'resume_operation': None,  # Would need last operation from exploration history
-                'has_history': has_history
+                'has_history': has_history,
+                'root_score': session.get('best_score', 0.0) if has_history else None,
+                'total_evaluations': session.get('total_iterations', 0) * 2  # Rough estimate
             }
         
         return {
@@ -349,7 +355,9 @@ class DatabaseService:
             'loaded_node_count': 0,
             'best_score': 0.0,
             'resume_operation': None,
-            'has_history': False
+            'has_history': False,
+            'root_score': None,
+            'total_evaluations': 0
         }
     
     def get_session_progress(self) -> Dict[str, Any]:
@@ -385,6 +393,17 @@ class DatabaseService:
             'exploration_count': 0,
             'unique_features': 0
         }
+    
+    def export_best_features_to_session(self, limit: int = 20) -> Optional[str]:
+        """Export Python code for best features to session directory."""
+        # Placeholder implementation
+        if self.output_manager:
+            output_file = self.output_manager.get_file_path('best_features.py', 'exports')
+            # Would need to implement actual feature export logic
+            with open(output_file, 'w') as f:
+                f.write("# Best features export not yet implemented\n")
+            return output_file
+        return None
     
     def close(self) -> None:
         """Close database connections."""

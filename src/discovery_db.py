@@ -55,7 +55,8 @@ class FeatureDiscoveryDB:
         
         # Backward compatibility properties
         self.db_config = config.get('database', {})
-        self.db_path = self.db_service.connection_manager.db_path
+        self.db_path = self.db_service.db_path
+        self.connection_manager = self.db_service  # The db_service itself acts as connection manager
         self.backup_path = self.db_config.get('backup_path', 'backups')
         self.db_type = self.db_config.get('type', 'duckdb')  # Support multiple database types
         self.schema = 'main'

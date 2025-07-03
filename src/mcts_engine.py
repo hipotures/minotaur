@@ -1038,6 +1038,10 @@ class MCTSEngine:
                 all_columns = requested_columns
             
             # Create column list for SQL
+            if not all_columns:
+                logger.warning("No valid columns found for test features - skipping save")
+                return
+                
             column_list = ', '.join([f'"{col}"' for col in all_columns])
             
             # Load test data with best features
