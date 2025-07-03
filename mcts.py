@@ -1039,9 +1039,12 @@ def main():
         
         # Handle session management with universal resolver
         session_id_to_continue = None
-        session_identifier = resolve_session_from_args(args)
         
-        if session_identifier and not args.new_session:
+        # Check if user explicitly requested resume (not just default behavior)
+        explicitly_requested_resume = hasattr(args, 'resume') and args.resume is not None
+        
+        if explicitly_requested_resume and not args.new_session:
+            session_identifier = resolve_session_from_args(args)
             # Session resumption requested
             try:
                 resolver = create_session_resolver(config)

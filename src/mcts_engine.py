@@ -935,7 +935,10 @@ class MCTSEngine:
         # Main MCTS loop - start from appropriate iteration
         # For resumed sessions, current_iteration is already set to next_iteration from DB
         start_iteration = self.current_iteration if resume_params['has_history'] else 1
-        end_iteration = start_iteration + self.max_iterations - 1
+        # IMPORTANT: max_iterations is per run, not global
+        # So we should run exactly max_iterations in this execution
+        iterations_to_run = self.max_iterations
+        end_iteration = start_iteration + iterations_to_run - 1
         
         for iteration in range(start_iteration, end_iteration + 1):
             self.current_iteration = iteration
