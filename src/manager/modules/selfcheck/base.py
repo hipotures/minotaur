@@ -48,43 +48,33 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
             print(f"   Checking registered dataset: {dataset}")
         
         try:
-            # Check if dataset exists in registry
-            query = """
-                SELECT dataset_id, dataset_name, train_path, test_path, target_column, id_column 
-                FROM datasets 
-                WHERE dataset_name = ? OR dataset_id LIKE ?
-            """
-            result = self.dataset_service.repository.execute_custom_query(query, (dataset, f"{dataset}%"), fetch='one')
+            # Check if dataset exists in registry using the new service method
+            result = self.dataset_service.get_dataset(dataset)
             
             if not result:
                 self.print_error(f"Dataset '{dataset}' not found in registry")
                 
                 # Show available datasets
-                available_query = "SELECT dataset_name FROM datasets WHERE is_active = TRUE"
-                available = self.dataset_service.repository.execute_custom_query(available_query, fetch='all')
+                available = self.dataset_service.list_datasets()
                 if available:
-                    # available is a list of tuples: [(dataset_name,), ...]
-                    dataset_names = [row[0] for row in available]
+                    dataset_names = [ds['name'] for ds in available]
                     self.print_info(f"Available datasets: {', '.join(dataset_names)}")
                 return False, {}
             
-            # result is a tuple: (dataset_id, dataset_name, train_path, test_path, target_column, id_column)
-            dataset_id = result[0]
-            name = result[1]
-            train_path = result[2]
-            test_path = result[3]
-            target_column = result[4]
-            id_column = result[5]
+            # Extract fields from the result dictionary
+            name = result.get('name', dataset)
+            dataset_path = result.get('dataset_path', '')
+            target_column = result.get('target_column')
             
-            print(f"   ✅ Found registered dataset: {name} (ID: {dataset_id[:8]})")
+            print(f"   ✅ Found registered dataset: {name}")
             
             dataset_info = {
-                'dataset_id': dataset_id,
+                'dataset_id': name,  # Use name as ID for compatibility
                 'name': name,
-                'train_path': train_path,
-                'test_path': test_path,
+                'train_path': dataset_path,  # Assuming dataset_path is the train path
+                'test_path': None,  # New schema doesn't have separate test_path
                 'target_column': target_column,
-                'id_column': id_column
+                'id_column': None  # New schema doesn't have id_column
             }
             
             # Validate actual data files exist
@@ -103,19 +93,23 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
             import pandas as pd
             
             train_path = dataset_info['train_path']
-            test_path = dataset_info['test_path']
+            test_path = dataset_info.get('test_path')  # May be None in new schema
             target_column = dataset_info['target_column']
             
-            train_file = Path(train_path)
+            train_file = Path(train_path) if train_path else None
             test_file = Path(test_path) if test_path else None
             
+            if not train_file:
+                self.print_error(f"No training file path specified")
+                return False
+                
             if not train_file.exists():
                 self.print_error(f"Training file not found: {train_path}")
                 return False
             
             if test_file and not test_file.exists():
-                self.print_error(f"Test file not found: {test_path}")
-                return False
+                self.print_warning(f"Test file not found: {test_path} (this is okay for some datasets)")
+                # Don't fail if test file is missing - it's optional
             
             # Analyze dataset files
             train_df = pd.read_csv(train_file)
