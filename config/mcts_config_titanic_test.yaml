@@ -7,6 +7,7 @@ mcts:
   expansion_budget: 2
 autogluon:
   dataset_name: titanic
+  target_metric: accuracy
   included_model_types:
   - XGB
   time_limit: 60

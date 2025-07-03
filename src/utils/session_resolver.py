@@ -25,7 +25,7 @@ class SessionInfo:
     total_iterations: int
     best_score: Optional[float]
     is_test_mode: bool
-    dataset_hash: Optional[str]
+    config_hash: Optional[str]
     
 
 class SessionResolutionError(Exception):
@@ -153,7 +153,7 @@ class SessionResolver:
         
         query = """
         SELECT session_id, session_name, start_time, end_time, status, 
-               total_iterations, best_score, is_test_mode, dataset_hash
+               total_iterations, best_score, is_test_mode, config_hash
         FROM sessions 
         WHERE REPLACE(session_id, '-', '') LIKE ?
         ORDER BY start_time DESC 
@@ -182,7 +182,7 @@ class SessionResolver:
         """Resolve session by exact session name."""
         query = """
         SELECT session_id, session_name, start_time, end_time, status, 
-               total_iterations, best_score, is_test_mode, dataset_hash
+               total_iterations, best_score, is_test_mode, config_hash
         FROM sessions 
         WHERE session_name = ?
         ORDER BY start_time DESC 
@@ -200,7 +200,7 @@ class SessionResolver:
         """Fetch session by exact session ID."""
         query = """
         SELECT session_id, session_name, start_time, end_time, status, 
-               total_iterations, best_score, is_test_mode, dataset_hash
+               total_iterations, best_score, is_test_mode, config_hash
         FROM sessions 
         WHERE session_id = ?
         """
@@ -216,7 +216,7 @@ class SessionResolver:
         """Get the most recent session."""
         query = """
         SELECT session_id, session_name, start_time, end_time, status, 
-               total_iterations, best_score, is_test_mode, dataset_hash
+               total_iterations, best_score, is_test_mode, config_hash
         FROM sessions 
         ORDER BY start_time DESC 
         LIMIT 1
@@ -265,7 +265,7 @@ class SessionResolver:
     def _result_to_session_info(self, result) -> SessionInfo:
         """Convert database result to SessionInfo object."""
         (session_id, session_name, start_time, end_time, status, 
-         total_iterations, best_score, is_test_mode, dataset_hash) = result
+         total_iterations, best_score, is_test_mode, config_hash) = result
          
         # Handle datetime conversion
         if isinstance(start_time, str):
@@ -282,7 +282,7 @@ class SessionResolver:
             total_iterations=total_iterations or 0,
             best_score=best_score,
             is_test_mode=is_test_mode or False,
-            dataset_hash=dataset_hash
+            config_hash=config_hash
         )
 
 
@@ -296,7 +296,79 @@ def create_session_resolver(config: Dict[str, Any]) -> SessionResolver:
     Returns:
         Configured SessionResolver instance
     """
-    from src.db import DatabaseConnectionManager
+    from src.database.engine_factory import DatabaseFactory
     
-    connection_manager = DatabaseConnectionManager(config, read_only=True)
+    # Get database configuration
+    db_config = config.get('database', {})
+    db_type = db_config.get('type', 'duckdb')
+    
+    # Extract connection parameters
+    connection_params = {
+        'database': db_config.get('path', 'data/minotaur.duckdb'),
+        'read_only': True
+    }
+    
+    # Create database manager using factory
+    db_manager = DatabaseFactory.create_manager(db_type, connection_params)
+    
+    # Create a wrapper that provides get_connection method for compatibility
+    class ConnectionManagerWrapper:
+        def __init__(self, db_manager):
+            self.db_manager = db_manager
+            self.db_path = connection_params['database']
+            
+        def close(self):
+            """Close database connection."""
+            if hasattr(self.db_manager, 'close'):
+                self.db_manager.close()
+            
+        def get_connection(self):
+            # Return a context manager that provides execute method
+            class ConnectionWrapper:
+                def __init__(self, db_manager):
+                    self.db_manager = db_manager
+                    
+                def __enter__(self):
+                    return self
+                    
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+                    
+                def execute(self, query, params=None):
+                    # Convert list params to dict for SQLAlchemy
+                    if isinstance(params, list):
+                        # For LIKE queries, we need to handle positional parameters
+                        import re
+                        # Replace ? with :param0, :param1, etc.
+                        param_dict = {}
+                        for i, param in enumerate(params):
+                            param_dict[f'param{i}'] = param
+                        # Replace ? with named parameters
+                        query_parts = query.split('?')
+                        new_query = query_parts[0]
+                        for i in range(1, len(query_parts)):
+                            new_query += f':param{i-1}' + query_parts[i]
+                        query = new_query
+                        params = param_dict
+                    
+                    results = self.db_manager.execute_query(query, params)
+                    
+                    # Convert results to match expected format
+                    class ResultWrapper:
+                        def __init__(self, results):
+                            self.results = results
+                            
+                        def fetchall(self):
+                            return [tuple(row.values()) for row in self.results]
+                            
+                        def fetchone(self):
+                            if self.results:
+                                return tuple(self.results[0].values())
+                            return None
+                    
+                    return ResultWrapper(results)
+            
+            return ConnectionWrapper(self.db_manager)
+    
+    connection_manager = ConnectionManagerWrapper(db_manager)
     return SessionResolver(connection_manager)

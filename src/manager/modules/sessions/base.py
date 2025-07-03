@@ -90,7 +90,7 @@ class BaseSessionsCommand(BaseCommand, ABC):
                 SELECT 
                     session_id, session_name, start_time, end_time, 
                     total_iterations, best_score, config_snapshot, 
-                    status, strategy, is_test_mode, notes, dataset_hash
+                    status, strategy, is_test_mode, dataset_name, config_hash
                 FROM sessions 
                 WHERE session_id = ? OR session_name = ?
             """
@@ -108,8 +108,8 @@ class BaseSessionsCommand(BaseCommand, ABC):
                     'status': result['status'],
                     'strategy': result['strategy'],
                     'is_test_mode': result['is_test_mode'],
-                    'notes': result['notes'],
-                    'dataset_hash': result['dataset_hash']
+                    'dataset_name': result['dataset_name'],
+                    'config_hash': result['config_hash']
                 }
             
             return None

@@ -51,8 +51,8 @@ class AutoGluonEvaluator:
         # Resolve dataset information
         dataset_info = self._resolve_dataset_configuration()
         self.database_path = dataset_info['database_path']
-        self.target_column = dataset_info['target_column']
-        self.id_column = dataset_info['id_column']
+        self.target_column = dataset_info['target_column'].lower() if dataset_info['target_column'] else None
+        self.id_column = dataset_info['id_column'].lower() if dataset_info['id_column'] else 'id'
         self.ignore_columns = self.autogluon_config.get('ignore_columns', []) or []
         self.use_database_cache = dataset_info.get('use_database_cache', False)
         self.dataset_name = dataset_info.get('dataset_name')
@@ -90,21 +90,39 @@ class AutoGluonEvaluator:
         if not dataset_name:
             raise ValueError("dataset_name must be specified in autogluon configuration")
         
-        # Use existing database service if provided, otherwise create temporary read-only connection
+        # Query dataset information directly
+        query = """
+        SELECT name, dataset_path, train_path, test_path, 
+               target_column, id_column, description, is_active
+        FROM datasets 
+        WHERE name = :dataset_name AND is_active = true
+        """
+        
         if self.db_service:
-            dataset_repo = self.db_service.dataset_repo
+            results = self.db_service.execute_query(query, {'dataset_name': dataset_name})
         else:
-            from .discovery_db import FeatureDiscoveryDB
-            # Create temporary DB instance to access dataset registry (read-only mode)
-            temp_db = FeatureDiscoveryDB(self.config, read_only=True)
-            dataset_repo = temp_db.db_service.dataset_repo
+            # Create temporary read-only connection
+            db_path = self.config.get('database', {}).get('path', 'data/minotaur.duckdb')
+            try:
+                import duckdb
+                conn = duckdb.connect(db_path, read_only=True)
+                cursor = conn.execute(query, {'dataset_name': dataset_name})
+                results = cursor.fetchall()
+                conn.close()
+                
+                # Convert to dict format
+                if results:
+                    columns = ['name', 'dataset_path', 'train_path', 'test_path', 
+                              'target_column', 'id_column', 'description', 'is_active']
+                    results = [dict(zip(columns, row)) for row in results]
+            except ImportError:
+                raise ImportError("DuckDB not available for dataset access")
         
-        result = dataset_repo.find_by_name(dataset_name)
-        
-        if not result:
+        if not results:
             raise ValueError(f"Dataset '{dataset_name}' not found in registry. Please register it first using: python manager.py datasets --register --dataset-name {dataset_name}")
         
-        dataset_id, name, target_col, id_col = result.dataset_id, result.dataset_name, result.target_column, result.id_column
+        result = results[0]
+        dataset_id, name, target_col, id_col = None, result['name'], result['target_column'], result['id_column']
         
         # Build cache paths - use database type from config
         cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
@@ -160,8 +178,8 @@ class AutoGluonEvaluator:
                 
                 logger.info(f"Loading data from database: {self.database_path}")
                 # Load train and test data from same database using SQLAlchemy Core
-                self.base_train_data = self.db_manager.execute_query_df("SELECT * FROM train_features")
-                self.base_test_data = self.db_manager.execute_query_df("SELECT * FROM test_features")
+                self.base_train_data = self.db_manager.execute_query_df("SELECT * FROM train")
+                self.base_test_data = self.db_manager.execute_query_df("SELECT * FROM test")
             else:
                 raise ValueError("Only registered datasets with database cache are supported. Please register your dataset first.")
             
@@ -200,7 +218,7 @@ class AutoGluonEvaluator:
         Evaluate a feature set by selecting specific columns from database.
         
         Args:
-            feature_columns: List of column names to select from train_features
+            feature_columns: List of column names to select from train table
             node_depth: Depth of node in MCTS tree (for adaptive config)
             iteration: Current MCTS iteration
             
@@ -227,7 +245,7 @@ class AutoGluonEvaluator:
             
             # Prepare data by selecting columns from database
             # For first iteration (baseline), use original train/test tables
-            # For subsequent iterations, use train_features/test_features tables with generated features
+            # For subsequent iterations, use train/test tables with feature columns
             if self.evaluation_count == 1:
                 logger.info("🚀 First iteration detected: using original train/test data for baseline")
                 train_data = self._prepare_autogluon_data_from_original_tables(eval_config)
@@ -385,7 +403,7 @@ class AutoGluonEvaluator:
         Prepare training and validation data by selecting specific columns from database.
         
         Args:
-            feature_columns: List of column names to select from train_features/test_features
+            feature_columns: List of column names to select from train/test tables
             eval_config: Optional evaluation configuration
             
         Returns:
@@ -398,10 +416,10 @@ class AutoGluonEvaluator:
         if not hasattr(self, 'db_manager') or self.db_manager is None:
             raise ValueError("Database manager not available for column-based loading")
         
-        # Get available columns from train_features to validate
+        # Get available columns from train table to validate
         columns_query = """
             SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'train_features'
+            WHERE table_name = 'train'
         """
         available_columns_result = self.db_manager.execute_query(columns_query)
         available_columns = {row['column_name'] for row in available_columns_result}
@@ -423,7 +441,7 @@ class AutoGluonEvaluator:
         column_list = ', '.join([f'"{col}"' if ' ' in col else col for col in all_columns])
         
         # Load train data with specific columns
-        train_query = f"SELECT {column_list} FROM train_features"
+        train_query = f"SELECT {column_list} FROM train"
         train_data = self.db_manager.execute_query_df(train_query)
         
         # Apply train_size sampling if configured

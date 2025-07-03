@@ -49,6 +49,10 @@ class FeatureDiscoveryDB:
         self.session_name = self.db_service.session_name
         self.output_manager = self.db_service.output_manager
         
+        # Expose db_service methods for backward compatibility
+        self.update_session_progress = self.db_service.update_session_progress
+        self.ensure_mcts_node_exists = self.db_service.ensure_mcts_node_exists
+        
         # Backward compatibility properties
         self.db_config = config.get('database', {})
         self.db_path = self.db_service.connection_manager.db_path

@@ -950,6 +950,15 @@ class MCTSEngine:
             try:
                 iteration_stats = self.mcts_iteration(evaluator, feature_space, db)
                 
+                # Update session progress in database
+                if db:
+                    if hasattr(db, 'update_session_progress'):
+                        db.update_session_progress(self.current_iteration, self.best_score)
+                    else:
+                        logger.warning(f"Database object {type(db).__name__} does not have update_session_progress method")
+                else:
+                    logger.warning("No database object available for session progress update")
+                
                 # Progress reporting
                 if iteration % self.config['logging']['progress_interval'] == 0:
                     self._report_progress(iteration_stats)

@@ -54,46 +54,66 @@ class DatasetManager:
         
         # Load from database registration
         try:
-            from .discovery_db import FeatureDiscoveryDB
+            # Query dataset information directly
+            query = """
+            SELECT name, dataset_path, train_path, test_path, 
+                   target_column, id_column, description, is_active
+            FROM datasets 
+            WHERE name = :dataset_name AND is_active = true
+            """
             
-            # Use existing DB connection or raise error
+            # Use db_service if available, otherwise create temporary connection
             if self.db_service:
-                dataset_repo = self.db_service.dataset_repo
+                results = self.db_service.execute_query(query, {'dataset_name': dataset_name})
             else:
-                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
-            result = dataset_repo.get_by_name(dataset_name)
+                # Create temporary read-only connection
+                db_path = self.config.get('database', {}).get('path', 'data/minotaur.duckdb')
+                if not DUCKDB_AVAILABLE:
+                    raise ImportError("DuckDB not available for dataset access")
+                conn = duckdb.connect(db_path, read_only=True)
+                cursor = conn.execute(query, {'dataset_name': dataset_name})
+                results = cursor.fetchall()
+                conn.close()
+                
+                # Convert to dict format
+                if results:
+                    columns = ['name', 'dataset_path', 'train_path', 'test_path', 
+                              'target_column', 'id_column', 'description', 'is_active']
+                    results = [dict(zip(columns, row)) for row in results]
             
-            if not result:
+            if not results:
                 raise ValueError(f"Dataset '{dataset_name}' not found or inactive")
             
-            # Build dataset info from Pydantic model
+            result = results[0]
+            
+            # Build dataset info from database result
             dataset_info = {
-                'dataset_id': result.dataset_id,
-                'dataset_name': result.dataset_name,
-                'train_path': result.train_path,
-                'test_path': result.test_path,
-                'target_column': result.target_column,
-                'id_column': result.id_column,
-                'train_records': result.train_records,
-                'train_columns': result.train_columns,
-                'test_records': result.test_records,
-                'test_columns': result.test_columns,
-                'competition_name': result.competition_name,
-                'description': result.description,
+                'dataset_id': None,  # Not used in new system
+                'dataset_name': result['name'],
+                'dataset_path': result['dataset_path'],
+                'train_path': result['train_path'],
+                'test_path': result['test_path'],
+                'target_column': result['target_column'],
+                'id_column': result['id_column'],
+                'train_records': None,  # Will be loaded on demand
+                'train_columns': None,
+                'test_records': None,
+                'test_columns': None,
+                'competition_name': None,
+                'description': result['description'],
                 'is_registered': True,
-                'duckdb_path': Path("cache") / result.dataset_name / "dataset.duckdb"
+                'duckdb_path': Path("cache") / dataset_name / "dataset.duckdb"
             }
             
             # Cache the result
             self._dataset_cache[dataset_name] = dataset_info
             
-            logger.info(f"✅ Retrieved registered dataset: {result.dataset_name}")
-            if result.train_records is not None:
-                logger.info(f"   📊 Train: {result.train_records:,} records, {result.train_columns} columns")
-            else:
-                logger.info(f"   📊 Train: records not counted yet")
-            if result.test_records:
-                logger.info(f"   🧪 Test: {result.test_records:,} records, {result.test_columns} columns")
+            logger.info(f"✅ Retrieved registered dataset: {dataset_name}")
+            logger.info(f"   📂 Path: {result['dataset_path']}")
+            if result['train_path']:
+                logger.info(f"   📊 Train: {result['train_path']}")
+            if result['test_path']:
+                logger.info(f"   🧪 Test: {result['test_path']}")
             
             return dataset_info
                 
@@ -206,23 +226,38 @@ class DatasetManager:
     def list_available_datasets(self) -> Dict[str, Dict[str, Any]]:
         """List all available datasets."""
         try:
-            from .discovery_db import FeatureDiscoveryDB
+            query = """
+            SELECT name, dataset_path, target_column, description, is_active
+            FROM datasets 
+            WHERE is_active = true
+            ORDER BY name
+            """
             
-            # Use existing DB connection or raise error
             if self.db_service:
-                dataset_repo = self.db_service.dataset_repo
+                results = self.db_service.execute_query(query)
             else:
-                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
-            results = dataset_repo.list_all()
+                # Create temporary read-only connection
+                db_path = self.config.get('database', {}).get('path', 'data/minotaur.duckdb')
+                if not DUCKDB_AVAILABLE:
+                    raise ImportError("DuckDB not available for dataset access")
+                conn = duckdb.connect(db_path, read_only=True)
+                cursor = conn.execute(query)
+                results = cursor.fetchall()
+                conn.close()
+                
+                # Convert to dict format
+                if results:
+                    columns = ['name', 'dataset_path', 'target_column', 'description', 'is_active']
+                    results = [dict(zip(columns, row)) for row in results]
             
             datasets = {}
-            for dataset in results:
-                datasets[dataset.dataset_name] = {
-                    'competition_name': dataset.competition_name,
-                    'train_records': dataset.train_records,
-                    'test_records': dataset.test_records,
-                    'target_column': dataset.target_column,
-                    'is_active': dataset.is_active
+            for row in results:
+                datasets[row['name']] = {
+                    'competition_name': None,  # Not stored in new schema
+                    'train_records': None,
+                    'test_records': None,
+                    'target_column': row['target_column'],
+                    'is_active': row['is_active']
                 }
             
             return datasets
@@ -234,20 +269,12 @@ class DatasetManager:
     def update_dataset_usage(self, dataset_name: str) -> None:
         """Update last_used timestamp for dataset."""
         try:
-            from .discovery_db import FeatureDiscoveryDB
+            # For now, just log the usage - the new schema doesn't have a last_used field
+            logger.debug(f"Dataset usage recorded: {dataset_name}")
             
-            # Use existing DB connection or raise error
-            if self.db_service:
-                dataset_repo = self.db_service.dataset_repo
-            else:
-                raise RuntimeError("DatasetManager: No database service provided. Cannot create temporary connection to avoid conflicts.")
-            dataset = dataset_repo.find_by_name(dataset_name)
-            
-            if dataset:
-                dataset_repo.mark_dataset_used(dataset.dataset_id)
-                logger.debug(f"Updated usage timestamp for dataset: {dataset_name}")
-            else:
-                logger.warning(f"Dataset '{dataset_name}' not found for usage update")
+            # TODO: If needed, add a last_used column to datasets table:
+            # ALTER TABLE datasets ADD COLUMN last_used TIMESTAMP;
+            # UPDATE datasets SET last_used = CURRENT_TIMESTAMP WHERE name = :dataset_name
             
         except Exception as e:
             logger.warning(f"Failed to update dataset usage: {e}")

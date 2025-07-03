@@ -310,16 +310,16 @@ class FeatureDiscoveryRunner:
             raise ValueError("dataset_name not specified in autogluon config")
         
         # Load dataset configuration from database
-        dataset_info = self.db.db_service.connection_manager.execute_query(
-            "SELECT train_path, target_column, id_column FROM datasets WHERE dataset_name = ?",
-            params=(dataset_name,),
-            fetch='one'
+        results = self.db.db_service.connection_manager.execute_query(
+            "SELECT train_path, target_column, id_column FROM datasets WHERE name = :dataset_name",
+            params={'dataset_name': dataset_name}
         )
         
-        if not dataset_info:
+        if not results:
             raise ValueError(f"Dataset '{dataset_name}' not found in database registry")
         
-        train_path, target_column, id_column = dataset_info
+        dataset_info = results[0]
+        train_path, target_column, id_column = dataset_info['train_path'], dataset_info['target_column'], dataset_info['id_column']
         
         # Get active train features from feature_catalog
         # This respects the feature configuration (is_active=True)
@@ -328,29 +328,17 @@ class FeatureDiscoveryRunner:
             cache_dir = Path(self.config.get('project_root', '.')) / 'cache' / dataset_name
             cache_db_path = cache_dir / 'dataset.duckdb'
             
-            if cache_db_path.exists():
-                import duckdb
-                with duckdb.connect(str(cache_db_path)) as conn:
-                    # Get active train features from feature_catalog, excluding target and ID columns
-                    features_result = conn.execute("""
-                        SELECT feature_name 
-                        FROM feature_catalog 
-                        WHERE origin = 'train' AND is_active = TRUE
-                          AND feature_name NOT IN (?, ?)
-                    """, [target_column.lower() if target_column else '', 
-                         id_column.lower() if id_column else '']).fetchall()
-                    features = set(row[0] for row in features_result)
-            else:
-                # Fallback to CSV if DuckDB cache not available
-                df = pd.read_csv(train_path, nrows=1)  # Read only header
-                all_columns = set(col.lower() for col in df.columns)  # Convert to lowercase
-                
-                # Remove target and ID columns from features
-                features = all_columns.copy()
-                if target_column and target_column.lower() in features:
-                    features.remove(target_column.lower())
-                if id_column and id_column.lower() in features:
-                    features.remove(id_column.lower())
+            # Always use CSV approach to avoid connection conflicts
+            # The dataset-specific DuckDB file may already be open by AutoGluonEvaluator
+            df = pd.read_csv(train_path, nrows=1)  # Read only header
+            all_columns = set(col.lower() for col in df.columns)  # Convert to lowercase
+            
+            # Remove target and ID columns from features
+            features = all_columns.copy()
+            if target_column and target_column.lower() in features:
+                features.remove(target_column.lower())
+            if id_column and id_column.lower() in features:
+                features.remove(id_column.lower())
             
             logger = logging.getLogger(__name__)
             logger.info(f"Loaded {len(features)} initial features from {dataset_name}: {sorted(features)}")
