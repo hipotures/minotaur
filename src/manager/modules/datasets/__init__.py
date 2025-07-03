@@ -102,11 +102,11 @@ class DatasetsModule(ModuleInterface):
         # Registration options
         register_group = parser.add_argument_group('Registration Options')
         register_group.add_argument('--auto', action='store_true',
-                                  help='Auto-detect dataset files')
+                                  help='[DEPRECATED] Auto-detection is now automatic when using --dataset-path')
         register_group.add_argument('--dataset-name', type=str,
                                   help='Dataset name for registration')
         register_group.add_argument('--dataset-path', type=str,
-                                  help='Path to dataset directory')
+                                  help='Path to dataset directory (auto-detects train/test/submission files)')
         register_group.add_argument('--train', type=str,
                                   help='Training data file path')
         register_group.add_argument('--test', type=str,

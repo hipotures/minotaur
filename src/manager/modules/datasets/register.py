@@ -27,7 +27,7 @@ class RegisterCommand(BaseDatasetsCommand):
                 self.print_info("Usage: python manager.py datasets --register --dataset-name NAME [options]")
                 return
             
-            if args.auto or args.dataset_path:
+            if args.dataset_path:
                 self._register_auto(args)
             else:
                 self._register_manual(args)
