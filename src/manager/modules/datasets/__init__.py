@@ -139,8 +139,10 @@ class DatasetsModule(ModuleInterface):
                                 help='Regenerate features for dataset')
         update_group.add_argument('--dry-run', action='store_true',
                                 help='Show what would be changed')
-        update_group.add_argument('--force-update', action='store_true',
-                                help='Force feature regeneration')
+        
+        # Global options
+        parser.add_argument('--force-update', action='store_true',
+                          help='Force update/overwrite if dataset already exists')
     
     def execute(self, args, manager) -> None:
         """Execute the appropriate command based on arguments."""

@@ -85,7 +85,14 @@ class RegisterCommand(BaseDatasetsCommand):
             else:
                 print(f"\r" + " " * 60, end="", flush=True)  # Clear animation without error message
                 print(f"\r", end="")  # Return to beginning of line
-                self.print_error(f"Registration failed: {result.get('error', 'Unknown error')}")
+                # Try to get a meaningful error message
+                error_msg = result.get('message', result.get('error', 'Unknown error'))
+                self.print_error(f"Registration failed: {error_msg}")
+                
+                # If dataset already exists, suggest using --force-update
+                if "already exists" in error_msg.lower():
+                    self.print_info(f"\n💡 To overwrite the existing dataset, use:")
+                    self.print_info(f"   ./manager.py datasets --register --dataset-name {args.dataset_name} --dataset-path {args.dataset_path} --force-update")
                 
         except Exception as e:
             # Stop animation on error

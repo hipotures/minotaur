@@ -365,13 +365,13 @@ class DatasetImporter:
                 columns = conn.execute("DESCRIBE train").fetchall()
                 column_names = [col[0] for col in columns]
                 
-                # Check if target and ID columns exist in database (parameters already lowercase)
-                if target_column and target_column not in column_names:
-                    logger.warning(f"Target column '{target_column}' not found in train table")
+                # Check if target and ID columns exist in database (convert to lowercase first)
+                if target_column and target_column.lower() not in column_names:
+                    logger.warning(f"Target column '{target_column}' not found in train table (checked as '{target_column.lower()}')")
                     logger.info(f"Available columns: {', '.join(column_names)}")
                 
-                if id_column and id_column not in column_names:
-                    logger.warning(f"ID column '{id_column}' not found in train table")
+                if id_column and id_column.lower() not in column_names:
+                    logger.warning(f"ID column '{id_column}' not found in train table (checked as '{id_column.lower()}')")
                 
                 # Register original train columns in feature_catalog with origin='train'
                 logger.info("Registering original train columns in feature_catalog...")
@@ -404,10 +404,10 @@ class DatasetImporter:
             # Commit changes before feature generation to ensure tables are visible
             conn.commit()
             
-            # Generate features for train and test tables
-            logger.info("Generating features for dataset...")
-            # Pass target and ID columns (already lowercase from earlier conversion)
-            self._generate_and_save_features(conn, self.dataset_name, target_column, id_column, str(duckdb_path), mcts_feature)
+            # Skip feature generation for now - just import raw data
+            # TODO: Fix feature generation to handle different columns in train/test
+            logger.info("Skipping feature generation - importing raw data only")
+            # self._generate_and_save_features(conn, self.dataset_name, target_column, id_column, str(duckdb_path), mcts_feature)
             
             conn.close()
             

@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from ...database.engine_factory import DatabaseFactory
 from ..core.utils import format_number, format_bytes, format_datetime
+from ...dataset_importer import DatasetImporter
 
 
 class DatasetService:
@@ -417,7 +418,7 @@ class DatasetService:
         return files
     
     def _create_dataset_registration(self, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Create new dataset registration.
+        """Create new dataset registration and dataset-specific DuckDB.
         
         Args:
             dataset_info: Dataset information dictionary
@@ -426,7 +427,37 @@ class DatasetService:
             Registration result
         """
         try:
-            # Insert dataset record
+            # First, create the dataset-specific DuckDB using DatasetImporter
+            self.logger.info(f"Creating dataset-specific DuckDB for '{dataset_info['name']}'...")
+            
+            importer = DatasetImporter(dataset_info['name'])
+            
+            # Prepare file mappings for importer
+            file_mappings = {}
+            if dataset_info.get('train_path'):
+                file_mappings['train'] = dataset_info['train_path']
+            if dataset_info.get('test_path'):
+                file_mappings['test'] = dataset_info['test_path']
+            if dataset_info.get('validation_path'):
+                file_mappings['validation'] = dataset_info['validation_path']
+            if dataset_info.get('submission_path'):
+                file_mappings['submission'] = dataset_info['submission_path']
+            
+            # Create DuckDB dataset
+            try:
+                duckdb_path = importer.create_duckdb_dataset(
+                    file_mappings=file_mappings,
+                    target_column=dataset_info.get('target_column'),
+                    id_column=dataset_info.get('id_column'),
+                    mcts_feature=False  # Can be made configurable later
+                )
+                self.logger.info(f"Created dataset DuckDB at: {duckdb_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to create dataset DuckDB: {e}")
+                self.logger.warning("Continuing with registration without dataset-specific DuckDB")
+                # Continue with registration even if DuckDB creation fails
+            
+            # Insert dataset record in main database
             insert_query = """
             INSERT INTO datasets 
             (name, dataset_path, train_path, test_path, validation_path, submission_path,
@@ -451,7 +482,7 @@ class DatasetService:
                 raise
     
     def _update_dataset_registration(self, name: str, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Update existing dataset registration.
+        """Update existing dataset registration and recreate DuckDB.
         
         Args:
             name: Dataset name
@@ -460,32 +491,65 @@ class DatasetService:
         Returns:
             Update result
         """
-        # Build update query
-        update_query = """
-        UPDATE datasets 
-        SET dataset_path = :dataset_path,
-            train_path = :train_path,
-            test_path = :test_path,
-            validation_path = :validation_path,
-            submission_path = :submission_path,
-            target_column = :target_column,
-            id_column = :id_column,
-            description = :description,
-            updated_at = :updated_at
-        WHERE name = :name
-        """
-        
-        dataset_info['updated_at'] = datetime.now()
-        dataset_info['name'] = name
-        
-        self.db_manager.execute_dml(update_query, dataset_info)
-        self.logger.info(f"Updated dataset: {name}")
-        
-        return {
-            'success': True,
-            'message': f"Dataset '{name}' updated successfully",
-            'dataset': self.get_dataset(name)
-        }
+        try:
+            # Recreate the dataset-specific DuckDB
+            self.logger.info(f"Recreating dataset-specific DuckDB for '{name}'...")
+            
+            importer = DatasetImporter(name)
+            
+            # Prepare file mappings for importer
+            file_mappings = {}
+            if dataset_info.get('train_path'):
+                file_mappings['train'] = dataset_info['train_path']
+            if dataset_info.get('test_path'):
+                file_mappings['test'] = dataset_info['test_path']
+            if dataset_info.get('validation_path'):
+                file_mappings['validation'] = dataset_info['validation_path']
+            if dataset_info.get('submission_path'):
+                file_mappings['submission'] = dataset_info['submission_path']
+            
+            # Recreate DuckDB dataset
+            try:
+                duckdb_path = importer.create_duckdb_dataset(
+                    file_mappings=file_mappings,
+                    target_column=dataset_info.get('target_column'),
+                    id_column=dataset_info.get('id_column'),
+                    mcts_feature=False
+                )
+                self.logger.info(f"Recreated dataset DuckDB at: {duckdb_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to recreate dataset DuckDB: {e}")
+                # Continue with update even if DuckDB recreation fails
+            
+            # Build update query
+            update_query = """
+            UPDATE datasets 
+            SET dataset_path = :dataset_path,
+                train_path = :train_path,
+                test_path = :test_path,
+                validation_path = :validation_path,
+                submission_path = :submission_path,
+                target_column = :target_column,
+                id_column = :id_column,
+                description = :description,
+                updated_at = :updated_at
+            WHERE name = :name
+            """
+            
+            dataset_info['updated_at'] = datetime.now()
+            dataset_info['name'] = name
+            
+            self.db_manager.execute_dml(update_query, dataset_info)
+            self.logger.info(f"Updated dataset: {name}")
+            
+            return {
+                'success': True,
+                'message': f"Dataset '{name}' updated successfully",
+                'dataset': self.get_dataset(name)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to update dataset: {e}")
+            raise
     
     def register_dataset_manual(self, name: str, train_path: str, test_path: str = None,
                               submission_path: str = None, validation_path: str = None,
