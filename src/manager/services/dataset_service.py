@@ -36,12 +36,14 @@ class DatasetService:
         CREATE TABLE IF NOT EXISTS datasets (
             name VARCHAR UNIQUE NOT NULL,
             dataset_path VARCHAR NOT NULL,
+            train_path VARCHAR,
+            test_path VARCHAR,
+            validation_path VARCHAR,
+            submission_path VARCHAR,
             target_column VARCHAR,
+            id_column VARCHAR,
             dataset_type VARCHAR DEFAULT 'csv',
             description VARCHAR,
-            rows_count INTEGER,
-            columns_count INTEGER,
-            file_size_bytes INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT true
@@ -98,7 +100,13 @@ class DatasetService:
         Returns:
             Dataset dictionary or None if not found
         """
-        query = "SELECT * FROM datasets WHERE name = :name"
+        query = """
+        SELECT name, dataset_path, train_path, test_path, validation_path, 
+               submission_path, target_column, id_column, dataset_type, 
+               description, created_at, updated_at, is_active
+        FROM datasets 
+        WHERE name = :name
+        """
         results = self.db_manager.execute_query(query, {'name': name})
         return results[0] if results else None
     
@@ -291,11 +299,11 @@ class DatasetService:
                              id_column: str = None, competition_name: str = None,
                              description: str = None, force_update: bool = False,
                              mcts_feature: bool = False) -> Dict[str, Any]:
-        """Auto-register dataset with full analysis and feature extraction.
+        """Auto-register dataset by scanning directory for standard files.
         
         Args:
             name: Dataset name
-            path: Dataset path
+            path: Directory path containing dataset files
             target_column: Target column for ML
             id_column: ID column (optional)
             competition_name: Competition name (optional)
@@ -319,60 +327,234 @@ class DatasetService:
                     'dataset': existing
                 }
             
+            # Auto-detect files in directory
+            dataset_dir = Path(path)
+            if not dataset_dir.exists():
+                return {
+                    'success': False,
+                    'message': f"Directory not found: {path}",
+                    'error': 'Directory not found'
+                }
+            
+            if not dataset_dir.is_dir():
+                return {
+                    'success': False,
+                    'message': f"Path is not a directory: {path}",
+                    'error': 'Not a directory'
+                }
+            
+            # Scan for standard file patterns
+            file_paths = self._scan_dataset_directory(dataset_dir)
+            
+            if not file_paths.get('train_path'):
+                return {
+                    'success': False,
+                    'message': f"No train file found in directory: {path}",
+                    'error': 'Missing train file'
+                }
+            
             # Build description
             if not description:
                 description = f"Auto-registered dataset from {path}"
                 if competition_name:
                     description += f" (Competition: {competition_name})"
             
-            # Register using standard method
+            # Prepare dataset info
+            dataset_info = {
+                'name': name,
+                'dataset_path': str(dataset_dir.resolve()),
+                'train_path': file_paths.get('train_path'),
+                'test_path': file_paths.get('test_path'),
+                'validation_path': file_paths.get('validation_path'),
+                'submission_path': file_paths.get('submission_path'),
+                'target_column': target_column,
+                'id_column': id_column,
+                'description': description
+            }
+            
+            # Register or update
             if existing and force_update:
-                # Update existing dataset
-                updates = {
-                    'dataset_path': str(Path(path).resolve()),
-                    'target_column': target_column,
-                    'description': description
-                }
-                
-                # Re-analyze if requested
-                if force_update:
-                    dataset_path = Path(path)
-                    if dataset_path.exists() and dataset_path.suffix.lower() == '.csv':
-                        try:
-                            import pandas as pd
-                            df_sample = pd.read_csv(dataset_path, nrows=0)
-                            updates['columns_count'] = len(df_sample.columns)
-                            
-                            # Estimate row count
-                            import subprocess
-                            result = subprocess.run(['wc', '-l', str(dataset_path)], capture_output=True, text=True)
-                            if result.returncode == 0:
-                                updates['rows_count'] = int(result.stdout.split()[0]) - 1
-                                
-                            updates['file_size_bytes'] = dataset_path.stat().st_size
-                        except Exception as e:
-                            self.logger.warning(f"Could not re-analyze dataset {name}: {e}")
-                
-                updated_dataset = self.update_dataset(name, updates)
-                return {
-                    'success': True,
-                    'message': f"Dataset '{name}' updated successfully",
-                    'dataset': updated_dataset
-                }
+                return self._update_dataset_registration(name, dataset_info)
             else:
-                # Register new dataset
-                return self.register_dataset(
-                    name=name,
-                    dataset_path=path,
-                    target_column=target_column,
-                    description=description,
-                    auto_analyze=True
-                )
+                return self._create_dataset_registration(dataset_info)
                 
         except Exception as e:
             self.logger.error(f"Auto-registration failed for {name}: {e}")
             return {
                 'success': False,
                 'message': f"Auto-registration failed: {str(e)}",
+                'error': str(e)
+            }
+    
+    def _scan_dataset_directory(self, directory: Path) -> Dict[str, str]:
+        """Scan directory for standard dataset files.
+        
+        Args:
+            directory: Path to dataset directory
+            
+        Returns:
+            Dictionary with paths to found files
+        """
+        files = {}
+        
+        # Common patterns for dataset files
+        patterns = {
+            'train_path': ['train.csv', 'training.csv', 'train_data.csv', 'train_set.csv'],
+            'test_path': ['test.csv', 'testing.csv', 'test_data.csv', 'test_set.csv'],
+            'validation_path': ['val.csv', 'valid.csv', 'validation.csv', 'dev.csv'],
+            'submission_path': ['sample_submission.csv', 'submission.csv', 'sample_sub.csv', 
+                               'gender_submission.csv', 'submission_format.csv']
+        }
+        
+        # Scan for each file type
+        for file_type, file_patterns in patterns.items():
+            for pattern in file_patterns:
+                file_path = directory / pattern
+                if file_path.exists() and file_path.is_file():
+                    files[file_type] = str(file_path.resolve())
+                    break
+        
+        return files
+    
+    def _create_dataset_registration(self, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Create new dataset registration.
+        
+        Args:
+            dataset_info: Dataset information dictionary
+            
+        Returns:
+            Registration result
+        """
+        try:
+            # Insert dataset record
+            insert_query = """
+            INSERT INTO datasets 
+            (name, dataset_path, train_path, test_path, validation_path, submission_path,
+             target_column, id_column, description)
+            VALUES (:name, :dataset_path, :train_path, :test_path, :validation_path, 
+                    :submission_path, :target_column, :id_column, :description)
+            """
+            
+            self.db_manager.execute_dml(insert_query, dataset_info)
+            self.logger.info(f"Registered dataset: {dataset_info['name']}")
+            
+            return {
+                'success': True,
+                'message': f"Dataset '{dataset_info['name']}' registered successfully",
+                'dataset': self.get_dataset(dataset_info['name'])
+            }
+            
+        except Exception as e:
+            if "UNIQUE constraint failed" in str(e):
+                raise ValueError(f"Dataset with name '{dataset_info['name']}' already exists")
+            else:
+                raise
+    
+    def _update_dataset_registration(self, name: str, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Update existing dataset registration.
+        
+        Args:
+            name: Dataset name
+            dataset_info: New dataset information
+            
+        Returns:
+            Update result
+        """
+        # Build update query
+        update_query = """
+        UPDATE datasets 
+        SET dataset_path = :dataset_path,
+            train_path = :train_path,
+            test_path = :test_path,
+            validation_path = :validation_path,
+            submission_path = :submission_path,
+            target_column = :target_column,
+            id_column = :id_column,
+            description = :description,
+            updated_at = :updated_at
+        WHERE name = :name
+        """
+        
+        dataset_info['updated_at'] = datetime.now()
+        dataset_info['name'] = name
+        
+        self.db_manager.execute_dml(update_query, dataset_info)
+        self.logger.info(f"Updated dataset: {name}")
+        
+        return {
+            'success': True,
+            'message': f"Dataset '{name}' updated successfully",
+            'dataset': self.get_dataset(name)
+        }
+    
+    def register_dataset_manual(self, name: str, train_path: str, test_path: str = None,
+                              submission_path: str = None, validation_path: str = None,
+                              target_column: str = None, id_column: str = None,
+                              competition_name: str = None, description: str = None,
+                              mcts_feature: bool = False) -> Dict[str, Any]:
+        """Manually register dataset with explicit file paths.
+        
+        Args:
+            name: Dataset name
+            train_path: Path to training file
+            test_path: Path to test file (optional)
+            submission_path: Path to submission template (optional)
+            validation_path: Path to validation file (optional)
+            target_column: Target column name
+            id_column: ID column name
+            competition_name: Competition name
+            description: Dataset description
+            mcts_feature: Whether to enable MCTS features
+            
+        Returns:
+            Registration result
+        """
+        try:
+            # Ensure table exists
+            self._ensure_datasets_table()
+            
+            # Validate train path exists
+            train_file = Path(train_path)
+            if not train_file.exists():
+                return {
+                    'success': False,
+                    'message': f"Training file not found: {train_path}",
+                    'error': 'File not found'
+                }
+            
+            # Determine dataset directory from train file
+            dataset_dir = train_file.parent
+            
+            # Build description
+            if not description:
+                description = f"Manually registered dataset"
+                if competition_name:
+                    description += f" (Competition: {competition_name})"
+            
+            # Prepare dataset info
+            dataset_info = {
+                'name': name,
+                'dataset_path': str(dataset_dir.resolve()),
+                'train_path': str(train_file.resolve()),
+                'test_path': str(Path(test_path).resolve()) if test_path else None,
+                'validation_path': str(Path(validation_path).resolve()) if validation_path else None,
+                'submission_path': str(Path(submission_path).resolve()) if submission_path else None,
+                'target_column': target_column,
+                'id_column': id_column,
+                'description': description
+            }
+            
+            # Check if exists
+            existing = self.get_dataset(name)
+            if existing:
+                return self._update_dataset_registration(name, dataset_info)
+            else:
+                return self._create_dataset_registration(dataset_info)
+                
+        except Exception as e:
+            self.logger.error(f"Manual registration failed for {name}: {e}")
+            return {
+                'success': False,
+                'message': f"Manual registration failed: {str(e)}",
                 'error': str(e)
             }

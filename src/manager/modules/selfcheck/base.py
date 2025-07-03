@@ -63,18 +63,20 @@ class BaseSelfCheckCommand(BaseCommand, ABC):
             
             # Extract fields from the result dictionary
             name = result.get('name', dataset)
-            dataset_path = result.get('dataset_path', '')
+            train_path = result.get('train_path')
+            test_path = result.get('test_path')
             target_column = result.get('target_column')
+            id_column = result.get('id_column')
             
             print(f"   ✅ Found registered dataset: {name}")
             
             dataset_info = {
                 'dataset_id': name,  # Use name as ID for compatibility
                 'name': name,
-                'train_path': dataset_path,  # Assuming dataset_path is the train path
-                'test_path': None,  # New schema doesn't have separate test_path
+                'train_path': train_path,
+                'test_path': test_path,
                 'target_column': target_column,
-                'id_column': None  # New schema doesn't have id_column
+                'id_column': id_column
             }
             
             # Validate actual data files exist
