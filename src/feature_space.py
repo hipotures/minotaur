@@ -513,22 +513,9 @@ class FeatureSpace:
                 # Check if this is a custom domain operation
                 is_custom_op = operation in self.operations and self.operations[operation].category == 'custom_domain'
                 
-                # Use cached lookup for feature columns
-                operation_features = self._get_feature_columns_cached(operation, is_custom=is_custom_op)
-                
-                if operation_features:
-                    # Add new features not already in accumulated list
-                    for feat in operation_features:
-                        if feat not in accumulated_features:
-                            accumulated_features.append(feat)
-                    logger.debug(f"Added {len(operation_features)} features from operation '{operation}'")
-                else:
-                    logger.warning(f"No features found for operation '{operation}' - using pattern fallback")
-                    # Fallback to pattern-based detection if no database entries
-                    fallback_features = self._get_features_by_pattern_fallback(operation, path_node)
-                    for feat in fallback_features:
-                        if feat not in accumulated_features:
-                            accumulated_features.append(feat)
+                # For now, just track that this operation should be applied
+                # Actual features will be generated in generate_features_for_node
+                logger.debug(f"Operation '{operation}' will be applied for node {path_node.node_id}")
         
         logger.debug(f"Node {node.node_id} has {len(accumulated_features)} total features (base: {len(base_features)})")
         return accumulated_features
@@ -666,36 +653,172 @@ class FeatureSpace:
     
     def generate_features_for_node(self, node) -> pd.DataFrame:
         """
-        Generate features for a specific MCTS node using lazy loading.
+        Generate features for a specific MCTS node by applying operations.
         
-        This method now primarily uses pre-built features from the database
-        rather than generating new ones on the fly.
+        This method now generates features dynamically by applying the operations
+        from the node's path from root.
         """
-        # Get feature columns for this node
-        feature_columns = self.get_feature_columns_for_node(node)
-        
-        if not feature_columns:
-            logger.warning("No feature columns found for node")
-            return pd.DataFrame()
-        
-        # Load features from database
+        # Load base dataset
         if hasattr(self, 'duckdb_manager') and self.duckdb_manager is not None:
             try:
-                # Create SQL query to select only needed columns
-                column_list = ', '.join([f'"{col}"' for col in feature_columns])
-                query = f"SELECT {column_list} FROM train_features"
+                # Load train data from file
+                dataset_info = self.duckdb_manager.connection.execute(
+                    "SELECT dataset_path, train_path FROM datasets WHERE name = ?", 
+                    [self.dataset_name]
+                ).fetchone()
                 
-                features_df = self.duckdb_manager.connection.execute(query).df()
-                logger.debug(f"Loaded {len(features_df)} rows with {len(features_df.columns)} features for node")
+                if not dataset_info:
+                    raise ValueError(f"Dataset '{self.dataset_name}' not found in registry")
                 
-                return features_df
+                dataset_path, train_path = dataset_info
+                
+                # Determine full path to train file
+                if train_path:
+                    train_file_path = train_path
+                else:
+                    # Default to train.csv in dataset directory
+                    train_file_path = f"{dataset_path}/train.csv"
+                
+                # Load data based on file type
+                if train_file_path.endswith('.parquet'):
+                    base_df = pd.read_parquet(train_file_path)
+                else:
+                    base_df = pd.read_csv(train_file_path)
+                
+                logger.debug(f"Loaded base dataset from {train_file_path}: {len(base_df)} rows, {len(base_df.columns)} columns")
+                
+                # Build path from root to current node
+                path_to_node = []
+                current = node
+                while current.parent is not None:
+                    path_to_node.append(current)
+                    current = current.parent
+                
+                # Reverse to go from root to node
+                path_to_node.reverse()
+                
+                # Apply operations along the path
+                result_df = base_df.copy()
+                
+                for path_node in path_to_node:
+                    operation_name = getattr(path_node, 'operation_that_created_this', None)
+                    if operation_name and operation_name != 'root':
+                        logger.debug(f"Applying operation '{operation_name}' for node {path_node.node_id}")
+                        
+                        # Apply the operation
+                        new_features = self._apply_operation(result_df, operation_name)
+                        
+                        if new_features:
+                            # Add new features to the dataframe
+                            for feat_name, feat_data in new_features.items():
+                                if feat_name not in result_df.columns:
+                                    result_df[feat_name] = feat_data
+                                    logger.debug(f"Added feature '{feat_name}' from operation '{operation_name}'")
+                
+                # Get feature columns for this node (includes base + generated)
+                feature_columns = self.get_feature_columns_for_node(node)
+                
+                # Filter to only include available columns
+                available_columns = [col for col in feature_columns if col in result_df.columns]
+                
+                # Update node's features_after to reflect actual features
+                node.features_after = available_columns
+                
+                logger.info(f"Generated {len(available_columns)} features for node {node.node_id} (added {len(available_columns) - len(base_df.columns)} new)")
+                
+                return result_df[available_columns]
                 
             except Exception as e:
-                logger.error(f"Failed to load features from database: {e}")
+                logger.error(f"Failed to generate features for node: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 return pd.DataFrame()
         else:
             logger.warning("No DuckDB manager available")
             return pd.DataFrame()
+    
+    def _apply_operation(self, df: pd.DataFrame, operation_name: str) -> Dict[str, pd.Series]:
+        """
+        Apply a specific operation to generate new features.
+        
+        Args:
+            df: Input dataframe
+            operation_name: Name of the operation to apply
+            
+        Returns:
+            Dict[str, pd.Series]: Dictionary of new features
+        """
+        try:
+            # Check if it's a custom operation
+            if operation_name in self.operations and self.operations[operation_name].category == 'custom_domain':
+                # Load custom operations module
+                dataset_name_clean = self.dataset_name.lower().replace('-', '_').replace(' ', '_')
+                custom_module = importlib.import_module(f'.features.custom.{dataset_name_clean}', package='src')
+                
+                if hasattr(custom_module, 'CustomFeatureOperations'):
+                    custom_ops = custom_module.CustomFeatureOperations()
+                    
+                    # Call the operation method
+                    if operation_name in custom_ops._operation_registry:
+                        op_method = custom_ops._operation_registry[operation_name]
+                        new_features = op_method(df)
+                        logger.debug(f"Custom operation '{operation_name}' generated {len(new_features)} features")
+                        return new_features
+            
+            # Generic operations
+            elif operation_name == 'statistical_aggregations':
+                from .features.generic import statistical
+                stat_op = statistical.StatisticalFeatures()
+                
+                # Auto-detect columns
+                groupby_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()[:2]
+                aggregate_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:3]
+                
+                # Filter forbidden columns
+                groupby_cols = self._filter_forbidden_columns(groupby_cols)
+                aggregate_cols = self._filter_forbidden_columns(aggregate_cols)
+                
+                if groupby_cols and aggregate_cols:
+                    return stat_op.generate_features(df, groupby_cols=groupby_cols, agg_cols=aggregate_cols)
+                
+            elif operation_name == 'polynomial_features':
+                from .features.generic import polynomial
+                poly_op = polynomial.PolynomialFeatures()
+                
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:3]
+                numeric_cols = self._filter_forbidden_columns(numeric_cols)
+                
+                if numeric_cols:
+                    return poly_op.generate_features(df, numeric_cols=numeric_cols, degree=2)
+                
+            elif operation_name == 'binning_features':
+                from .features.generic import binning
+                bin_op = binning.BinningFeatures()
+                
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:3]
+                numeric_cols = self._filter_forbidden_columns(numeric_cols)
+                
+                if numeric_cols:
+                    return bin_op.generate_features(df, numeric_cols=numeric_cols, n_bins=5)
+                
+            elif operation_name == 'ranking_features':
+                from .features.generic import ranking
+                rank_op = ranking.RankingFeatures()
+                
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:3]
+                numeric_cols = self._filter_forbidden_columns(numeric_cols)
+                
+                if numeric_cols:
+                    return rank_op.generate_features(df, numeric_cols=numeric_cols)
+            
+            logger.warning(f"Operation '{operation_name}' not implemented or no suitable columns found")
+            return {}
+            
+        except Exception as e:
+            logger.error(f"Failed to apply operation '{operation_name}': {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
     
     def _load_feature_stats_from_history(self) -> None:
         """Load feature performance statistics from exploration history."""
