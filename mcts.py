@@ -1100,6 +1100,11 @@ def main():
                 print(f"   Previous iterations: {session_info.total_iterations}")
                 if session_info.best_score is not None:
                     print(f"   Best score so far: {session_info.best_score:.5f}")
+                
+                # Show planned iterations for this run
+                max_iterations = config.get('session', {}).get('max_iterations', 100)
+                print(f"\n📈 This run will execute: {max_iterations} iterations")
+                print(f"   Total after completion: {session_info.total_iterations + max_iterations} iterations")
                 print()
                 
                 config['session']['mode'] = 'continue'

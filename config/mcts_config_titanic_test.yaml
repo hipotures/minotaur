@@ -1,4 +1,4 @@
-test_mode: true
+test_mode: false
 session:
   max_iterations: 15
   max_runtime_hours: 0.25
